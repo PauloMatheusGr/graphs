@@ -11,8 +11,8 @@ import pandas as pd
 # =========================
 # Defaults (edite aqui)
 # =========================
-DEFAULT_IMAGES_CSV = "image_data_sMCI_pMCI.txt"
-DEFAULT_COMBINATIONS_CSV = "cj_data_abordagem_1_sMCI_pMCI.txt"
+DEFAULT_IMAGES_CSV = "image_data_teste.txt"
+DEFAULT_COMBINATIONS_CSV = "cj_data_abordagem_teste.txt"
 
 # Fases: "1" (warps), "2" (features), "both"
 DEFAULT_PHASE = "both"
@@ -558,7 +558,7 @@ def process_longitudinal_combinations_to_features(
     parquet_dataset_dir = os.path.join(features_output_dir, "parquet_dataset")
     os.makedirs(parquet_dataset_dir, exist_ok=True)
 
-    out_csv_path = os.path.join(csvs_root, ab, f"features_displacement_{ab}.csv")
+    out_csv_path = os.path.join(csvs_root, ab, f"features_displacement_teste.csv")
 
     persist_run_metadata(
         run_meta_path=run_meta_path,
