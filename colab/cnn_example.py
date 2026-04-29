@@ -1,3 +1,18 @@
+# python colab/cnn_example.py \
+#   --csv "/mnt/study-data/pgirardi/graphs/csvs/abordagem_teste/all_delta_features_neurocombat.csv" \
+#   --device cpu \
+#   --n-splits 5 \
+#   --inner-fold 5 \
+#   --seed 42 \
+#   --kbest 100 \
+#   --epochs 80 \
+#   --batch-size 64 \
+#   --balance downsample \
+#   --shap \
+#   --shap-samples 200 \
+#   --shap-background 150 \
+#   --shap-outdir "/mnt/study-data/pgirardi/graphs/colab/outputs"
+
 from __future__ import annotations
 
 import argparse

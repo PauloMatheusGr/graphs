@@ -1,9 +1,16 @@
-# How to run:
-    
-#     python /mnt/study-data/pgirardi/graphs/colab/lstm_example.py \
+# python colab/lstm_example.py \
+#   --csv "/mnt/study-data/pgirardi/graphs/csvs/abordagem_teste/all_delta_features_neurocombat.csv" \
 #   --sequence-source pairs \
 #   --pair-order 12,13,23 \
-#   --device cpu
+#   --n-splits 5 \
+#   --inner-fold 5 \
+#   --epochs 50 \
+#   --batch-size 64 \
+#   --seed 42 \
+#   --device cpu \
+#   --balance downsample \
+#   --shap \
+#   --shap-outdir "/mnt/study-data/pgirardi/graphs/colab/outputs"
 
 from __future__ import annotations
 

@@ -446,6 +446,17 @@ def main() -> int:
         )
     )
     parser.add_argument(
+        "--mode",
+        choices=["pycaret", "shap", "both"],
+        default="pycaret",
+        help=(
+            "Controla o que executar neste script. "
+            "'pycaret' roda apenas a avaliação/modelagem com PyCaret. "
+            "'shap' roda apenas SHAP baseline (sem depender do PyCaret). "
+            "'both' roda SHAP baseline e também PyCaret."
+        ),
+    )
+    parser.add_argument(
         "--csv",
         default="/mnt/study-data/pgirardi/graphs/csvs/abordagem_teste/all_delta_features_neurocombat.csv",
         help="Caminho para o CSV de features.",
@@ -587,15 +598,6 @@ def main() -> int:
                 "(o SFS seleciona dentro do pool do KBest)."
             )
 
-    try:
-        from pycaret.classification import ClassificationExperiment
-    except Exception as e:  # pragma: no cover
-        raise SystemExit(
-            "PyCaret não está instalado neste ambiente.\n"
-            "Instale com: pip install pycaret\n"
-            f"Erro original: {type(e).__name__}: {e}"
-        )
-
     df = pd.read_csv(args.csv)
     rois = _parse_csv_list(args.roi)
     labels = [int(x) for x in _parse_csv_list(args.label)]
@@ -605,7 +607,10 @@ def main() -> int:
         df = filter_by_roi_label(df, rois=rois, labels=labels, roi_label=roi_label)
         print(f"[ROI] filtro aplicado: {before} -> {df.shape}")
 
-    if args.shap:
+    want_shap = (args.mode in ("shap", "both")) or bool(args.shap)
+    want_pycaret = args.mode in ("pycaret", "both")
+
+    if want_shap:
         run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
         shap_dir = os.path.join(os.path.dirname(__file__), "outputs", f"shap_models_teste_{run_id}")
         _run_shap_baseline(
@@ -614,6 +619,19 @@ def main() -> int:
             seed=int(args.seed),
             samples=int(args.shap_samples),
             background=int(args.shap_background),
+        )
+
+    # Se o modo for apenas SHAP, encerramos aqui (evita depender do PyCaret neste ambiente)
+    if not want_pycaret:
+        return 0
+
+    try:
+        from pycaret.classification import ClassificationExperiment
+    except Exception as e:  # pragma: no cover
+        raise SystemExit(
+            "PyCaret não está instalado neste ambiente.\n"
+            "Instale com: pip install pycaret\n"
+            f"Erro original: {type(e).__name__}: {e}"
         )
 
     required = {"ID_PT", "GROUP", "SEX"}
