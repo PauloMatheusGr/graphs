@@ -23,9 +23,68 @@ if TYPE_CHECKING:  # pragma: no cover
 
 
 DEFAULT_CSV = (
-    "/mnt/study-data/pgirardi/graphs/csvs/abordagem_4_teste/"
-    "features_all_abordagem_4_teste.csv"
+    "/mnt/study-data/pgirardi/graphs/csvs/abordagem_teste/"
+    "all_delta_features_neurocombat.csv"
 )
+
+
+def _parse_csv_list(s: str | None) -> list[str]:
+    if not s:
+        return []
+    return [x.strip() for x in str(s).split(",") if x.strip()]
+
+
+def filter_by_roi_label(
+    df: pd.DataFrame,
+    *,
+    rois: list[str] | None = None,
+    labels: list[int] | None = None,
+    roi_label: list[str] | None = None,
+) -> pd.DataFrame:
+    """
+    Filtra linhas pelo(s) ROI(s) e/ou label(s) no CSV (colunas 'roi' e 'label').
+
+    - rois: valores em df['roi'] (ex.: 'hippocampus,amygdala')
+    - labels: inteiros em df['label'] (ex.: 17,53)
+    - roi_label: pares 'roi:label' (ex.: 'hippocampus:17,hippocampus:53')
+    """
+    if ("roi" not in df.columns) or ("label" not in df.columns):
+        raise ValueError("CSV precisa ter colunas 'roi' e 'label' para filtrar ROIs.")
+
+    rois = rois or []
+    labels = labels or []
+    roi_label = roi_label or []
+
+    out = df.copy()
+    out["roi"] = out["roi"].astype(str).str.strip()
+    out["_label_int"] = pd.to_numeric(out["label"], errors="coerce").astype("Int64")
+    out = out[out["_label_int"].notna()].copy()
+    out["_label_int"] = out["_label_int"].astype(int)
+
+    if roi_label:
+        pairs: list[tuple[str, int]] = []
+        for item in roi_label:
+            if ":" not in item:
+                raise ValueError(
+                    f"Use o formato roi:label em --roi-label. Recebi: {item}"
+                )
+            r, lab = item.split(":", 1)
+            pairs.append((r.strip(), int(lab.strip())))
+
+        mask = False
+        for r, lab in pairs:
+            mask = mask | ((out["roi"] == r) & (out["_label_int"] == lab))
+        out = out[mask].copy()
+        return out.drop(columns=["_label_int"])
+
+    mask = True
+    if rois:
+        mask = mask & out["roi"].isin([r.strip() for r in rois])
+    if labels:
+        mask = mask & out["_label_int"].isin([int(x) for x in labels])
+
+    out = out[mask].copy()
+    return out.drop(columns=["_label_int"])
 
 
 def _build_temporal_tensor(
@@ -79,7 +138,7 @@ def _build_pairwise_triplet_tensor(
     group_cols: list[str],
     drop_incomplete: bool,
     drop_if_nan: bool,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list[str]]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, pd.DataFrame, list[str]]:
     """
     Constrói X com shape (n_amostras, 3, n_features) usando AS LINHAS como passos temporais.
 
@@ -126,6 +185,7 @@ def _build_pairwise_triplet_tensor(
     available_pairs = set(df["pair"].astype(str).unique().tolist())
 
     rows = []
+    meta_rows: list[dict[str, object]] = []
     for keys, g in df.groupby(group_cols, sort=False):
         g2 = g.copy()
         g2["pair"] = g2["pair"].astype(str)
@@ -160,6 +220,13 @@ def _build_pairwise_triplet_tensor(
         id_pt = str(g2["ID_PT"].iloc[0])
 
         rows.append((X_seq, y_val, sex_val, id_pt))
+        # keys é tuple alinhada a group_cols (ou escalar se len==1)
+        if not isinstance(keys, tuple):
+            keys_t = (keys,)
+        else:
+            keys_t = keys
+        meta = {c: v for c, v in zip(group_cols, keys_t)}
+        meta_rows.append(meta)
 
     if not rows:
         raise ValueError(
@@ -171,6 +238,7 @@ def _build_pairwise_triplet_tensor(
     y = np.array([r[1] for r in rows], dtype=object)
     sex = np.array([r[2] for r in rows], dtype=object)
     id_pt = np.array([r[3] for r in rows], dtype=object)
+    meta_df = pd.DataFrame(meta_rows)
 
     feature_cols = base_feature_cols + ["dt"]
 
@@ -178,7 +246,7 @@ def _build_pairwise_triplet_tensor(
         mask = np.isfinite(X).all(axis=(1, 2))
         X, y, sex, id_pt = X[mask], y[mask], sex[mask], id_pt[mask]
 
-    return X, y, sex, id_pt, feature_cols
+    return X, y, sex, id_pt, meta_df, feature_cols
 
 
 def _zscore_fit_transform_3d(
@@ -200,6 +268,35 @@ def _zscore_fit_transform_3d(
         n_test, seq_len, n_feat
     )
     return X_train_z.astype(np.float32), X_test_z.astype(np.float32)
+
+
+def _zscore_fit_transform_3d_from_fit(
+    X_fit: np.ndarray, X_val: np.ndarray, X_test: np.ndarray
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Z-score por feature usando APENAS o conjunto de fit (treino interno).
+    Aplica o mesmo scaler em val e test.
+    """
+    n_fit, seq_len, n_feat = X_fit.shape
+    scaler = StandardScaler()
+    scaler.fit(X_fit.reshape(n_fit * seq_len, n_feat))
+
+    X_fit_z = scaler.transform(X_fit.reshape(n_fit * seq_len, n_feat)).reshape(
+        n_fit, seq_len, n_feat
+    )
+    n_val = X_val.shape[0]
+    X_val_z = scaler.transform(X_val.reshape(n_val * seq_len, n_feat)).reshape(
+        n_val, seq_len, n_feat
+    )
+    n_test = X_test.shape[0]
+    X_test_z = scaler.transform(X_test.reshape(n_test * seq_len, n_feat)).reshape(
+        n_test, seq_len, n_feat
+    )
+    return (
+        X_fit_z.astype(np.float32),
+        X_val_z.astype(np.float32),
+        X_test_z.astype(np.float32),
+    )
 
 
 def _make_model(tf_module, seq_len: int, n_feat: int):
@@ -236,6 +333,24 @@ def main() -> None:
     )
     parser.add_argument("--csv", type=str, default=DEFAULT_CSV, help="Caminho do CSV.")
     parser.add_argument(
+        "--roi",
+        type=str,
+        default="",
+        help="Lista de ROIs (coluna roi), separadas por vírgula. Ex.: hippocampus,amygdala",
+    )
+    parser.add_argument(
+        "--label",
+        type=str,
+        default="",
+        help="Lista de labels (coluna label), separados por vírgula. Ex.: 17,53",
+    )
+    parser.add_argument(
+        "--roi-label",
+        type=str,
+        default="",
+        help="Lista de pares roi:label. Ex.: hippocampus:17,hippocampus:53",
+    )
+    parser.add_argument(
         "--sequence-source",
         choices=["columns", "pairs"],
         default="pairs",
@@ -258,6 +373,25 @@ def main() -> None:
         help="Ordem dos pares quando --sequence-source pairs. Ex.: 12,13,23",
     )
     parser.add_argument("--n-splits", type=int, default=5, help="Folds do StratifiedGroupKFold.")
+    parser.add_argument(
+        "--inner-fold",
+        type=int,
+        default=5,
+        help=(
+            "Número de folds internos para separar validação dentro do treino (nested). "
+            "Usa o primeiro split como validação (sem vazamento por ID_PT)."
+        ),
+    )
+    parser.add_argument(
+        "--balance",
+        choices=["none", "downsample"],
+        default="none",
+        help=(
+            "Balanceamento aplicado SOMENTE no treino (fit). "
+            "'none' não balanceia; "
+            "'downsample' faz downsampling por paciente (ID_PT) balanceando GROUP+SEX."
+        ),
+    )
     parser.add_argument("--epochs", type=int, default=50, help="Épocas de treino por fold.")
     parser.add_argument("--batch-size", type=int, default=64, help="Batch size.")
     parser.add_argument("--seed", type=int, default=42, help="Seed.")
@@ -285,6 +419,29 @@ def main() -> None:
         "--drop-nan",
         action="store_true",
         help="Remove linhas com NaN/inf nas features temporais.",
+    )
+    parser.add_argument(
+        "--shap",
+        action="store_true",
+        help="Gera análise SHAP (rank de atributos e rank de ROI/label) após o treino.",
+    )
+    parser.add_argument(
+        "--shap-samples",
+        type=int,
+        default=300,
+        help="Quantas amostras (sequências) usar no SHAP (para acelerar).",
+    )
+    parser.add_argument(
+        "--shap-background",
+        type=int,
+        default=200,
+        help="Quantas amostras do treino usar como background no SHAP.",
+    )
+    parser.add_argument(
+        "--shap-outdir",
+        type=str,
+        default=str(Path(__file__).parent / "outputs"),
+        help="Diretório para salvar CSVs de SHAP.",
     )
     args = parser.parse_args()
 
@@ -321,6 +478,13 @@ def main() -> None:
         raise FileNotFoundError(f"CSV não encontrado: {csv_path}")
 
     df = pd.read_csv(csv_path)
+    rois = _parse_csv_list(args.roi)
+    labels = [int(x) for x in _parse_csv_list(args.label)]
+    roi_label = _parse_csv_list(args.roi_label)
+    if rois or labels or roi_label:
+        before = df.shape
+        df = filter_by_roi_label(df, rois=rois, labels=labels, roi_label=roi_label)
+        print(f"[ROI] filtro aplicado: {before} -> {df.shape}")
 
     required = {"ID_PT", "GROUP", "SEX"}
     missing = required - set(df.columns)
@@ -329,8 +493,12 @@ def main() -> None:
 
     if args.sequence_source == "pairs":
         pair_order = [p.strip() for p in args.pair_order.split(",") if p.strip()]
-        group_cols = [c for c in ["ID_PT", "COMBINATION_NUMBER", "TRIPLET_IDX", "roi", "side"] if c in df.columns]
-        X, y_raw, sex_raw, id_pt_raw, feat_cols = _build_pairwise_triplet_tensor(
+        group_cols = [
+            c
+            for c in ["ID_PT", "COMBINATION_NUMBER", "TRIPLET_IDX", "roi", "side", "label"]
+            if c in df.columns
+        ]
+        X, y_raw, sex_raw, id_pt_raw, meta_df, feat_cols = _build_pairwise_triplet_tensor(
             df,
             pair_order=pair_order,
             group_cols=group_cols,
@@ -364,6 +532,11 @@ def main() -> None:
         print(f"X shape: {X.shape}  (seq_len={X.shape[1]}, n_feat={X.shape[2]})")
         print(f"Timesteps: {timesteps}")
         print(f"Features (roots) comuns: {len(roots)}")
+        meta_df = (
+            df[["roi", "label"]].copy()
+            if ("roi" in df.columns and "label" in df.columns)
+            else pd.DataFrame()
+        )
 
     classes = sorted(np.unique(y_raw).tolist())
     if len(classes) != 2:
@@ -381,21 +554,93 @@ def main() -> None:
     for fold_idx, (tr_idx, te_idx) in enumerate(
         splitter.split(X_dummy, strat_col, groups), start=1
     ):
+        print(f"\n=== Fold {fold_idx}/{args.n_splits} ===")
+        # stats por paciente / "imagens" (quando existirem colunas no df original)
+        if args.sequence_source == "pairs":
+            # meta_df tem chaves por amostra (inclui ID_PT). Se tiver colunas ID_IMG_* no CSV, também imprime.
+            def _count_unique_images_from_meta(meta: pd.DataFrame) -> int:
+                img_cols = [c for c in ["ID_IMG_i1", "ID_IMG_i2", "ID_IMG_i3", "ID_IMG_ref"] if c in meta.columns]
+                if not img_cols:
+                    return 0
+                s: set[str] = set()
+                for c in img_cols:
+                    s |= set(meta[c].astype(str).tolist())
+                s.discard("nan"); s.discard("None"); s.discard("")
+                return len(s)
+
+            meta_tr = meta_df.iloc[tr_idx] if not meta_df.empty else pd.DataFrame()
+            meta_te = meta_df.iloc[te_idx] if not meta_df.empty else pd.DataFrame()
+            if not meta_tr.empty:
+                msg = f"[outer_train] samples={len(tr_idx)} ID_PT={meta_tr['ID_PT'].astype(str).nunique()}"
+                nimg = _count_unique_images_from_meta(meta_tr)
+                if nimg:
+                    msg += f" unique_images={nimg}"
+                print(msg)
+            else:
+                print(f"[outer_train] samples={len(tr_idx)}")
+            if not meta_te.empty:
+                msg = f"[outer_test] samples={len(te_idx)} ID_PT={meta_te['ID_PT'].astype(str).nunique()}"
+                nimg = _count_unique_images_from_meta(meta_te)
+                if nimg:
+                    msg += f" unique_images={nimg}"
+                print(msg)
+            else:
+                print(f"[outer_test] samples={len(te_idx)}")
+        else:
+            # modo columns: cada linha é uma amostra
+            df_tr = df.iloc[tr_idx]
+            df_te = df.iloc[te_idx]
+            print(f"[outer_train] rows={len(df_tr)} ID_PT={df_tr['ID_PT'].astype(str).nunique()}")
+            print(f"[outer_test] rows={len(df_te)} ID_PT={df_te['ID_PT'].astype(str).nunique()}")
+
         X_tr, X_te = X[tr_idx], X[te_idx]
         y_tr, y_te = y[tr_idx], y[te_idx]
         sex_tr, sex_te = sex[tr_idx], sex[te_idx]
 
-        # z-score por fold (fit no treino)
-        X_tr, X_te = _zscore_fit_transform_3d(X_tr, X_te)
+        # Split interno (validação) respeitando grupos por paciente
+        inner = StratifiedGroupKFold(
+            n_splits=int(args.inner_fold), shuffle=True, random_state=int(args.seed)
+        )
+        inner_tr, inner_va = next(inner.split(X_dummy[tr_idx], strat_col[tr_idx], groups[tr_idx]))
+        # índices globais de pacientes no fit/val
+        idx_fit = tr_idx[inner_tr]
+        idx_val = tr_idx[inner_va]
 
-        # Class weights simples para desbalanceamento
-        n0 = int((y_tr == 0).sum())
-        n1 = int((y_tr == 1).sum())
-        if n0 == 0 or n1 == 0:
-            raise ValueError(
-                f"Fold {fold_idx}: uma classe sumiu no treino (n0={n0}, n1={n1})."
-            )
-        class_weight = {0: (n0 + n1) / (2 * n0), 1: (n0 + n1) / (2 * n1)}
+        if args.balance == "downsample":
+            # downsample por paciente dentro do fit
+            df_fit = df.iloc[idx_fit].copy()
+            df_fit["strat"] = df_fit["GROUP"].astype(str) + "_" + df_fit["SEX"].astype(str)
+            pt_strat = df_fit.groupby("ID_PT", sort=False)["strat"].first()
+            rng = np.random.RandomState(int(args.seed))
+            pts_by_strat: dict[str, list[str]] = {}
+            for pt, st in pt_strat.items():
+                pts_by_strat.setdefault(str(st), []).append(str(pt))
+            min_n = min(len(v) for v in pts_by_strat.values())
+            selected_pts: set[str] = set()
+            for st, pts in pts_by_strat.items():
+                pts = list(pts)
+                rng.shuffle(pts)
+                selected_pts.update(pts[:min_n])
+            idx_fit = idx_fit[df_fit["ID_PT"].astype(str).isin(selected_pts).to_numpy()]
+
+        fit_mask = np.isin(tr_idx, idx_fit)
+        val_mask = np.isin(tr_idx, idx_val)
+        X_fit, X_val = X_tr[fit_mask], X_tr[val_mask]
+        y_fit, y_val = y_tr[fit_mask], y_tr[val_mask]
+        sex_fit, sex_val = sex_tr[fit_mask], sex_tr[val_mask]
+
+        # z-score SEM vazamento: fit no X_fit e aplica em val/test
+        X_fit, X_val, X_te = _zscore_fit_transform_3d_from_fit(X_fit, X_val, X_te)
+
+        print(
+            f"[fit] samples={len(X_fit)} ID_PT={len(set(groups[idx_fit]))} | "
+            f"[val] samples={len(X_val)} ID_PT={len(set(groups[idx_val]))} | "
+            f"[test] samples={len(X_te)} ID_PT={len(set(groups[te_idx]))}"
+        )
+
+        # Sem balanceamento adicional por default (evita dupla correção).
+        # Se quiser class_weight no futuro, reintroduza como flag separada.
+        class_weight = None
 
         model = _make_model(tf, seq_len=X_tr.shape[1], n_feat=X_tr.shape[2])
         cb = [
@@ -405,9 +650,9 @@ def main() -> None:
         ]
 
         model.fit(
-            {"x": X_tr, "sex": sex_tr},
-            y_tr,
-            validation_split=0.1,
+            {"x": X_fit, "sex": sex_fit},
+            y_fit,
+            validation_data=({"x": X_val, "sex": sex_val}, y_val),
             epochs=args.epochs,
             batch_size=args.batch_size,
             verbose=1,
@@ -439,6 +684,151 @@ def main() -> None:
             f"\nFold {fold_idx}/{args.n_splits} | "
             f"acc={acc:.4f} bacc={bacc:.4f} f1={f1:.4f} auc={auc:.4f}"
         )
+
+        if args.shap and fold_idx == 1:
+            # SHAP apenas no fold 1 (para não ficar caro). Use --n-splits 1 se quiser sempre.
+            try:
+                import shap  # type: ignore
+            except Exception as e:
+                raise SystemExit(
+                    "SHAP não está instalado. Instale com: pip install shap\n"
+                    f"Erro original: {type(e).__name__}: {e}"
+                )
+            try:
+                import matplotlib
+                matplotlib.use("Agg")
+                import matplotlib.pyplot as plt
+            except Exception as e:
+                raise SystemExit(
+                    "matplotlib é necessário para salvar plots do SHAP. Instale com: pip install matplotlib\n"
+                    f"Erro original: {type(e).__name__}: {e}"
+                )
+
+            outdir = Path(args.shap_outdir)
+            outdir.mkdir(parents=True, exist_ok=True)
+
+            n_bg = max(1, min(int(args.shap_background), X_tr.shape[0]))
+            n_samp = max(1, min(int(args.shap_samples), X_te.shape[0]))
+            bg = X_tr[:n_bg]
+            X_eval = X_te[:n_samp]
+            sex_eval = sex_te[:n_samp]
+
+            meta_eval = (
+                meta_df.iloc[te_idx].reset_index(drop=True).iloc[:n_samp]
+                if not meta_df.empty
+                else pd.DataFrame()
+            )
+
+            seq_len = X_eval.shape[1]
+            n_feat = X_eval.shape[2]
+
+            # SHAP chama o modelo com batches de tamanhos variados (masks por linha).
+            # Para evitar mismatch de batch entre x e sex, empacotamos sex como a última "feature"
+            # e separamos dentro do predict.
+            def predict_proba_pos(x_flat_with_sex: np.ndarray) -> np.ndarray:
+                x_flat = x_flat_with_sex[:, :-1]
+                sex_b = x_flat_with_sex[:, -1].astype(np.float32, copy=False).reshape(-1, 1)
+                x_3d = x_flat.reshape((x_flat.shape[0], seq_len, n_feat))
+                return model.predict({"x": x_3d, "sex": sex_b}, verbose=0).reshape(-1)
+
+            bg_flat = bg.reshape((bg.shape[0], seq_len * n_feat))
+            X_flat = X_eval.reshape((X_eval.shape[0], seq_len * n_feat))
+            # anexa sexo como última feature
+            bg_flat = np.concatenate([bg_flat, sex_tr[:n_bg].astype(np.float32)], axis=1)
+            X_flat = np.concatenate([X_flat, sex_eval.astype(np.float32)], axis=1)
+
+            explainer = shap.Explainer(predict_proba_pos, shap.maskers.Independent(bg_flat))
+            shap_values = explainer(X_flat)
+            sv = np.asarray(shap_values.values)
+            abs_sv = np.abs(sv)
+
+            # nomes das features: "<feat>@<step>"
+            if args.sequence_source == "pairs":
+                step_tags = pair_order
+            else:
+                step_tags = list(range(seq_len))
+
+            feat_names: list[str] = []
+            for step_i, tag in enumerate(step_tags):
+                for c in feat_cols:
+                    feat_names.append(f"{c}@{tag}")
+            feat_names.append("sex")
+
+            feat_rank = (
+                pd.DataFrame(
+                    {"feature": feat_names, "mean_abs_shap": abs_sv.mean(axis=0).tolist()}
+                )
+                .sort_values("mean_abs_shap", ascending=False)
+                .reset_index(drop=True)
+            )
+            feat_csv = outdir / "shap_feature_importance_lstm.csv"
+            feat_rank.to_csv(feat_csv, index=False)
+            print(f"[SHAP] feature importance -> {feat_csv}")
+
+            if not meta_eval.empty and ("roi" in meta_eval.columns) and ("label" in meta_eval.columns):
+                roi_meta = meta_eval[["roi", "label"]].copy()
+                roi_meta["sample_mean_abs_shap"] = abs_sv.mean(axis=1)
+                roi_rank = (
+                    roi_meta.groupby(["roi", "label"], dropna=False)["sample_mean_abs_shap"]
+                    .mean()
+                    .reset_index()
+                    .sort_values("sample_mean_abs_shap", ascending=False)
+                    .reset_index(drop=True)
+                )
+                roi_csv = outdir / "shap_roi_importance_lstm.csv"
+                roi_rank.to_csv(roi_csv, index=False)
+                print(f"[SHAP] ROI/label importance -> {roi_csv}")
+
+            # Plots (salva PNGs; útil em ambiente sem display)
+            try:
+                # força nomes reais
+                try:
+                    shap_values.feature_names = feat_names
+                except Exception:
+                    pass
+                shap_values_named = shap.Explanation(
+                    values=np.asarray(shap_values.values),
+                    base_values=shap_values.base_values,
+                    data=X_flat,
+                    feature_names=feat_names,
+                )
+                shap.plots.bar(shap_values_named, max_display=30, show=False)
+                plt.tight_layout()
+                p = outdir / "shap_bar_lstm.png"
+                plt.savefig(p, dpi=200)
+                plt.close()
+                print(f"[SHAP] bar plot -> {p}")
+            except Exception as e:
+                print(f"[SHAP][WARN] falha ao gerar bar plot: {e}")
+
+            try:
+                shap.plots.beeswarm(shap_values_named, max_display=30, show=False)
+                plt.tight_layout()
+                p = outdir / "shap_beeswarm_lstm.png"
+                plt.savefig(p, dpi=200)
+                plt.close()
+                print(f"[SHAP] beeswarm plot -> {p}")
+            except Exception as e:
+                print(f"[SHAP][WARN] falha ao gerar beeswarm plot: {e}")
+
+            # Plot das principais ROIs (rank por roi,label)
+            try:
+                if "roi_rank" in locals():
+                    topn = min(20, len(roi_rank))
+                    if topn > 0:
+                        roi_plot = roi_rank.head(topn).copy()
+                        roi_plot["roi_label"] = roi_plot["roi"].astype(str) + ":" + roi_plot["label"].astype(str)
+                        plt.figure(figsize=(10, 6))
+                        plt.barh(roi_plot["roi_label"][::-1], roi_plot["sample_mean_abs_shap"][::-1])
+                        plt.xlabel("mean(|SHAP|) por amostra (média por roi,label)")
+                        plt.title("Top ROIs por contribuição SHAP (LSTM)")
+                        plt.tight_layout()
+                        p = outdir / "roi_bar_lstm.png"
+                        plt.savefig(p, dpi=200)
+                        plt.close()
+                        print(f"[SHAP] ROI bar plot -> {p}")
+            except Exception as e:
+                print(f"[SHAP][WARN] falha ao gerar ROI bar plot: {e}")
 
     m = pd.DataFrame(fold_metrics)
     print("\n=== Resumo CV ===")

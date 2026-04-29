@@ -97,6 +97,181 @@ Ao concluir este passo, obtém-se, por conjunto de três imagens, mapas que desc
 
 ---
 
+## 4. Modelagem (CNN / LSTM / PyCaret) + SHAP + Anti-vazamento por paciente
+
+Esta secção documenta os scripts em `colab/` usados para classificação (pMCI vs sMCI) a partir do CSV:
+
+- `csvs/abordagem_teste/all_delta_features_neurocombat.csv`
+
+O CSV contém colunas de metadados (ex.: `ID_PT`, `GROUP`, `SEX`, `roi`, `label`, `pair`, ...) e colunas numéricas (features) que entram nos modelos.
+
+### 4.1. Regras importantes (sem vazamento)
+
+- **Separação por paciente**: os scripts consideram `ID_PT` como grupo; um paciente não aparece em treino/validação/teste ao mesmo tempo.
+- **Nested split**:
+  - **split externo**: (folds) para avaliação
+  - **split interno**: validação (early stopping / seleção) dentro do treino externo
+- **Z-score sem vazamento**: o scaler é fitado **somente** no conjunto de treino interno (`fit`) e aplicado em validação e teste com a mesma média/desvio (CNN/LSTM). No PyCaret, o z-score é fitado no treino do fold externo e aplicado no teste externo.
+
+### 4.2. Filtro por ROI/label (todas as abordagens)
+
+Os filtros atuam em **linhas** do CSV (cada linha representa um exemplo associado a uma ROI/label/side/pair):
+
+- `--roi "hippocampus,amygdala"`: filtra pela coluna `roi`
+- `--label "17,53"`: filtra pela coluna `label`
+- `--roi-label "hippocampus:17,hippocampus:53"`: define combinações explícitas `roi:label`
+
+Se você **omitir** `--roi`, `--label` e `--roi-label`, o script usa **todas** as ROIs do CSV.
+
+### 4.3. Balanceamento (2 modos)
+
+Todos os scripts suportam:
+
+- `--balance none`: sem balanceamento (default)
+- `--balance downsample`: **downsampling por paciente (`ID_PT`)** balanceando simultaneamente os estratos `GROUP_SEX` (ex.: `pMCI_F`, `pMCI_M`, `sMCI_F`, `sMCI_M`). Aplica apenas no conjunto `fit` (treino interno) e nunca altera validação/teste.
+
+### 4.4. SHAP (importância de features e de ROIs)
+
+Em `cnn_example.py` e `lstm_example.py`:
+
+- `--shap`: gera
+  - `shap_feature_importance_*.csv` (rank de atributos numéricos)
+  - `shap_roi_importance_*.csv` (rank por `roi,label`)
+  - plots: `shap_bar_*.png`, `shap_beeswarm_*.png`, `roi_bar_*.png`
+- `--shap-outdir`: diretório de saída (default `colab/outputs/`)
+- `--shap-samples` / `--shap-background`: amostragem para acelerar
+
+Os plots mostram **nomes reais** das features.
+
+---
+
+## 5. Scripts em `colab/` e comandos
+
+### 5.1. `colab/cnn_example.py` (CNN 1D tabular)
+
+**O que faz**
+
+- CNN 1D sobre features tabulares
+- Split por paciente (`ID_PT`) sem vazamento
+- Split interno (validação) por paciente
+- Z-score fitado no `fit` e aplicado em `val`/`test`
+- Seleção de atributos: `SelectKBest(f_classif, k=--kbest)` **fitado apenas no treino externo**
+- (Opcional) SHAP + plots
+
+**Comandos**
+
+- Holdout (por paciente) em CPU:
+
+```bash
+python colab/cnn_example.py --device cpu --test-size 0.2
+```
+
+- Holdout + downsample:
+
+```bash
+python colab/cnn_example.py --device cpu --balance downsample --test-size 0.2
+```
+
+- Cross-validation externa (ex.: 5 folds) + validação interna:
+
+```bash
+python colab/cnn_example.py --device cpu --n-splits 5 --inner-fold 5 --kbest 100
+```
+
+- Rodar SHAP (todas as ROIs):
+
+```bash
+python colab/cnn_example.py --device cpu --shap
+```
+
+- Rodar SHAP filtrando ROI/label:
+
+```bash
+python colab/cnn_example.py --device cpu --shap --roi hippocampus --label 17,53
+```
+
+### 5.2. `colab/lstm_example.py` (LSTM com sequência por pares)
+
+**O que faz**
+
+- Monta sequência com 3 passos temporais por amostra (linhas `pair=12,13,23`)
+- Split externo por paciente (`ID_PT`) com `StratifiedGroupKFold`
+- Split interno por paciente para validação (`--inner-fold`)
+- Z-score fitado no `fit` e aplicado em `val`/`test`
+- (Opcional) SHAP + plots (por padrão roda SHAP no fold 1 para reduzir custo)
+
+**Comandos**
+
+- Cross-validation em CPU:
+
+```bash
+python colab/lstm_example.py --device cpu --n-splits 5 --inner-fold 5 --sequence-source pairs --pair-order 12,13,23
+```
+
+- Com downsample:
+
+```bash
+python colab/lstm_example.py --device cpu --n-splits 5 --inner-fold 5 --balance downsample --sequence-source pairs
+```
+
+- SHAP + plots:
+
+```bash
+python colab/lstm_example.py --device cpu --n-splits 5 --inner-fold 5 --shap --sequence-source pairs
+```
+
+### 5.3. `colab/models_teste.py` (PyCaret + nested CV externo)
+
+**O que faz**
+
+- Loop externo: `StratifiedGroupKFold(n_splits=--n-splits)` por paciente (`ID_PT`)
+- Dentro de cada fold externo:
+  - Seleção opcional de features numéricas (kbest/sfs/two_stage) **fitada só no treino**
+  - Z-score manual nas features numéricas selecionadas (fit no treino externo, aplica no teste externo)
+  - CV interno do PyCaret **group-aware** (splits gerados com `StratifiedGroupKFold` no treino externo)
+  - Balanceamento opcional por downsample (por paciente) no treino externo
+- SHAP:
+  - `--shap`: baseline SHAP (LogReg numérico) para ranking rápido
+  - `--shap-pycaret-topk K`: SHAP + plots para os top-K modelos do PyCaret em cada fold (usa features já pré-processadas pelo PyCaret)
+
+**Comandos**
+
+- Rodar PyCaret com 10 folds externos (default):
+
+```bash
+python colab/models_teste.py
+```
+
+- Sem balanceamento (explícito):
+
+```bash
+python colab/models_teste.py --balance none
+```
+
+- Downsample por `GROUP+SEX` (por paciente):
+
+```bash
+python colab/models_teste.py --balance downsample
+```
+
+- Seleção de features em 2 estágios (recomendado quando há muitas features):
+
+```bash
+python colab/models_teste.py --feature-selection two_stage --fs-k-pre 200 --fs-k-final 30
+```
+
+- SHAP baseline (rápido):
+
+```bash
+python colab/models_teste.py --shap
+```
+
+- SHAP dos top-2 modelos PyCaret por fold (gera CSV + plots por fold/modelo):
+
+```bash
+python colab/models_teste.py --shap-pycaret-topk 2 --shap-pycaret-samples 150 --shap-pycaret-background 120
+```
+
 ## TODO
 
 O script `displacement_field.py` produz os atributos escalares de DF (log-Jacobian e magnitude). Existem ainda `csvs/features_volumetric.csv` e `csvs/features_radiomic.csv` por ROI.

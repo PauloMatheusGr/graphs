@@ -12,9 +12,9 @@ import features_displacement as fd
 # Defaults (edite aqui)
 # =========================
 DEFAULT_IMAGES_CSV = fd.DEFAULT_IMAGES_CSV
-DEFAULT_COMBINATIONS_CSV = "cj_data_abordagem_4_teste.txt"
+DEFAULT_COMBINATIONS_CSV = "cj_data_abordagem_teste.txt"
 DEFAULT_BASE_FEATURES_CSV = os.path.join(
-    fd.csvs_root, "abordagem_4_teste", "features_displacement_abordagem_4_teste.csv"
+    fd.csvs_root, "abordagem_teste", "features_displacement_teste.csv"
 )
 
 

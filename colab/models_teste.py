@@ -24,6 +24,286 @@ def _ensure_dir(path: str) -> None:
     os.makedirs(path, exist_ok=True)
 
 
+def _parse_csv_list(s: str | None) -> list[str]:
+    if not s:
+        return []
+    return [x.strip() for x in str(s).split(",") if x.strip()]
+
+
+def filter_by_roi_label(
+    df: pd.DataFrame,
+    *,
+    rois: list[str] | None = None,
+    labels: list[int] | None = None,
+    roi_label: list[str] | None = None,
+) -> pd.DataFrame:
+    """
+    Filtra linhas pelo(s) ROI(s) e/ou label(s) no CSV (colunas 'roi' e 'label').
+    """
+    if ("roi" not in df.columns) or ("label" not in df.columns):
+        raise ValueError("CSV precisa ter colunas 'roi' e 'label' para filtrar ROIs.")
+
+    rois = rois or []
+    labels = labels or []
+    roi_label = roi_label or []
+
+    out = df.copy()
+    out["roi"] = out["roi"].astype(str).str.strip()
+    out["_label_int"] = pd.to_numeric(out["label"], errors="coerce").astype("Int64")
+    out = out[out["_label_int"].notna()].copy()
+    out["_label_int"] = out["_label_int"].astype(int)
+
+    if roi_label:
+        pairs: list[tuple[str, int]] = []
+        for item in roi_label:
+            if ":" not in item:
+                raise ValueError(
+                    f"Use o formato roi:label em --roi-label. Recebi: {item}"
+                )
+            r, lab = item.split(":", 1)
+            pairs.append((r.strip(), int(lab.strip())))
+
+        mask = False
+        for r, lab in pairs:
+            mask = mask | ((out["roi"] == r) & (out["_label_int"] == lab))
+        out = out[mask].copy()
+        return out.drop(columns=["_label_int"])
+
+    mask = True
+    if rois:
+        mask = mask & out["roi"].isin([r.strip() for r in rois])
+    if labels:
+        mask = mask & out["_label_int"].isin([int(x) for x in labels])
+
+    out = out[mask].copy()
+    return out.drop(columns=["_label_int"])
+
+
+def _run_shap_baseline(
+    df: pd.DataFrame,
+    *,
+    out_dir: str,
+    seed: int,
+    samples: int,
+    background: int,
+) -> None:
+    """
+    SHAP simples (baseline) para tabular: LogisticRegression em features numéricas.
+    Gera:
+      - shap_feature_importance_models_teste.csv
+      - shap_roi_importance_models_teste.csv (se houver roi/label)
+
+    Útil quando o pipeline do PyCaret dificulta SHAP direto no modelo final.
+    """
+    try:
+        import shap  # type: ignore
+    except Exception as e:
+        raise SystemExit(
+            "SHAP não está instalado. Instale com: pip install shap\n"
+            f"Erro original: {type(e).__name__}: {e}"
+        )
+
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.model_selection import train_test_split
+    from sklearn.pipeline import make_pipeline
+    from sklearn.preprocessing import StandardScaler
+
+    if "GROUP" not in df.columns:
+        raise SystemExit("CSV sem coluna GROUP (target).")
+
+    out_path = out_dir
+    _ensure_dir(out_path)
+
+    base_ignore = {"GROUP", "ID_PT", "strat_col"}
+    # Mantém somente numéricas (não inclui roi/label/side/pair etc)
+    numeric_cols = _get_numeric_feature_cols(df, ignore=base_ignore)
+    if not numeric_cols:
+        raise SystemExit("Nenhuma coluna numérica encontrada para SHAP baseline.")
+
+    X = df[numeric_cols].to_numpy(dtype=float)
+    y = df["GROUP"].astype(str).to_numpy()
+    # Binário: pMCI como positivo se existir
+    classes = sorted(np.unique(y).tolist())
+    pos = _pick_positive_class(classes)
+    y_bin = (y == pos).astype(int)
+
+    X_tr, X_te, y_tr, y_te, idx_tr, idx_te = train_test_split(
+        X,
+        y_bin,
+        np.arange(len(df), dtype=np.int64),
+        test_size=0.2,
+        random_state=seed,
+        stratify=y_bin if len(np.unique(y_bin)) == 2 else None,
+    )
+
+    clf = make_pipeline(
+        StandardScaler(),
+        LogisticRegression(max_iter=2000, solver="liblinear", class_weight="balanced", random_state=seed),
+    )
+    clf.fit(X_tr, y_tr)
+
+    n_bg = max(1, min(int(background), X_tr.shape[0]))
+    n_samp = max(1, min(int(samples), X_te.shape[0]))
+    bg = X_tr[:n_bg]
+    X_eval = X_te[:n_samp]
+    idx_eval = idx_te[:n_samp]
+
+    def predict_proba_pos(x_2d: np.ndarray) -> np.ndarray:
+        return clf.predict_proba(x_2d)[:, 1]
+
+    explainer = shap.Explainer(predict_proba_pos, shap.maskers.Independent(bg))
+    shap_values = explainer(X_eval)
+    sv = np.asarray(shap_values.values)
+    abs_sv = np.abs(sv)
+
+    feat_rank = (
+        pd.DataFrame({"feature": numeric_cols, "mean_abs_shap": abs_sv.mean(axis=0).tolist()})
+        .sort_values("mean_abs_shap", ascending=False)
+        .reset_index(drop=True)
+    )
+    feat_csv = os.path.join(out_path, "shap_feature_importance_models_teste.csv")
+    feat_rank.to_csv(feat_csv, index=False)
+    print(f"[SHAP] feature importance -> {feat_csv}")
+
+    if ("roi" in df.columns) and ("label" in df.columns):
+        meta = df.iloc[idx_eval][["roi", "label"]].copy()
+        meta["sample_mean_abs_shap"] = abs_sv.mean(axis=1)
+        roi_rank = (
+            meta.groupby(["roi", "label"], dropna=False)["sample_mean_abs_shap"]
+            .mean()
+            .reset_index()
+            .sort_values("sample_mean_abs_shap", ascending=False)
+            .reset_index(drop=True)
+        )
+        roi_csv = os.path.join(out_path, "shap_roi_importance_models_teste.csv")
+        roi_rank.to_csv(roi_csv, index=False)
+        print(f"[SHAP] ROI/label importance -> {roi_csv}")
+
+
+def _run_shap_pycaret_models(
+    exp,
+    models: list,
+    *,
+    out_dir: str,
+    fold_idx: int,
+    seed: int,
+    samples: int,
+    background: int,
+) -> None:
+    """
+    Calcula SHAP para modelos retornados pelo PyCaret (após setup/compare_models),
+    usando as matrizes pré-processadas (X_train / X_test) do experimento.
+
+    Saída por modelo:
+      - shap_feature_importance_pycaret_foldXX_<model>.csv
+      - shap_bar_pycaret_foldXX_<model>.png
+      - shap_beeswarm_pycaret_foldXX_<model>.png
+    """
+    try:
+        import shap  # type: ignore
+    except Exception as e:
+        raise SystemExit(
+            "SHAP não está instalado. Instale com: pip install shap\n"
+            f"Erro original: {type(e).__name__}: {e}"
+        )
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception as e:
+        raise SystemExit(
+            "matplotlib é necessário para salvar plots do SHAP. Instale com: pip install matplotlib\n"
+            f"Erro original: {type(e).__name__}: {e}"
+        )
+
+    _ensure_dir(out_dir)
+
+    # Features já pré-processadas pelo PyCaret (após encoding/imputação/normalize)
+    X_train = exp.get_config("X_train")
+    X_test = exp.get_config("X_test")
+
+    # Pode ser numpy ou DataFrame, mas geralmente é DataFrame
+    if hasattr(X_train, "to_numpy"):
+        feat_names = list(X_train.columns)
+        X_tr = X_train.to_numpy()
+        X_te = X_test.to_numpy()
+    else:
+        X_tr = np.asarray(X_train)
+        X_te = np.asarray(X_test)
+        feat_names = [f"f{i}" for i in range(X_tr.shape[1])]
+
+    n_bg = max(1, min(int(background), X_tr.shape[0]))
+    n_samp = max(1, min(int(samples), X_te.shape[0]))
+    bg = X_tr[:n_bg]
+    X_eval = X_te[:n_samp]
+
+    for m in models:
+        # Nome estável para arquivo
+        try:
+            mname = type(m).__name__
+        except Exception:
+            mname = "model"
+        safe = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in mname)
+
+        # Wrapper: algumas classes não têm predict_proba.
+        def predict_proba_pos(x_2d: np.ndarray) -> np.ndarray:
+            if hasattr(m, "predict_proba"):
+                proba = m.predict_proba(x_2d)
+                # binário -> coluna 1
+                if isinstance(proba, np.ndarray) and proba.ndim == 2 and proba.shape[1] >= 2:
+                    return proba[:, 1]
+                return np.asarray(proba).reshape(-1)
+            # fallback: decision_function ou predict
+            if hasattr(m, "decision_function"):
+                scores = m.decision_function(x_2d)
+                scores = np.asarray(scores).reshape(-1)
+                # converte score em pseudo-probabilidade (sigmoid)
+                return 1.0 / (1.0 + np.exp(-scores))
+            return np.asarray(m.predict(x_2d)).reshape(-1)
+
+        explainer = shap.Explainer(predict_proba_pos, shap.maskers.Independent(bg))
+        shap_values = explainer(X_eval)
+
+        sv = np.asarray(shap_values.values)
+        abs_sv = np.abs(sv)
+        feat_rank = (
+            pd.DataFrame(
+                {"feature": feat_names, "mean_abs_shap": abs_sv.mean(axis=0).tolist()}
+            )
+            .sort_values("mean_abs_shap", ascending=False)
+            .reset_index(drop=True)
+        )
+
+        csv_path = os.path.join(
+            out_dir, f"shap_feature_importance_pycaret_fold{fold_idx:02d}_{safe}.csv"
+        )
+        feat_rank.to_csv(csv_path, index=False)
+        print(f"[SHAP][PyCaret] feature importance -> {csv_path}")
+
+        # plots
+        try:
+            shap.plots.bar(shap_values, max_display=30, show=False)
+            plt.tight_layout()
+            p = os.path.join(out_dir, f"shap_bar_pycaret_fold{fold_idx:02d}_{safe}.png")
+            plt.savefig(p, dpi=200)
+            plt.close()
+            print(f"[SHAP][PyCaret] bar plot -> {p}")
+        except Exception as e:
+            print(f"[SHAP][PyCaret][WARN] falha bar plot ({safe}): {e}")
+
+        try:
+            shap.plots.beeswarm(shap_values, max_display=30, show=False)
+            plt.tight_layout()
+            p = os.path.join(
+                out_dir, f"shap_beeswarm_pycaret_fold{fold_idx:02d}_{safe}.png"
+            )
+            plt.savefig(p, dpi=200)
+            plt.close()
+            print(f"[SHAP][PyCaret] beeswarm plot -> {p}")
+        except Exception as e:
+            print(f"[SHAP][PyCaret][WARN] falha beeswarm ({safe}): {e}")
+
+
 def _pick_positive_class(classes: list[str]) -> str:
     # Prefer the domain convention if present; otherwise fall back to the 2nd
     # class in sorted order (works for binary classification).
@@ -167,8 +447,74 @@ def main() -> int:
     )
     parser.add_argument(
         "--csv",
-        default="/mnt/study-data/pgirardi/graphs/csvs/abordagem_4_teste/features_all_abordagem_4_teste.csv",
+        default="/mnt/study-data/pgirardi/graphs/csvs/abordagem_teste/all_delta_features_neurocombat.csv",
         help="Caminho para o CSV de features.",
+    )
+    parser.add_argument(
+        "--roi",
+        type=str,
+        default="",
+        help="Lista de ROIs (coluna roi), separadas por vírgula. Ex.: hippocampus,amygdala",
+    )
+    parser.add_argument(
+        "--label",
+        type=str,
+        default="",
+        help="Lista de labels (coluna label), separados por vírgula. Ex.: 17,53",
+    )
+    parser.add_argument(
+        "--roi-label",
+        type=str,
+        default="",
+        help="Lista de pares roi:label. Ex.: hippocampus:17,hippocampus:53",
+    )
+    parser.add_argument(
+        "--balance",
+        choices=["none", "downsample"],
+        default="none",
+        help=(
+            "Balanceamento aplicado SOMENTE no treino do fold externo. "
+            "'none' não balanceia; "
+            "'downsample' faz downsampling por paciente (ID_PT) balanceando GROUP+SEX."
+        ),
+    )
+    parser.add_argument(
+        "--shap",
+        action="store_true",
+        help="Gera SHAP baseline (LogReg em features numéricas) e salva ranking de atributos/ROIs.",
+    )
+    parser.add_argument(
+        "--shap-samples",
+        type=int,
+        default=400,
+        help="Quantas amostras usar na explicação SHAP (baseline).",
+    )
+    parser.add_argument(
+        "--shap-background",
+        type=int,
+        default=250,
+        help="Quantas amostras usar como background no SHAP (baseline).",
+    )
+    parser.add_argument(
+        "--shap-pycaret-topk",
+        type=int,
+        default=0,
+        help=(
+            "Calcula SHAP também para os top-K modelos retornados pelo PyCaret em cada fold externo. "
+            "0 desliga. Ex.: 2 para explicar os 2 melhores modelos por fold."
+        ),
+    )
+    parser.add_argument(
+        "--shap-pycaret-samples",
+        type=int,
+        default=300,
+        help="Quantas amostras do teste (por fold) usar no SHAP dos modelos PyCaret.",
+    )
+    parser.add_argument(
+        "--shap-pycaret-background",
+        type=int,
+        default=200,
+        help="Quantas amostras do treino (por fold) usar como background no SHAP dos modelos PyCaret.",
     )
     parser.add_argument(
         "--n-splits",
@@ -251,6 +597,24 @@ def main() -> int:
         )
 
     df = pd.read_csv(args.csv)
+    rois = _parse_csv_list(args.roi)
+    labels = [int(x) for x in _parse_csv_list(args.label)]
+    roi_label = _parse_csv_list(args.roi_label)
+    if rois or labels or roi_label:
+        before = df.shape
+        df = filter_by_roi_label(df, rois=rois, labels=labels, roi_label=roi_label)
+        print(f"[ROI] filtro aplicado: {before} -> {df.shape}")
+
+    if args.shap:
+        run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        shap_dir = os.path.join(os.path.dirname(__file__), "outputs", f"shap_models_teste_{run_id}")
+        _run_shap_baseline(
+            df,
+            out_dir=shap_dir,
+            seed=int(args.seed),
+            samples=int(args.shap_samples),
+            background=int(args.shap_background),
+        )
 
     required = {"ID_PT", "GROUP", "SEX"}
     missing = required - set(df.columns)
@@ -349,6 +713,41 @@ def main() -> int:
         train_df = train_df[keep_cols].copy()
         test_df = test_df[keep_cols].copy()
 
+        # z-score SEM vazamento: fit no treino do fold externo e aplica no teste externo
+        if selected_numeric_cols:
+            scaler = StandardScaler()
+            scaler.fit(train_df[selected_numeric_cols].to_numpy())
+            train_df.loc[:, selected_numeric_cols] = scaler.transform(
+                train_df[selected_numeric_cols].to_numpy()
+            )
+            test_df.loc[:, selected_numeric_cols] = scaler.transform(
+                test_df[selected_numeric_cols].to_numpy()
+            )
+
+        # Balanceamento por downsample (somente treino) respeitando paciente (ID_PT)
+        if args.balance == "downsample":
+            td = train_df.copy()
+            td["strat__"] = td["GROUP"].astype(str) + "_" + td["SEX"].astype(str)
+            pt_strat = td.groupby("ID_PT", sort=False)["strat__"].first()
+            rng = np.random.RandomState(int(args.seed) + int(fold_idx))
+            pts_by_strat: dict[str, list[str]] = {}
+            for pt, st in pt_strat.items():
+                pts_by_strat.setdefault(str(st), []).append(str(pt))
+            min_n = min(len(v) for v in pts_by_strat.values())
+            selected_pts: set[str] = set()
+            for st, pts in pts_by_strat.items():
+                pts = list(pts)
+                rng.shuffle(pts)
+                selected_pts.update(pts[:min_n])
+            train_df = train_df[train_df["ID_PT"].astype(str).isin(selected_pts)].copy()
+            print(
+                f"[BALANCE] downsample fold={fold_idx}: "
+                f"train rows -> {len(train_df)} | "
+                f"ID_PT -> {train_df['ID_PT'].astype(str).nunique()} | "
+                f"strata -> {train_df['GROUP'].astype(str).value_counts().to_dict()} / "
+                f"{train_df['SEX'].astype(str).value_counts().to_dict()}"
+            )
+
         selected_rows.append(
             {
                 "fold": fold_idx,
@@ -368,6 +767,15 @@ def main() -> int:
             }
         )
 
+        # CV interno (PyCaret) também deve respeitar grupos por paciente (ID_PT)
+        inner_splitter = StratifiedGroupKFold(
+            n_splits=int(args.inner_fold), shuffle=True, random_state=int(args.seed)
+        )
+        X_dummy_tr = np.zeros((len(train_df), 1), dtype=np.int8)
+        y_strat_tr = train_df["strat_col"].astype(str).to_numpy()
+        groups_tr = train_df["ID_PT"].astype(str).to_numpy()
+        inner_splits_idx = list(inner_splitter.split(X_dummy_tr, y_strat_tr, groups_tr))
+
         exp = ClassificationExperiment()
         exp.setup(
             data=train_df,
@@ -377,10 +785,9 @@ def main() -> int:
             ignore_features=["strat_col", "ID_PT"],
             categorical_features=cat_feats,
             session_id=args.seed,
-            normalize=True,
-            normalize_method="zscore",
-            fix_imbalance=True,
-            fold=args.inner_fold,
+            normalize=False,
+            fix_imbalance=False,
+            fold=inner_splits_idx,
             verbose=False,
         )
 
@@ -399,6 +806,19 @@ def main() -> int:
 
         if not isinstance(best_models, list):
             best_models = [best_models]
+
+        if int(args.shap_pycaret_topk) > 0:
+            k = max(1, min(int(args.shap_pycaret_topk), len(best_models)))
+            shap_dir = os.path.join(out_dir, "shap_pycaret")
+            _run_shap_pycaret_models(
+                exp,
+                best_models[:k],
+                out_dir=shap_dir,
+                fold_idx=int(fold_idx),
+                seed=int(args.seed),
+                samples=int(args.shap_pycaret_samples),
+                background=int(args.shap_pycaret_background),
+            )
 
         # Avalia e salva resultados para cada modelo selecionado (top-k).
         proba_col = f"prediction_score_{positive_class}"
