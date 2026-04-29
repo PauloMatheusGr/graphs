@@ -1,0 +1,6 @@
+__pycache__/
+colab/outputs/
+csvs/
+graphs/
+images/
+zold/
