@@ -22,6 +22,7 @@ import json
 import os
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Callable
 
 import numpy as np
@@ -295,9 +296,10 @@ def _run_shap_for_model(
     *,
     out_dir: str,
     model_name: str,
+    fold: int,
     samples: int,
     background: int,
-) -> None:
+) -> tuple[pd.DataFrame, np.ndarray]:
     try:
         import shap  # type: ignore
     except Exception as e:
@@ -340,6 +342,7 @@ def _run_shap_for_model(
 
     sv = np.asarray(shap_values.values)
     abs_sv = np.abs(sv)
+    sample_mean_abs = abs_sv.mean(axis=1)
     feat_rank = (
         pd.DataFrame(
             {"feature": feature_names, "mean_abs_shap": abs_sv.mean(axis=0).tolist()}
@@ -349,13 +352,13 @@ def _run_shap_for_model(
     )
 
     safe = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in model_name)
-    csv_path = os.path.join(out_dir, f"shap_feature_importance_{safe}.csv")
+    csv_path = os.path.join(out_dir, f"shap_feature_importance_{safe}_fold_{int(fold):02d}.csv")
     feat_rank.to_csv(csv_path, index=False)
 
     try:
         shap.plots.bar(shap_values, max_display=30, show=False)
         plt.tight_layout()
-        p = os.path.join(out_dir, f"shap_bar_{safe}.png")
+        p = os.path.join(out_dir, f"shap_bar_{safe}_fold_{int(fold):02d}.png")
         plt.savefig(p, dpi=200)
         plt.close()
     except Exception:
@@ -364,11 +367,13 @@ def _run_shap_for_model(
     try:
         shap.plots.beeswarm(shap_values, max_display=30, show=False)
         plt.tight_layout()
-        p = os.path.join(out_dir, f"shap_beeswarm_{safe}.png")
+        p = os.path.join(out_dir, f"shap_beeswarm_{safe}_fold_{int(fold):02d}.png")
         plt.savefig(p, dpi=200)
         plt.close()
     except Exception:
         pass
+
+    return feat_rank, sample_mean_abs
 
 
 def _to_dense(a: Any) -> np.ndarray:
@@ -515,7 +520,13 @@ def main() -> int:
     parser.add_argument(
         "--shap",
         action="store_true",
-        help="Calcula SHAP para os modelos selecionados (apenas no fold 1, por padrão).",
+        help="Calcula SHAP para os modelos selecionados (em todos os folds) e agrega (média/DP).",
+    )
+    parser.add_argument(
+        "--shap-folds",
+        type=str,
+        default="all",
+        help="Quais folds calcular SHAP: 'all' (default) ou lista tipo '1,3,5'.",
     )
     parser.add_argument("--shap-samples", type=int, default=200, help="Amostras no SHAP.")
     parser.add_argument("--shap-background", type=int, default=150, help="Background no SHAP.")
@@ -579,6 +590,15 @@ def main() -> int:
 
     fold_rows: list[dict[str, Any]] = []
     inner_leaderboards: list[pd.DataFrame] = []
+    shap_feat_rows: list[dict[str, Any]] = []
+    shap_roi_rows: list[dict[str, Any]] = []
+
+    shap_folds: set[int] = set()
+    if str(args.shap_folds).strip().lower() == "all":
+        shap_folds = set(range(1, int(args.n_splits) + 1))
+    else:
+        for x in _parse_csv_list(str(args.shap_folds)):
+            shap_folds.add(int(x))
 
     for fold_idx, (tr_idx, te_idx) in enumerate(outer.split(X_dummy, y_strat, groups), start=1):
         print(f"\n=== Fold {fold_idx}/{int(args.n_splits)} ===")
@@ -763,18 +783,73 @@ def main() -> int:
                 f"bacc={row['BalancedAccuracy']:.4f} f1={row['F1_pos']:.4f} auc={row['AUC_pos']:.4f}"
             )
 
-            if args.shap and fold_idx == 1:
+            if args.shap and (fold_idx in shap_folds):
                 shap_dir = os.path.join(out_dir, "shap")
-                _run_shap_for_model(
+                feat_rank, sample_mean_abs = _run_shap_for_model(
                     fitted_model=model,
                     X_train=X_train_all[:, selected_idx],
                     X_test=X_test_all[:, selected_idx],
                     feature_names=selected_feat_names,
                     out_dir=shap_dir,
                     model_name=sp.name,
+                    fold=int(fold_idx),
                     samples=int(args.shap_samples),
                     background=int(args.shap_background),
                 )
+
+                # Persist per-fold per-model feature rank
+                for _, r in feat_rank.iterrows():
+                    shap_feat_rows.append(
+                        {
+                            "fold": int(fold_idx),
+                            "Model": sp.name,
+                            "feature": str(r["feature"]),
+                            "mean_abs_shap": float(r["mean_abs_shap"]),
+                        }
+                    )
+
+                # ROI/label rank via per-sample mean(|SHAP|)
+                if ("roi" in test_df.columns) and ("label" in test_df.columns):
+                    safe = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in sp.name)
+                    n_samp = max(1, min(int(args.shap_samples), X_test_all.shape[0]))
+                    meta_eval = test_df[["roi", "label"]].reset_index(drop=True).iloc[:n_samp].copy()
+                    meta_eval["sample_mean_abs_shap"] = sample_mean_abs[:n_samp]
+                    roi_rank = (
+                        meta_eval.groupby(["roi", "label"], dropna=False)["sample_mean_abs_shap"]
+                        .mean()
+                        .reset_index()
+                        .sort_values("sample_mean_abs_shap", ascending=False)
+                        .reset_index(drop=True)
+                    )
+                    try:
+                        import matplotlib
+                        matplotlib.use("Agg")
+                        import matplotlib.pyplot as plt
+
+                        topn = min(20, len(roi_rank))
+                        if topn > 0:
+                            roi_plot = roi_rank.head(topn).copy()
+                            roi_plot["roi_label"] = roi_plot["roi"].astype(str) + ":" + roi_plot["label"].astype(str)
+                            plt.figure(figsize=(10, 6))
+                            plt.barh(roi_plot["roi_label"][::-1], roi_plot["sample_mean_abs_shap"][::-1])
+                            plt.xlabel("mean(|SHAP|) por amostra (média por roi,label)")
+                            plt.title(f"Top ROIs por contribuição SHAP ({sp.name})")
+                            plt.tight_layout()
+                            p = os.path.join(shap_dir, f"roi_bar_{safe}_fold_{int(fold_idx):02d}.png")
+                            plt.savefig(p, dpi=200)
+                            plt.close()
+                    except Exception:
+                        pass
+                    for _, rr in roi_rank.iterrows():
+                        shap_roi_rows.append(
+                            {
+                                "fold": int(fold_idx),
+                                "Model": sp.name,
+                                "roi": rr["roi"],
+                                "label": rr["label"],
+                                "mean_sample_abs_shap": float(rr["sample_mean_abs_shap"]),
+                            }
+                        )
 
     results = pd.DataFrame(fold_rows)
     results.to_csv(os.path.join(out_dir, "results_by_fold_model.csv"), index=False)
@@ -794,6 +869,47 @@ def main() -> int:
         pd.concat(inner_leaderboards, ignore_index=True).to_csv(
             os.path.join(out_dir, "leaderboard_inner_all_folds.csv"), index=False
         )
+
+    # Aggregate SHAP across folds (mean/std + frequency)
+    if args.shap and shap_feat_rows:
+        shap_dir = Path(out_dir) / "shap"
+        shap_dir.mkdir(parents=True, exist_ok=True)
+
+        sf = pd.DataFrame(shap_feat_rows)
+        sf.to_csv(shap_dir / "shap_feature_importance_all_folds_long.csv", index=False)
+        sf_agg = (
+            sf.groupby(["Model", "feature"])["mean_abs_shap"]
+            .agg(["mean", "std", "count"])
+            .reset_index()
+            .rename(
+                columns={"mean": "mean_abs_shap_mean", "std": "mean_abs_shap_std", "count": "n_folds_present"}
+            )
+            .sort_values(["Model", "mean_abs_shap_mean"], ascending=[True, False])
+            .reset_index(drop=True)
+        )
+        sf_agg.to_csv(shap_dir / "shap_feature_importance_agg_by_model.csv", index=False)
+
+    if args.shap and shap_roi_rows:
+        shap_dir = Path(out_dir) / "shap"
+        shap_dir.mkdir(parents=True, exist_ok=True)
+
+        sr = pd.DataFrame(shap_roi_rows)
+        sr.to_csv(shap_dir / "shap_roi_importance_all_folds_long.csv", index=False)
+        sr_agg = (
+            sr.groupby(["Model", "roi", "label"])["mean_sample_abs_shap"]
+            .agg(["mean", "std", "count"])
+            .reset_index()
+            .rename(
+                columns={
+                    "mean": "mean_sample_abs_shap_mean",
+                    "std": "mean_sample_abs_shap_std",
+                    "count": "n_folds_present",
+                }
+            )
+            .sort_values(["Model", "mean_sample_abs_shap_mean"], ascending=[True, False])
+            .reset_index(drop=True)
+        )
+        sr_agg.to_csv(shap_dir / "shap_roi_importance_agg_by_model.csv", index=False)
 
     print(f"\n[DONE] outputs -> {out_dir}")
     return 0

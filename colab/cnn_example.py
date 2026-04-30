@@ -187,7 +187,13 @@ def main() -> None:
     parser.add_argument(
         "--shap",
         action="store_true",
-        help="Gera análise SHAP (rank de atributos e rank de ROI/label) após o treino.",
+        help="Gera SHAP por fold e agrega (média/DP) para atributos e ROI/label.",
+    )
+    parser.add_argument(
+        "--shap-folds",
+        type=str,
+        default="all",
+        help="Quais folds calcular SHAP: 'all' (default) ou lista tipo '1,3,5'.",
     )
     parser.add_argument(
         "--shap-samples",
@@ -369,7 +375,19 @@ def main() -> None:
         return idx[mask]
 
     fold_metrics: list[dict[str, float]] = []
-    shap_context = None  # (model, selected_features, X_test_2d, idx_test)
+    shap_feat_rows: list[dict[str, object]] = []
+    shap_roi_rows: list[dict[str, object]] = []
+
+    shap_folds: set[int] = set()
+    if str(args.shap_folds).strip().lower() == "all":
+        shap_folds = set(range(1, int(args.n_splits) + 1)) if int(args.n_splits) > 1 else {1}
+    else:
+        for x in _parse_csv_list(str(args.shap_folds)):
+            shap_folds.add(int(x))
+
+    run_dir = Path(args.shap_outdir) / f"cnn_shap_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}"
+    if args.shap:
+        run_dir.mkdir(parents=True, exist_ok=True)
 
     if int(args.n_splits) and int(args.n_splits) > 1:
         # Loop externo (CV)
@@ -460,8 +478,112 @@ def main() -> None:
                 f"\nFold {fold_idx}/{int(args.n_splits)} | acc={acc:.4f} prec={prec:.4f} rec={rec:.4f} f1={f1:.4f}"
             )
 
-            if args.shap and fold_idx == 1:
-                shap_context = (model, list(selected_features), X_te2d, te_idx)
+            if args.shap and (int(fold_idx) in shap_folds):
+                try:
+                    import shap  # type: ignore
+                except Exception as e:
+                    raise SystemExit(
+                        "SHAP não está instalado. Instale com: pip install shap\n"
+                        f"Erro original: {type(e).__name__}: {e}"
+                    )
+                try:
+                    import matplotlib
+                    matplotlib.use("Agg")
+                    import matplotlib.pyplot as plt
+                except Exception as e:
+                    raise SystemExit(
+                        "matplotlib é necessário para salvar plots do SHAP. Instale com: pip install matplotlib\n"
+                        f"Erro original: {type(e).__name__}: {e}"
+                    )
+
+                feat_names = list(selected_features)
+
+                n_samp = max(1, min(int(args.shap_samples), X_te2d.shape[0]))
+                X_eval = X_te2d[:n_samp]
+                idx_eval = te_idx[:n_samp]
+                n_bg = max(1, min(int(args.shap_background), X_eval.shape[0]))
+                bg = X_eval[:n_bg]
+
+                def predict_proba_pos(x_2d: np.ndarray) -> np.ndarray:
+                    x_3d = x_2d.reshape((x_2d.shape[0], x_2d.shape[1], 1))
+                    return model.predict(x_3d, verbose=0).reshape(-1)
+
+                explainer = shap.Explainer(predict_proba_pos, shap.maskers.Independent(bg))
+                shap_values = explainer(X_eval)
+                try:
+                    shap_values.feature_names = feat_names
+                except Exception:
+                    pass
+                shap_values = shap.Explanation(
+                    values=np.asarray(shap_values.values),
+                    base_values=shap_values.base_values,
+                    data=X_eval,
+                    feature_names=feat_names,
+                )
+
+                sv = np.asarray(shap_values.values)
+                abs_sv = np.abs(sv)
+                sample_mean_abs = abs_sv.mean(axis=1)
+
+                feat_rank = (
+                    pd.DataFrame(
+                        {"feature": feat_names, "mean_abs_shap": abs_sv.mean(axis=0).tolist()}
+                    )
+                    .sort_values("mean_abs_shap", ascending=False)
+                    .reset_index(drop=True)
+                )
+                feat_csv = run_dir / f"shap_feature_importance_cnn_fold_{fold_idx:02d}.csv"
+                feat_rank.to_csv(feat_csv, index=False)
+                print(f"[SHAP] feature importance -> {feat_csv}")
+                for _, r in feat_rank.iterrows():
+                    shap_feat_rows.append(
+                        {
+                            "fold": int(fold_idx),
+                            "feature": str(r["feature"]),
+                            "mean_abs_shap": float(r["mean_abs_shap"]),
+                        }
+                    )
+
+                if ("roi" in pd_feat.columns) and ("label" in pd_feat.columns):
+                    meta = pd_feat.iloc[idx_eval][["roi", "label"]].copy()
+                    meta["sample_mean_abs_shap"] = sample_mean_abs[: len(meta)]
+                    roi_rank = (
+                        meta.groupby(["roi", "label"], dropna=False)["sample_mean_abs_shap"]
+                        .mean()
+                        .reset_index()
+                        .sort_values("sample_mean_abs_shap", ascending=False)
+                        .reset_index(drop=True)
+                    )
+                    roi_csv = run_dir / f"shap_roi_importance_cnn_fold_{fold_idx:02d}.csv"
+                    roi_rank.to_csv(roi_csv, index=False)
+                    print(f"[SHAP] ROI/label importance -> {roi_csv}")
+                    for _, rr in roi_rank.iterrows():
+                        shap_roi_rows.append(
+                            {
+                                "fold": int(fold_idx),
+                                "roi": rr["roi"],
+                                "label": rr["label"],
+                                "mean_sample_abs_shap": float(rr["sample_mean_abs_shap"]),
+                            }
+                        )
+
+                try:
+                    shap.plots.bar(shap_values, max_display=30, show=False)
+                    plt.tight_layout()
+                    p = run_dir / f"shap_bar_cnn_fold_{fold_idx:02d}.png"
+                    plt.savefig(p, dpi=200)
+                    plt.close()
+                except Exception:
+                    pass
+
+                try:
+                    shap.plots.beeswarm(shap_values, max_display=30, show=False)
+                    plt.tight_layout()
+                    p = run_dir / f"shap_beeswarm_cnn_fold_{fold_idx:02d}.png"
+                    plt.savefig(p, dpi=200)
+                    plt.close()
+                except Exception:
+                    pass
 
         m = pd.DataFrame(fold_metrics)
         print("\n=== Resumo CV (média ± std) ===")
@@ -558,131 +680,118 @@ def main() -> None:
         print(f"R2-Score: {r2:.4f}")
 
         if args.shap:
-            shap_context = (
-                model,
-                list(selected_features),
-                X_te2d,
-                te_idx,
-            )
+            # Holdout = fold 1
+            fold_idx = 1
+            if int(fold_idx) in shap_folds:
+                try:
+                    import shap  # type: ignore
+                except Exception as e:
+                    raise SystemExit(
+                        "SHAP não está instalado. Instale com: pip install shap\n"
+                        f"Erro original: {type(e).__name__}: {e}"
+                    )
 
-    if args.shap and shap_context is not None:
-        model, selected_features, X_test_2d, idx_test = shap_context
-        try:
-            import shap  # type: ignore
-        except Exception as e:
-            raise SystemExit(
-                "SHAP não está instalado. Instale com: pip install shap\n"
-                f"Erro original: {type(e).__name__}: {e}"
-            )
-        try:
-            import matplotlib
-            matplotlib.use("Agg")
-            import matplotlib.pyplot as plt
-        except Exception as e:
-            raise SystemExit(
-                "matplotlib é necessário para salvar plots do SHAP. Instale com: pip install matplotlib\n"
-                f"Erro original: {type(e).__name__}: {e}"
-            )
+                feat_names = list(selected_features)
+                n_samp = max(1, min(int(args.shap_samples), X_te2d.shape[0]))
+                X_eval = X_te2d[:n_samp]
+                idx_eval = te_idx[:n_samp]
+                n_bg = max(1, min(int(args.shap_background), X_eval.shape[0]))
+                bg = X_eval[:n_bg]
 
-        outdir = Path(args.shap_outdir)
-        outdir.mkdir(parents=True, exist_ok=True)
+                def predict_proba_pos(x_2d: np.ndarray) -> np.ndarray:
+                    x_3d = x_2d.reshape((x_2d.shape[0], x_2d.shape[1], 1))
+                    return model.predict(x_3d, verbose=0).reshape(-1)
 
-        feat_names = list(selected_features)
+                explainer = shap.Explainer(predict_proba_pos, shap.maskers.Independent(bg))
+                shap_values = explainer(X_eval)
+                shap_values = shap.Explanation(
+                    values=np.asarray(shap_values.values),
+                    base_values=shap_values.base_values,
+                    data=X_eval,
+                    feature_names=feat_names,
+                )
 
-        # Background: usa as primeiras N amostras do próprio conjunto de treino do fold 1 quando em CV.
-        # Para simplificar, usa amostras do teste como "eval" e um background pequeno do eval.
-        n_samp = max(1, min(int(args.shap_samples), X_test_2d.shape[0]))
-        X_eval = X_test_2d[:n_samp]
-        idx_eval = idx_test[:n_samp]
-        n_bg = max(1, min(int(args.shap_background), X_eval.shape[0]))
-        bg = X_eval[:n_bg]
+                sv = np.asarray(shap_values.values)
+                abs_sv = np.abs(sv)
+                sample_mean_abs = abs_sv.mean(axis=1)
 
-        # Wrapper: recebe (n, n_feat) e devolve proba (n,)
-        def predict_proba_pos(x_2d: np.ndarray) -> np.ndarray:
-            x_3d = x_2d.reshape((x_2d.shape[0], x_2d.shape[1], 1))
-            return model.predict(x_3d, verbose=0).reshape(-1)
+                feat_rank = (
+                    pd.DataFrame(
+                        {"feature": feat_names, "mean_abs_shap": abs_sv.mean(axis=0).tolist()}
+                    )
+                    .sort_values("mean_abs_shap", ascending=False)
+                    .reset_index(drop=True)
+                )
+                feat_csv = run_dir / "shap_feature_importance_cnn_holdout.csv"
+                feat_rank.to_csv(feat_csv, index=False)
+                print(f"[SHAP] feature importance -> {feat_csv}")
+                for _, r in feat_rank.iterrows():
+                    shap_feat_rows.append(
+                        {
+                            "fold": int(fold_idx),
+                            "feature": str(r["feature"]),
+                            "mean_abs_shap": float(r["mean_abs_shap"]),
+                        }
+                    )
 
-        explainer = shap.Explainer(predict_proba_pos, shap.maskers.Independent(bg))
-        shap_values = explainer(X_eval)
-        # Garante nomes reais nos plots
-        try:
-            shap_values.feature_names = feat_names
-        except Exception:
-            pass
-        shap_values = shap.Explanation(
-            values=np.asarray(shap_values.values),
-            base_values=shap_values.base_values,
-            data=X_eval,
-            feature_names=feat_names,
-        )
+                if ("roi" in pd_feat.columns) and ("label" in pd_feat.columns):
+                    meta = pd_feat.iloc[idx_eval][["roi", "label"]].copy()
+                    meta["sample_mean_abs_shap"] = sample_mean_abs[: len(meta)]
+                    roi_rank = (
+                        meta.groupby(["roi", "label"], dropna=False)["sample_mean_abs_shap"]
+                        .mean()
+                        .reset_index()
+                        .sort_values("sample_mean_abs_shap", ascending=False)
+                        .reset_index(drop=True)
+                    )
+                    roi_csv = run_dir / "shap_roi_importance_cnn_holdout.csv"
+                    roi_rank.to_csv(roi_csv, index=False)
+                    print(f"[SHAP] ROI/label importance -> {roi_csv}")
+                    for _, rr in roi_rank.iterrows():
+                        shap_roi_rows.append(
+                            {
+                                "fold": int(fold_idx),
+                                "roi": rr["roi"],
+                                "label": rr["label"],
+                                "mean_sample_abs_shap": float(rr["sample_mean_abs_shap"]),
+                            }
+                        )
 
-        # (n, n_feat)
-        sv = np.asarray(shap_values.values)
-        abs_sv = np.abs(sv)
-
-        feat_rank = (
-            pd.DataFrame(
-                {"feature": feat_names, "mean_abs_shap": abs_sv.mean(axis=0).tolist()}
-            )
-            .sort_values("mean_abs_shap", ascending=False)
-            .reset_index(drop=True)
-        )
-        feat_csv = outdir / "shap_feature_importance_cnn.csv"
-        feat_rank.to_csv(feat_csv, index=False)
-        print(f"[SHAP] feature importance -> {feat_csv}")
-
-        # ROI/label: agrega contribuição total por amostra e agrupa por roi/label
-        meta = pd_feat.iloc[idx_eval][["roi", "label"]].copy()
-        meta["sample_mean_abs_shap"] = abs_sv.mean(axis=1)
-        roi_rank = (
-            meta.groupby(["roi", "label"], dropna=False)["sample_mean_abs_shap"]
-            .mean()
+    if args.shap and shap_feat_rows:
+        sf = pd.DataFrame(shap_feat_rows)
+        sf.to_csv(run_dir / "shap_feature_importance_all_folds_long.csv", index=False)
+        sf_agg = (
+            sf.groupby(["feature"])["mean_abs_shap"]
+            .agg(["mean", "std", "count"])
             .reset_index()
-            .sort_values("sample_mean_abs_shap", ascending=False)
+            .rename(
+                columns={"mean": "mean_abs_shap_mean", "std": "mean_abs_shap_std", "count": "n_folds_present"}
+            )
+            .sort_values("mean_abs_shap_mean", ascending=False)
             .reset_index(drop=True)
         )
-        roi_csv = outdir / "shap_roi_importance_cnn.csv"
-        roi_rank.to_csv(roi_csv, index=False)
-        print(f"[SHAP] ROI/label importance -> {roi_csv}")
+        sf_agg.to_csv(run_dir / "shap_feature_importance_agg.csv", index=False)
+        print(f"[SHAP] agregado features -> {run_dir / 'shap_feature_importance_agg.csv'}")
 
-        # Plots (salva PNGs; útil em ambiente sem display)
-        try:
-            shap.plots.bar(shap_values, max_display=30, show=False)
-            plt.tight_layout()
-            p = outdir / "shap_bar_cnn.png"
-            plt.savefig(p, dpi=200)
-            plt.close()
-            print(f"[SHAP] bar plot -> {p}")
-        except Exception as e:
-            print(f"[SHAP][WARN] falha ao gerar bar plot: {e}")
-
-        try:
-            shap.plots.beeswarm(shap_values, max_display=30, show=False)
-            plt.tight_layout()
-            p = outdir / "shap_beeswarm_cnn.png"
-            plt.savefig(p, dpi=200)
-            plt.close()
-            print(f"[SHAP] beeswarm plot -> {p}")
-        except Exception as e:
-            print(f"[SHAP][WARN] falha ao gerar beeswarm plot: {e}")
-
-        # Plot das principais ROIs (rank por roi,label)
-        try:
-            topn = min(20, len(roi_rank))
-            if topn > 0:
-                roi_plot = roi_rank.head(topn).copy()
-                roi_plot["roi_label"] = roi_plot["roi"].astype(str) + ":" + roi_plot["label"].astype(str)
-                plt.figure(figsize=(10, 6))
-                plt.barh(roi_plot["roi_label"][::-1], roi_plot["sample_mean_abs_shap"][::-1])
-                plt.xlabel("mean(|SHAP|) por amostra (média por roi,label)")
-                plt.title("Top ROIs por contribuição SHAP (CNN)")
-                plt.tight_layout()
-                p = outdir / "roi_bar_cnn.png"
-                plt.savefig(p, dpi=200)
-                plt.close()
-                print(f"[SHAP] ROI bar plot -> {p}")
-        except Exception as e:
-            print(f"[SHAP][WARN] falha ao gerar ROI bar plot: {e}")
+    if args.shap and shap_roi_rows:
+        sr = pd.DataFrame(shap_roi_rows)
+        sr.to_csv(run_dir / "shap_roi_importance_all_folds_long.csv", index=False)
+        sr_agg = (
+            sr.groupby(["roi", "label"])["mean_sample_abs_shap"]
+            .agg(["mean", "std", "count"])
+            .reset_index()
+            .rename(
+                columns={
+                    "mean": "mean_sample_abs_shap_mean",
+                    "std": "mean_sample_abs_shap_std",
+                    "count": "n_folds_present",
+                }
+            )
+            .sort_values("mean_sample_abs_shap_mean", ascending=False)
+            .reset_index(drop=True)
+        )
+        sr_agg.to_csv(run_dir / "shap_roi_importance_agg.csv", index=False)
+        print(f"[SHAP] agregado ROI -> {run_dir / 'shap_roi_importance_agg.csv'}")
 
 
 if __name__ == "__main__":
