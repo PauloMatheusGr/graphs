@@ -5,14 +5,14 @@
 #   --top-k 3 \
 #   --seed 123 \
 #   --feature-selection two_stage \
-#   --fs-k-pre 200 \
+#   --fs-k-pre 50 \
 #   --fs-k-final 30 \
 #   --balance downsample \
 #   --remove-constant \
-#   --corr-threshold 0.95 \
+#   --corr-threshold 0.90 \
 #   --shap \
-#   --shap-samples 200 \
-#   --shap-background 150 \
+#   --shap-samples 100 \
+#   --shap-background 50 \
 #   --outdir "/mnt/study-data/pgirardi/graphs/colab/outputs"
 
 from __future__ import annotations
@@ -50,7 +50,7 @@ from sklearn.naive_bayes import GaussianNB
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline, make_pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
-from sklearn.svm import LinearSVC
+from sklearn.svm import LinearSVC, SVC
 from sklearn.discriminant_analysis import (
     LinearDiscriminantAnalysis,
     QuadraticDiscriminantAnalysis,
@@ -246,6 +246,18 @@ def _model_specs(seed: int) -> list[ModelSpec]:
             True,
         ),
         ModelSpec("SVM - Linear Kernel", lambda: LinearSVC(random_state=seed, class_weight="balanced"), False),
+        ModelSpec(
+            "SVM - RBF Kernel",
+            lambda: SVC(
+                kernel="rbf",
+                C=1.0,
+                gamma="scale",
+                class_weight="balanced",
+                probability=False,
+                random_state=seed,
+            ),
+            False,
+        ),
         ModelSpec("Dummy Classifier", lambda: DummyClassifier(strategy="most_frequent", random_state=seed), True),
     ]
 
