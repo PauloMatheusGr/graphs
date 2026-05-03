@@ -299,6 +299,8 @@ def _run_shap_for_model(
     fold: int,
     samples: int,
     background: int,
+    save_per_fold_csv: bool = True,
+    save_plots: bool = True,
 ) -> tuple[pd.DataFrame, np.ndarray]:
     try:
         import shap  # type: ignore
@@ -307,17 +309,18 @@ def _run_shap_for_model(
             "SHAP não está instalado neste ambiente. Instale com: pip install shap\n"
             f"Erro original: {type(e).__name__}: {e}"
         )
-    try:
-        import matplotlib
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-    except Exception as e:
-        raise SystemExit(
-            "matplotlib é necessário para salvar plots do SHAP. Instale com: pip install matplotlib\n"
-            f"Erro original: {type(e).__name__}: {e}"
-        )
-
-    _ensure_dir(out_dir)
+    if save_per_fold_csv or save_plots:
+        _ensure_dir(out_dir)
+    if save_plots:
+        try:
+            import matplotlib
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+        except Exception as e:
+            raise SystemExit(
+                "matplotlib é necessário para salvar plots do SHAP. Instale com: pip install matplotlib\n"
+                f"Erro original: {type(e).__name__}: {e}"
+            )
     n_bg = max(1, min(int(background), X_train.shape[0]))
     n_samp = max(1, min(int(samples), X_test.shape[0]))
     bg = X_train[:n_bg]
@@ -352,26 +355,29 @@ def _run_shap_for_model(
     )
 
     safe = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in model_name)
-    csv_path = os.path.join(out_dir, f"shap_feature_importance_{safe}_fold_{int(fold):02d}.csv")
-    feat_rank.to_csv(csv_path, index=False)
+    if save_per_fold_csv:
+        csv_path = os.path.join(out_dir, f"shap_feature_importance_{safe}_fold_{int(fold):02d}.csv")
+        feat_rank.to_csv(csv_path, index=False)
 
-    try:
-        shap.plots.bar(shap_values, max_display=30, show=False)
-        plt.tight_layout()
-        p = os.path.join(out_dir, f"shap_bar_{safe}_fold_{int(fold):02d}.png")
-        plt.savefig(p, dpi=200)
-        plt.close()
-    except Exception:
-        pass
+    if save_plots:
+        try:
+            shap.plots.bar(shap_values, max_display=30, show=False)
+            plt.tight_layout()
+            p = os.path.join(out_dir, f"shap_bar_{safe}_fold_{int(fold):02d}.png")
+            plt.savefig(p, dpi=200)
+            plt.close()
+        except Exception:
+            pass
 
-    try:
-        shap.plots.beeswarm(shap_values, max_display=30, show=False)
-        plt.tight_layout()
-        p = os.path.join(out_dir, f"shap_beeswarm_{safe}_fold_{int(fold):02d}.png")
-        plt.savefig(p, dpi=200)
-        plt.close()
-    except Exception:
-        pass
+    if save_plots:
+        try:
+            shap.plots.beeswarm(shap_values, max_display=30, show=False)
+            plt.tight_layout()
+            p = os.path.join(out_dir, f"shap_beeswarm_{safe}_fold_{int(fold):02d}.png")
+            plt.savefig(p, dpi=200)
+            plt.close()
+        except Exception:
+            pass
 
     return feat_rank, sample_mean_abs
 
@@ -795,6 +801,8 @@ def main() -> int:
                     fold=int(fold_idx),
                     samples=int(args.shap_samples),
                     background=int(args.shap_background),
+                    save_per_fold_csv=False,
+                    save_plots=False,
                 )
 
                 # Persist per-fold per-model feature rank
@@ -835,8 +843,6 @@ def main() -> int:
                             plt.xlabel("mean(|SHAP|) por amostra (média por roi,label)")
                             plt.title(f"Top ROIs por contribuição SHAP ({sp.name})")
                             plt.tight_layout()
-                            p = os.path.join(shap_dir, f"roi_bar_{safe}_fold_{int(fold_idx):02d}.png")
-                            plt.savefig(p, dpi=200)
                             plt.close()
                     except Exception:
                         pass
@@ -854,6 +860,7 @@ def main() -> int:
     results = pd.DataFrame(fold_rows)
     results.to_csv(os.path.join(out_dir, "results_by_fold_model.csv"), index=False)
 
+    agg_df: pd.DataFrame | None = None
     if not results.empty:
         agg = (
             results.groupby("Model")[["Accuracy", "AUC_pos", "BalancedAccuracy", "F1_pos"]]
@@ -864,6 +871,7 @@ def main() -> int:
         agg.columns = ["_".join([c for c in col if c]) for col in agg.columns.to_flat_index()]
         agg = agg.sort_values("Accuracy_mean", ascending=False).reset_index(drop=True)
         agg.to_csv(os.path.join(out_dir, "leaderboard_cv_agg_by_model_ranked_by_accuracy.csv"), index=False)
+        agg_df = agg.copy()
 
     if inner_leaderboards:
         pd.concat(inner_leaderboards, ignore_index=True).to_csv(
@@ -889,6 +897,33 @@ def main() -> int:
         )
         sf_agg.to_csv(shap_dir / "shap_feature_importance_agg_by_model.csv", index=False)
 
+        # Plots: top features for top-k models (ranked by outer-CV Accuracy_mean)
+        models_to_plot: list[str]
+        if agg_df is not None and ("Model" in agg_df.columns):
+            models_to_plot = agg_df["Model"].astype(str).head(int(args.top_k)).tolist()
+        else:
+            models_to_plot = sorted(sf_agg["Model"].astype(str).unique().tolist())[: int(args.top_k)]
+        try:
+            import matplotlib
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+
+            top_n = 30
+            for m in models_to_plot:
+                d = sf_agg[sf_agg["Model"].astype(str) == str(m)].head(top_n).copy()
+                if d.empty:
+                    continue
+                safe = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in str(m))
+                plt.figure(figsize=(10, max(4, 0.3 * len(d) + 1)))
+                plt.barh(d["feature"].astype(str)[::-1], d["mean_abs_shap_mean"][::-1])
+                plt.xlabel("mean(|SHAP|) (média nos folds)")
+                plt.title(f"Top {min(top_n, len(d))} atributos por SHAP — {m}")
+                plt.tight_layout()
+                plt.savefig(shap_dir / f"top_features_{safe}.png", dpi=200)
+                plt.close()
+        except Exception:
+            pass
+
     if args.shap and shap_roi_rows:
         shap_dir = Path(out_dir) / "shap"
         shap_dir.mkdir(parents=True, exist_ok=True)
@@ -910,6 +945,34 @@ def main() -> int:
             .reset_index(drop=True)
         )
         sr_agg.to_csv(shap_dir / "shap_roi_importance_agg_by_model.csv", index=False)
+
+        # Plots: top ROIs for top-k models (ranked by outer-CV Accuracy_mean)
+        models_to_plot: list[str]
+        if agg_df is not None and ("Model" in agg_df.columns):
+            models_to_plot = agg_df["Model"].astype(str).head(int(args.top_k)).tolist()
+        else:
+            models_to_plot = sorted(sr_agg["Model"].astype(str).unique().tolist())[: int(args.top_k)]
+        try:
+            import matplotlib
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+
+            top_n = 30
+            for m in models_to_plot:
+                d = sr_agg[sr_agg["Model"].astype(str) == str(m)].head(top_n).copy()
+                if d.empty:
+                    continue
+                safe = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in str(m))
+                d["roi_label"] = d["roi"].astype(str) + ":" + d["label"].astype(str)
+                plt.figure(figsize=(10, max(4, 0.3 * len(d) + 1)))
+                plt.barh(d["roi_label"].astype(str)[::-1], d["mean_sample_abs_shap_mean"][::-1])
+                plt.xlabel("mean(|SHAP|) por amostra (média nos folds)")
+                plt.title(f"Top {min(top_n, len(d))} ROIs por SHAP — {m}")
+                plt.tight_layout()
+                plt.savefig(shap_dir / f"top_rois_{safe}.png", dpi=200)
+                plt.close()
+        except Exception:
+            pass
 
     print(f"\n[DONE] outputs -> {out_dir}")
     return 0
