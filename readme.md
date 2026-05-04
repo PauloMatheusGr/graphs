@@ -1,4 +1,110 @@
-Last updated: 28/04/2006 - By Paulo Girardi
+Last updated: 04/05/2006 - By Paulo Girardi
+
+Descrição Pré-processamento
+
+[14:00, 5/4/2026] PM: Todos os volumes de RM estrutural ponderados em T1 foram primeiramente submetidos à extração de crânio (skull-stripping) utilizando a função brain_extraction() do pacote ANTsPyNet, dentro do ecossistema ANTsX \cite{tustison-2021}. As entradas foram carregadas via ants.image_read() e as imagens 4D foram convertidas em 3D através da extração do primeiro volume com ants.slice_image(axis=3, idx=0). A extração cerebral foi realizada com modality="t1" e o diretório de cache do ANTsXNet fixado em /workspace/cache para garantir a reprodutibilidade, resultando em volumes sem crânio e máscaras cerebrais binárias.
+
+Posteriormente, aplicou-se a redução de ruído utilizando o filtro de médias não-locais adaptativo (adaptive non-local means filter) implementado em ants.denoise_image() \cite{manjon-2010}, com os parâmetros: mask=None, shrink_factor=1, p=1, r=2, noise_model="Rician" e v=0. As inomogeneidades do campo de viés (bias field) foram corrigidas utilizando o algoritmo N4 implementado em ants.n4_bias_field_correction() \cite{tustison-2010}, empregando a configuração padrão do ANTsPy (mask=None, shrink_factor=1, rescale_intensities=True, spline_param=200 e convergência {'iters': [50, 50, 50, 50], 'tol': 1e-7}).
+
+Finalmente, a segmentação de tecidos foi realizada por meio do framework Atropos baseado em aprendizado profundo (antspynet.deep_atropos()), com o pré-processamento interno ativado. A parcelação anatômica foi obtida através do método de rotulagem Desikan Killiany Tourville (antspynet.desikan_killiany_tourville_labeling()) com agrupamento lobar, ambos pertencentes ao ecossistema ANTsX \cite{tustison-2021}.
+
+ @article{tustison-2021,
+
+ title         = {{The ANTsX ecosystem for quantitative biological and medical imaging}},
+
+ author        = {Tustison, Nicholas J. and Cook, Philip A. and Holbrook, Andrew J. and Johnson, Hans J. and Muschelli, John and Devenyi, Gabriel A. and Duda, Duda, Jeffrey T. and Das, Sandhitsu R. and Cullen, Nicholas C. and Gillen, Daniel L. and Yassa, Michael A. and Stone, James R. and Gee, James C. and Avants, Brian B.},
+
+ journal       = {Scientific Reports},
+
+ publisher     = {Nature},
+
+ volume        = {11},
+
+ number        = {9068},
+
+ pages         = {1--13},
+
+ note          = {},
+
+ doi           = {10.1038/s41598-021-87564-6},
+
+ issn          = {},
+
+ year          = {2021}
+
+ }
+
+
+@article{manjon-2010,
+
+ title         = {{Adaptive non-local means denoising of MR images with spatially varying noise levels}},
+
+ author        = {Manjón, José V. and Coupé, Pierrick and Martí-Bonmatí, Luis and Collins, D. Louis and Robles, Montserrat},
+
+ journal       = {journal of Magnetic Resonance imaging},
+
+ publisher     = {Wiley},
+
+ volume        = {31},
+
+ number        = {1},
+
+ pages         = {192--203},
+
+ note          = {},
+
+ doi           = {10.1002/jmri.22003},
+
+ issn          = {},
+
+ year          = {2010}
+
+}
+
+
+@article{tustison-2010,
+
+ title     = {{N4ITK: Improved N3 Bias Correction}},
+
+ author    = {Tustison, Nicholas J. and Avants, Brian B. and Cook, Philip A. and Zheng, Yuanjie and Egan, Alexander and Yushkevich, Paul A. and Gee, James C.},
+
+ journal   = {IEEE Transactions on Medical Imaging},
+
+ publisher = {IEEE},
+
+ volume    = {29},
+
+ number    = {6},
+
+ pages     = {1310--1320},
+
+ note      = {},
+
+ doi       = {10.1109/TMI.2010.2046908},
+
+ issn      = {},
+
+ year      = {2010}
+
+}
+[14:01, 5/4/2026] PM: https://github.com/viswanath-lab/RadQy
+
+@article{mrqy-2020,
+  title     = {{Technical Note: MRQy — An open‐source tool for quality control of MR imaging data}},
+  author    = {Sadri, Amir Reza and Janowczyk, Andrew and Ren, Zhou and Verma, Ruchika and Beig, Niha and Antunes, Jacob and Madabhushi, Anant and Tiwari, Pallavi and Viswanath, Satish E.},
+  journal   = {Medical Physics},
+  publisher = {wiley},
+  volume    = {47},
+  number    = {12},
+  pages     = {6029--6038},
+  note      = {},
+  doi       = {10.1002/mp.14593 },
+  issn      = {2473-4209},
+  year      = {2020}
+}
+
+A verificação de outliers nas imagens foi realizada por meio do pacote MRQy \cite{mrqy-2020}, aplicado diretamente sobre as imagens em formato RAW para a extração automática de métricas quantitativas de qualidade de imagem (Image Quality Metrics -- IQMs), sem a necessidade de imagens de referência. O MRQy gerou uma planilha contendo métricas estatísticas básicas (MEAN, RNG, VAR, CV), métricas de contraste (CPP, CNR), múltiplas estimativas da relação sinal-ruído (PSNR, SNR1 a SNR9), medidas de não uniformidade de intensidade (CVP, CJV) e indicadores sensíveis a artefatos e borramento (EFC, FBER), além de informações geométricas do volume (VRX, VRY, VRZ, ROW, COL, NUM). Em seguida, cada métrica foi avaliada estatisticamente pelo método do intervalo interquartil (Interquartile Range -- IQR), no qual os limites inferior e superior foram definidos como $Q_1 - \alpha \cdot IQR$ e $Q_3 + \alpha \cdot IQR$, respectivamente, com fator $\alpha = 1.0$, considerando direções específicas de degradação (two-sided, low-bad e high-bad) de acordo com a natureza de cada métrica. Para cada imagem, foi computado um escore de outlier correspondente ao número de métricas que ultrapassaram os limites estabelecidos, sendo classificadas como suspeitas aquelas com escore maior ou igual a $3$. Esse procedimento possibilitou a identificação automática de volumes com potenciais artefatos, ruído excessivo, baixa relação sinal-ruído ou inconsistências de intensidade, constituindo um mecanismo objetivo de controle de qualidade antes das etapas subsequentes de pré-processamento e análise quantitativa
+
 
 Documentação Técnica: Pipeline de Deformação Longitudinal (ANTsPy)
 
@@ -66,7 +172,7 @@ Listas obtidas via `Radiomics<Classe>.getFeatureNames()` (PyRadiomics). Referên
 
 ### III. Atributos longitudinais (`displacement_field.py`)
 
-Para cada conjunto (i1, i2, i3), a fase 2 constrói **dois** deltas em relação ao tempo 1: \(\Delta_{1\to 2}\) e \(\Delta_{1\to 3}\).
+Para cada conjunto (i1, i2, i3), a fase 2 constrói **dois** deltas em relação ao tempo 1: \(\Delta_{1\to 2}\), \(\Delta_{1\to 3}\) e \(\Delta_{2\to 3}\).
 
 1. **Campo de deslocamento relativo**  
    Composição ponto a ponto (via `apply_transforms_to_points`): primeiro `fwd` de i1 (Clin₁ → Ref), depois `inv` do tempo alvo (Ref → Clin_k). O campo \(u\) no domínio da **baseline clínica** é a diferença em coordenadas físicas (LPS) entre o ponto transformado e o original.
@@ -87,7 +193,7 @@ Para cada conjunto (i1, i2, i3), a fase 2 constrói **dois** deltas em relação
 | `DISPLACEMENT_BRAIN_MASK` | Caminho para máscara cerebral quando não há ficheiro por `ID_IMG` em `brain_mask/`. |
 | `DISPLACEMENT_POINT_CHUNK` | Tamanho do lote de pontos na composição (predefinido: 400000) para controlar memória. |
 
-**Ficheiros de saída (exemplo):** `csvs/{ID_PT}_comb_{COMBINATION_NUMBER}_delta12_logjac.nii.gz`, `_delta13_logjac.nii.gz`, `_delta12_mag.nii.gz`, `_delta13_mag.nii.gz`.
+**Ficheiros de saída (exemplo):** `csvs/{ID_PT}_comb_{COMBINATION_NUMBER}_delta12_logjac.nii.gz`, `_delta13_logjac.nii.gz`, `_delta23_logjac.nii.gz`, `_delta12_mag.nii.gz`, `_delta13_mag.nii.gz`, `_delta23_mag.nii.gz`.
 
 ---
 
@@ -105,13 +211,175 @@ Esta secção documenta os scripts em `colab/` usados para classificação (pMCI
 
 O CSV contém colunas de metadados (ex.: `ID_PT`, `GROUP`, `SEX`, `roi`, `label`, `pair`, ...) e colunas numéricas (features) que entram nos modelos.
 
+---
+
+## 4.0. Objetivo experimental e “abordagens”
+
+Você vai executar dois blocos principais:
+
+### Abordagem 1 — Detecção de outliers (one-class / clustering)
+
+**Objetivo**: detectar **amostras anômalas** sem usar (ou usando minimamente) o rótulo `GROUP`. Há dois usos típicos e complementares:
+
+- **QC / limpeza de dataset**: encontrar conjuntos/imagens que “fogem” do padrão por artefato, erro de segmentação, erro de ROI, merge errado, ou scanner/site. (Aqui o “outlier” é problema de qualidade, não necessariamente pMCI.)
+- **Anomalia como sinal clínico** (semi-supervisionado): treinar o modelo **somente nos sMCI** como “normal” e usar o *anomaly score* para rankear quão “pMCI-like” é um conjunto. A avaliação vira uma *classificação via score* (AUC/PR-AUC) sem treinar um classificador discriminativo.
+
+**O que entra como entrada** (pré-modelagem):
+
+- **Entrada tabular wide**: 1 linha por conjunto `(ID_PT, COMBINATION_NUMBER, TRIPLET_IDX)` com features “roi|side|pair|atributo” (ver `colab/datasets.py::build_wide_tabular_from_long_pairs`).
+- **Entrada por sequência** (opcional): i1→i2→i3 com features radiômicas por imagem (ver `colab/datasets.py::build_triplet_sequence_from_radiomics`).
+
+**Nota (grafos)**: nesta fase, **nenhum script usa grafos**. A geração/modelagem por grafos fica para uma etapa posterior, depois que o pipeline “sem grafos” estiver fechado (normalização por fold, balanceamento por paciente, SHAP e baseline de resultados).
+
+**Modelos a inserir (convencionais)**:
+
+- **IsolationForest**: robusto em alta dimensão, rápido, bom baseline.  
+  - Por quê: não assume distribuição gaussiana e lida melhor com múltiplas fontes de variação.
+- **One-Class SVM (RBF)**: forte em fronteira não-linear, mas sensível a escala.  
+  - Por quê: boa alternativa quando a “normalidade” é um manifold.
+- **EllipticEnvelope** (covariância robusta): útil quando as features ficam “quase gaussianas” após z-score e redução de dimensão.  
+  - Por quê: baseline interpretável quando o comportamento é elipsoidal.
+- **LocalOutlierFactor / KNN distance**: captura anomalia “local” (densidade).  
+  - Por quê: útil se o dataset tem subgrupos normais (ex.: por idade/sexo).
+- **PCA reconstruction error** (ou Autoencoder MLP como extensão deep):  
+  - Por quê: detecta amostras que não podem ser reconstruídas bem por um subespaço “normal”.
+
+**Clustering** (para exploração e pseudo-rótulos):
+
+- **KMeans / MiniBatchKMeans** (com distância ao centróide como score de anomalia)
+- **Gaussian Mixture** (score = -loglik)
+- **DBSCAN/HDBSCAN** (quando houver clusters densos + ruído)
+
+**Como avaliar**:
+
+- Se for **QC**: inspeção manual das top-N amostras por score + checagem de metadados (scanner/site) para evitar que o “outlier” seja só batch.  
+- Se for **anômalo vs normal (semi-supervisionado)**:  
+  - treine só em `sMCI`, aplique em todos, use `GROUP` apenas para computar métricas (AUC, balanced accuracy no threshold escolhido, etc.).
+
+### Abordagem 4 — Classificação binária (pMCI vs sMCI)
+
+**Objetivo**: treinar modelos supervisionados com `GROUP` como ground truth.
+
+**Regras**:
+
+- **Split por paciente** (sempre): `StratifiedGroupKFold` com `groups=ID_PT`.
+- **Estratificação**: `GROUP+SEX` como `strat_col` para reduzir viés.
+- **Normalização sem vazamento**: ver a secção “Regras importantes” abaixo (varia por script).
+
+---
+
+## 4.1. Variáveis de tempo (t12/t13/t23) e TIME_PROG (sem vazamento)
+
+### t12/t13/t23 (intervalo entre imagens do conjunto)
+
+- **Uso recomendado**: como feature **por par** (isto é, `dt` dependente de `pair`) quando você está no modo por pares (12/13/23).  
+  - Exemplo: em cada “passo” do LSTM por pares, adicionar a feature `dt`. (O `lstm_example.py` já faz isso quando `t12/t13/t23` existem.)
+  - No tabular wide, você pode armazenar `roi|side|pair|dt` como mais uma coluna.
+- **Por quê**: separa “mudança por mês” de “mudança total”. Sem isso, o modelo pode confundir deltas grandes com intervalos longos.
+
+### TIME_PROG (tempo até progressão para demência)
+
+Como você notou, **TIME_PROG é estruturalmente ligado ao rótulo** (em geral pMCI terá TIME_PROG>0 e sMCI=0), então:
+
+- **Para classificação binária (abordagem 4)**: **NÃO usar TIME_PROG como feature**.  
+  - Motivo: vazamento de target (o modelo aprende um atalho).
+- **Usos válidos**:
+  - **análise pós-hoc**: correlacionar score do modelo com TIME_PROG apenas nos pMCI (quanto menor TIME_PROG, mais “agressivo”).
+  - **modelagem alternativa**: como alvo de regressão/survival (Cox/DeepSurv) ou classificação em múltiplos horizontes (ex.: converter em “progride em <=24 meses?”), mas isso vira outro experimento.
+
+---
+
+## 4.2. Padronização de entrada: “uma função por script” vs vários scripts
+
+**Recomendação**: manter **um construtor de dataset** (funções utilitárias) e scripts separados por modelo.
+
+- **Por quê**:
+  - reduz duplicação e inconsistências (ex.: scaler, pivots, colunas ignoradas)
+  - mantém cada experimento reprodutível e simples de rodar (um comando por modelo)
+  - facilita log/outputs por abordagem (pasta por script/execução)
+
+Implementação sugerida (já iniciada):
+
+- `colab/datasets.py`
+  - `build_wide_tabular_from_long_pairs`: gera wide+flatten para sklearn/MLP
+  - `build_triplet_sequence_from_radiomics`: monta i1→i2→i3 a partir de `radiomics_merge.csv` + `cj_data_*.txt`
+
+---
+
+## 4.3. Deep tabular (MLP)
+
+Script novo:
+
+- `colab/mlp_example.py`
+
+**Entrada**:
+
+- `--input-mode wide_from_long`: faz pivot e usa 1 linha por conjunto (recomendado)
+- `--input-mode as_is_rows`: usa o CSV como está (1 linha = 1 exemplo)
+
+**O que testar (hiperparâmetros)**:
+
+- `--kbest`: \{200, 400, 600, 1000, 2000\} (depende do nº total de features)
+- `--hidden`: \{`256,64`, `512,128`, `1024,256`\}
+- `--dropout`: \{0.0, 0.2, 0.3, 0.5\}
+- `--lr`: \{1e-4, 3e-4, 1e-3\}
+- `--batch-size`: \{32, 64, 128\}
+- `--balance`: `none` vs `downsample`
+
+---
+
+## 4.4. Hiperparâmetros a testar por script (resumo prático)
+
+### `colab/sklearn_models_teste.py`
+
+Esse script hoje roda “várias famílias” com hiperparâmetros default. Para uma bateria de testes controlada, os knobs mais importantes são:
+
+- **Pré-processamento/seleção**
+  - `--remove-constant` (on/off)
+  - `--corr-threshold`: \{0.0, 0.90, 0.95\}
+  - `--feature-selection`: `none` / `kbest` / `two_stage`
+  - `--fs-k-pre`: \{50, 100, 200, 400\}
+  - `--fs-k-final`: \{20, 30, 50\}
+- **Modelos (rodar um subconjunto)**
+  - `--models`: começar com `"Logistic Regression,Extra Trees Classifier,SVM - RBF Kernel,Gradient Boosting Classifier"`
+
+Motivo: você controla a capacidade efetiva via seleção de features (sem explodir o espaço de busca) e compara famílias com vieses diferentes (linear / kernel / árvores / boosting).
+
+### `colab/cnn_example.py`
+
+Hoje a CNN é “tabular conv1D” com `kbest` + z-score e early stopping.
+
+Parâmetros a testar:
+
+- `--kbest`: \{50, 100, 200, 400\}
+- `--epochs`: \{50, 80, 120\}
+- `--batch-size`: \{32, 64, 128\}
+- `--balance`: `none` vs `downsample`
+
+(Se você evoluir a arquitetura para tratar `pair` como canais e conv sobre `ROI`, aí os hiperparâmetros passam a incluir `filters`, `kernel_size`, `dropout`, `lr`.)
+
+### `colab/lstm_example.py`
+
+Parâmetros a testar:
+
+- `--sequence-source`: `pairs` (deltas por par) vs `columns` (se você exportar *_base/_follow/_delta)
+- `--pair-order`: fixo `12,13,23` (ou experimentar `12,23,13` só se houver hipótese forte de ordem)
+- `--epochs`: \{40, 60, 80\}
+- `--batch-size`: \{32, 64\}
+- `--balance`: `none` vs `downsample`
+
+Para a sua nova proposta (reconstrução i1→i2→i3 via radiomics_merge), o ideal é criar um modo extra no LSTM que consuma a sequência real (não implementado ainda neste script; está implementado no construtor em `colab/datasets.py`).
+
 ### 4.1. Regras importantes (sem vazamento)
 
 - **Separação por paciente**: os scripts consideram `ID_PT` como grupo; um paciente não aparece em treino/validação/teste ao mesmo tempo.
 - **Nested split**:
   - **split externo**: (folds) para avaliação
   - **split interno**: validação (early stopping / seleção) dentro do treino externo
-- **Z-score sem vazamento**: o scaler é fitado **somente** no conjunto de treino interno (`fit`) e aplicado em validação e teste com a mesma média/desvio (CNN/LSTM). No PyCaret, o z-score é fitado no treino do fold externo e aplicado no teste externo.
+- **Z-score sem vazamento** (por script):
+  - `cnn_example.py`, `lstm_example.py`, `mlp_example.py`: scaler fitado **somente** no `fit` (treino interno) e aplicado em `val/test`.
+  - `sklearn_models_teste.py`: o `StandardScaler` faz parte do `ColumnTransformer` e é fitado no **treino do fold externo** (antes do CV interno de ranking), e aplicado no teste externo.
+  - `models_teste.py` (PyCaret): z-score manual nas features numéricas selecionadas, fitado no **treino do fold externo** e aplicado no teste externo.
 
 ### 4.2. Filtro por ROI/label (todas as abordagens)
 
@@ -125,10 +393,13 @@ Se você **omitir** `--roi`, `--label` e `--roi-label`, o script usa **todas** a
 
 ### 4.3. Balanceamento (2 modos)
 
-Todos os scripts suportam:
+Todos os scripts suportam a flag `--balance` (quando existe no script), mas **o ponto exato onde ela atua varia**:
 
 - `--balance none`: sem balanceamento (default)
-- `--balance downsample`: **downsampling por paciente (`ID_PT`)** balanceando simultaneamente os estratos `GROUP_SEX` (ex.: `pMCI_F`, `pMCI_M`, `sMCI_F`, `sMCI_M`). Aplica apenas no conjunto `fit` (treino interno) e nunca altera validação/teste.
+- `--balance downsample`: **downsampling por paciente (`ID_PT`)** balanceando simultaneamente os estratos `GROUP+SEX` (ex.: `pMCI_F`, `pMCI_M`, `sMCI_F`, `sMCI_M`).
+  - `cnn_example.py`, `lstm_example.py`, `mlp_example.py`: aplica no `fit` (treino interno) e nunca altera `val/test`.
+  - `sklearn_models_teste.py`: aplica no **treino do fold externo** (antes do preprocessing), e nunca altera o teste externo.
+  - `models_teste.py` (PyCaret): aplica no **treino do fold externo**.
 
 ### 4.4. SHAP (importância de features e de ROIs)
 
