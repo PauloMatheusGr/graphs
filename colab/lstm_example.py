@@ -34,6 +34,14 @@ DEFAULT_CSV = (
     "all_delta_features_neurocombat.csv"
 )
 
+# Arquivos auxiliares (para sequence-source images)
+DEFAULT_TRIPLETS = "/mnt/study-data/pgirardi/graphs/cj_data_abordagem_teste.txt"
+DEFAULT_RADIOMICS = "/mnt/study-data/pgirardi/graphs/csvs/abordagem_teste/radiomics_merge.csv"
+DEFAULT_DISPLACEMENT = (
+    "/mnt/study-data/pgirardi/graphs/csvs/abordagem_teste/"
+    "features_displacement_abordagem_teste.csv"
+)
+
 
 def _parse_csv_list(s: str | None) -> list[str]:
     if not s:
@@ -256,6 +264,312 @@ def _build_pairwise_triplet_tensor(
     return X, y, sex, id_pt, meta_df, feature_cols
 
 
+def _months_between(d2: pd.Timestamp, d1: pd.Timestamp) -> float:
+    """Diferença aproximada em meses entre duas datas (dias/30.4375)."""
+    return float((d2 - d1).days) / 30.4375
+
+
+def _pivot_radiomics_by_image(
+    radiomics_df: pd.DataFrame,
+    *,
+    rois: list[str],
+    labels: list[int],
+    roi_label: list[str],
+) -> tuple[pd.DataFrame, list[str]]:
+    """
+    Constrói um dataframe wide por ID_IMG:
+      index: ID_IMG
+      colunas: roi=<roi>|side=<side>|label=<label>|<feature>
+    """
+    df = radiomics_df.copy()
+    required = {"ID_IMG", "roi", "side", "label"}
+    missing = required - set(df.columns)
+    if missing:
+        raise KeyError(f"Radiomics sem colunas obrigatórias: {sorted(missing)}")
+
+    df["ID_IMG"] = df["ID_IMG"].astype(str)
+    df["roi"] = df["roi"].astype(str).str.strip()
+    df["side"] = df["side"].astype(str).str.strip()
+    df["label"] = pd.to_numeric(df["label"], errors="coerce").astype("Int64")
+
+    # aplica filtros (mesma semântica do filter_by_roi_label)
+    if roi_label:
+        pairs: list[tuple[str, int]] = []
+        for item in roi_label:
+            if ":" not in item:
+                raise ValueError(f"Use o formato roi:label em --roi-label. Recebi: {item}")
+            r, lab = item.split(":", 1)
+            pairs.append((r.strip(), int(lab.strip())))
+        mask = False
+        for r, lab in pairs:
+            mask = mask | ((df["roi"] == r) & (df["label"].astype("Int64") == lab))
+        df = df[mask].copy()
+    else:
+        if rois:
+            df = df[df["roi"].isin([r.strip() for r in rois])].copy()
+        if labels:
+            df = df[df["label"].isin([int(x) for x in labels])].copy()
+
+    # features numéricas (radiomics)
+    ignore = {"ID_IMG", "roi", "side", "label"}
+    feat_cols = [c for c in df.columns if c not in ignore and pd.api.types.is_numeric_dtype(df[c])]
+    if not feat_cols:
+        raise ValueError("Nenhuma coluna numérica encontrada em radiomics_merge.csv.")
+
+    prefix = (
+        "roi=" + df["roi"].astype(str)
+        + "|side=" + df["side"].astype(str)
+        + "|label=" + df["label"].astype(str)
+    )
+    long = df[["ID_IMG"]].copy()
+    long["prefix"] = prefix
+    long = long.join(df[feat_cols])
+    long = long.melt(id_vars=["ID_IMG", "prefix"], value_vars=feat_cols, var_name="feat", value_name="value")
+    long["col"] = long["prefix"].astype(str) + "|" + long["feat"].astype(str)
+
+    wide = (
+        long.pivot_table(index="ID_IMG", columns="col", values="value", aggfunc="first")
+        .sort_index(axis=1)
+        .reset_index()
+    )
+    feat_names = [c for c in wide.columns if c != "ID_IMG"]
+    return wide, feat_names
+
+
+def _pivot_displacement_by_set_and_pair(
+    disp_df: pd.DataFrame,
+    *,
+    pair: str,
+    rois: list[str],
+    labels: list[int],
+    roi_label: list[str],
+) -> tuple[pd.DataFrame, list[str]]:
+    """
+    Constrói um dataframe wide por conjunto para um par específico:
+      index: (ID_PT, COMBINATION_NUMBER)
+      colunas: roi=<roi>|side=<side>|label=<label>|<disp_feature>
+
+    Nota: ignora TRIPLET_IDX deliberadamente para compatibilidade com cj_data_abordagem_teste.txt.
+    """
+    df = disp_df.copy()
+    required = {"ID_PT", "COMBINATION_NUMBER", "pair", "roi", "side", "label"}
+    missing = required - set(df.columns)
+    if missing:
+        raise KeyError(f"Displacement sem colunas obrigatórias: {sorted(missing)}")
+
+    df["ID_PT"] = df["ID_PT"].astype(str)
+    df["COMBINATION_NUMBER"] = df["COMBINATION_NUMBER"].astype(str)
+    df["pair"] = df["pair"].astype(str).str.strip()
+    df["roi"] = df["roi"].astype(str).str.strip()
+    df["side"] = df["side"].astype(str).str.strip()
+    df["label"] = pd.to_numeric(df["label"], errors="coerce").astype("Int64")
+
+    df = df[df["pair"] == str(pair)].copy()
+
+    # filtros
+    if roi_label:
+        pairs: list[tuple[str, int]] = []
+        for item in roi_label:
+            if ":" not in item:
+                raise ValueError(f"Use o formato roi:label em --roi-label. Recebi: {item}")
+            r, lab = item.split(":", 1)
+            pairs.append((r.strip(), int(lab.strip())))
+        mask = False
+        for r, lab in pairs:
+            mask = mask | ((df["roi"] == r) & (df["label"].astype("Int64") == lab))
+        df = df[mask].copy()
+    else:
+        if rois:
+            df = df[df["roi"].isin([r.strip() for r in rois])].copy()
+        if labels:
+            df = df[df["label"].isin([int(x) for x in labels])].copy()
+
+    ignore = {"ID_PT", "COMBINATION_NUMBER", "TRIPLET_IDX", "pair", "ID_IMG_i1", "ID_IMG_i2", "ID_IMG_i3", "roi", "side", "label"}
+    feat_cols = [c for c in df.columns if c not in ignore and pd.api.types.is_numeric_dtype(df[c])]
+    if not feat_cols:
+        raise ValueError("Nenhuma coluna numérica encontrada em features_displacement_*.csv.")
+
+    prefix = (
+        "roi=" + df["roi"].astype(str)
+        + "|side=" + df["side"].astype(str)
+        + "|label=" + df["label"].astype(str)
+    )
+    long = df[["ID_PT", "COMBINATION_NUMBER"]].copy()
+    long["prefix"] = prefix
+    long = long.join(df[feat_cols])
+    long = long.melt(
+        id_vars=["ID_PT", "COMBINATION_NUMBER", "prefix"],
+        value_vars=feat_cols,
+        var_name="feat",
+        value_name="value",
+    )
+    long["col"] = long["prefix"].astype(str) + "|" + long["feat"].astype(str)
+
+    wide = (
+        long.pivot_table(index=["ID_PT", "COMBINATION_NUMBER"], columns="col", values="value", aggfunc="first")
+        .sort_index(axis=1)
+        .reset_index()
+    )
+    feat_names = [c for c in wide.columns if c not in ("ID_PT", "COMBINATION_NUMBER")]
+    return wide, feat_names
+
+
+def _build_image_triplet_sequence(
+    *,
+    triplets_path: Path,
+    radiomics_path: Path,
+    displacement_path: Path | None,
+    include_displacement: bool,
+    rois: list[str],
+    labels: list[int],
+    roi_label: list[str],
+    drop_if_nan: bool,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, pd.DataFrame, list[str]]:
+    """
+    Monta sequência temporal i1->i2->i3 (3 timesteps) por conjunto (ID_PT, COMBINATION_NUMBER).
+
+    - estado: radiomics por imagem (pivot wide por ID_IMG)
+    - transição (opcional): displacement do par 12 anexado ao timestep i2; par 23 anexado ao timestep i3
+    - dt: dt12 no timestep i2; dt23 no timestep i3; dt=0 no timestep i1
+    """
+    # Triplets: uma linha por imagem
+    tdf = pd.read_csv(triplets_path)
+    req = {"ID_PT", "COMBINATION_NUMBER", "ID_IMG", "MRI_DATE", "GROUP", "SEX"}
+    missing = req - set(tdf.columns)
+    if missing:
+        raise KeyError(f"Triplets file sem colunas obrigatórias: {sorted(missing)}")
+    tdf = tdf.copy()
+    tdf["ID_PT"] = tdf["ID_PT"].astype(str)
+    tdf["COMBINATION_NUMBER"] = tdf["COMBINATION_NUMBER"].astype(str)
+    tdf["ID_IMG"] = tdf["ID_IMG"].astype(str)
+    tdf["_date"] = pd.to_datetime(tdf["MRI_DATE"], errors="coerce")
+    if tdf["_date"].isna().any():
+        raise ValueError("Há MRI_DATE inválidas/NaT em cj_data_*.txt; não consigo ordenar i1->i2->i3.")
+
+    # Radiomics por imagem
+    rdf = pd.read_csv(radiomics_path)
+    r_wide, r_feat = _pivot_radiomics_by_image(rdf, rois=rois, labels=labels, roi_label=roi_label)
+
+    # Displacement por conjunto e par (12 e 23)
+    d12_wide: pd.DataFrame | None = None
+    d23_wide: pd.DataFrame | None = None
+    d12_feat: list[str] = []
+    d23_feat: list[str] = []
+    if include_displacement:
+        if displacement_path is None:
+            raise ValueError("include_displacement=True, mas displacement_path=None.")
+        ddf = pd.read_csv(displacement_path)
+        d12_wide, d12_feat = _pivot_displacement_by_set_and_pair(ddf, pair="12", rois=rois, labels=labels, roi_label=roi_label)
+        d23_wide, d23_feat = _pivot_displacement_by_set_and_pair(ddf, pair="23", rois=rois, labels=labels, roi_label=roi_label)
+
+    # Mapa ID_IMG -> vetor radiomics (para lookup rápido)
+    r_wide = r_wide.copy()
+    r_wide["ID_IMG"] = r_wide["ID_IMG"].astype(str)
+    r_map = r_wide.set_index("ID_IMG", drop=True)
+
+    # mapas displacement por conjunto
+    d12_map = None
+    d23_map = None
+    if include_displacement and d12_wide is not None and d23_wide is not None:
+        d12_map = d12_wide.set_index(["ID_PT", "COMBINATION_NUMBER"], drop=True)
+        d23_map = d23_wide.set_index(["ID_PT", "COMBINATION_NUMBER"], drop=True)
+
+    rows = []
+    meta_rows: list[dict[str, object]] = []
+    for (id_pt, comb), g in tdf.groupby(["ID_PT", "COMBINATION_NUMBER"], sort=False):
+        g = g.sort_values("_date", kind="stable").copy()
+        if len(g) < 3:
+            continue
+        # usa exatamente 3 primeiras (assumindo conjuntos com 3 imagens)
+        g = g.head(3).copy()
+        id_imgs = g["ID_IMG"].astype(str).tolist()
+        dts = [0.0, _months_between(g["_date"].iloc[1], g["_date"].iloc[0]), _months_between(g["_date"].iloc[2], g["_date"].iloc[1])]
+
+        # target/sex por conjunto
+        y_val = str(g["GROUP"].iloc[0])
+        sex_val = str(g["SEX"].iloc[0])
+
+        # radiomics estados
+        try:
+            x1 = r_map.loc[id_imgs[0], r_feat].to_numpy(dtype=np.float32, copy=True)
+            x2 = r_map.loc[id_imgs[1], r_feat].to_numpy(dtype=np.float32, copy=True)
+            x3 = r_map.loc[id_imgs[2], r_feat].to_numpy(dtype=np.float32, copy=True)
+        except KeyError:
+            # alguma imagem não existe em radiomics_merge
+            continue
+
+        # displacement transições (anexa ao timestep de chegada)
+        if include_displacement and d12_map is not None and d23_map is not None:
+            try:
+                v12 = d12_map.loc[(id_pt, comb), d12_feat].to_numpy(dtype=np.float32, copy=True)
+                v23 = d23_map.loc[(id_pt, comb), d23_feat].to_numpy(dtype=np.float32, copy=True)
+            except KeyError:
+                continue
+        else:
+            v12 = np.zeros((0,), dtype=np.float32)
+            v23 = np.zeros((0,), dtype=np.float32)
+
+        dt1 = np.array([np.float32(dts[0])], dtype=np.float32)
+        dt2 = np.array([np.float32(dts[1])], dtype=np.float32)
+        dt3 = np.array([np.float32(dts[2])], dtype=np.float32)
+
+        # timestep i1 não tem transição anterior; preenche com zeros na dimensão de deslocamento
+        if include_displacement:
+            v0 = np.zeros_like(v12)
+            t1 = np.concatenate([x1, dt1, v0], axis=0)
+            t2 = np.concatenate([x2, dt2, v12], axis=0)
+            t3 = np.concatenate([x3, dt3, v23], axis=0)
+        else:
+            t1 = np.concatenate([x1, dt1], axis=0)
+            t2 = np.concatenate([x2, dt2], axis=0)
+            t3 = np.concatenate([x3, dt3], axis=0)
+
+        X_seq = np.stack([t1, t2, t3], axis=0)  # (3, F)
+        rows.append((X_seq, y_val, sex_val, id_pt))
+        meta_rows.append(
+            {
+                "ID_PT": id_pt,
+                "COMBINATION_NUMBER": comb,
+                "GROUP": y_val,
+                "SEX": sex_val,
+                "ID_IMG_i1": id_imgs[0],
+                "ID_IMG_i2": id_imgs[1],
+                "ID_IMG_i3": id_imgs[2],
+            }
+        )
+
+    if not rows:
+        raise ValueError("Nenhuma sequência i1->i2->i3 foi montada (verifique merges e chaves).")
+
+    X = np.stack([r[0] for r in rows], axis=0).astype(np.float32)
+    y_raw = np.array([r[1] for r in rows], dtype=object)
+    sex_raw = np.array([r[2] for r in rows], dtype=object)
+    id_pt_raw = np.array([r[3] for r in rows], dtype=object)
+    meta_df = pd.DataFrame(meta_rows)
+
+    feat_cols = list(r_feat) + ["dt"]
+    if include_displacement:
+        feat_cols += [f"{c}__d12_or_d23" for c in d12_feat]  # mesmo schema para v12/v23
+
+    if drop_if_nan:
+        mask = np.isfinite(X).all(axis=(1, 2))
+        X = X[mask]
+        y_raw = y_raw[mask]
+        sex_raw = sex_raw[mask]
+        id_pt_raw = id_pt_raw[mask]
+        meta_df = meta_df.iloc[np.flatnonzero(mask)].reset_index(drop=True)
+
+    # y/sex/groups
+    sex_s = pd.Series(sex_raw.astype(str)).str.upper().map({"F": 0, "M": 1}).to_numpy()
+    if (sex_s < 0).any():
+        bad = sorted(pd.Series(sex_raw.astype(str)).unique().tolist())
+        raise ValueError(f"Valores inesperados em SEX: {bad} (esperado F/M)")
+    sex = sex_s.astype(np.float32).reshape(-1, 1)
+    groups = id_pt_raw.astype(str)
+
+    return X, y_raw, sex, groups, meta_df, feat_cols
+
+
 def _zscore_fit_transform_3d(
     X_train: np.ndarray, X_test: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -359,12 +673,14 @@ def main() -> None:
     )
     parser.add_argument(
         "--sequence-source",
-        choices=["columns", "pairs"],
+        choices=["columns", "pairs", "images"],
         default="pairs",
         help=(
             "Como construir a sequência temporal. "
             "'columns' usa colunas *_base/_follow/_delta; "
-            "'pairs' usa 3 linhas por tripla (pair=12/13/23) como passos temporais."
+            "'pairs' usa 3 linhas por tripla (pair=12/13/23) como passos temporais; "
+            "'images' monta i1->i2->i3 por conjunto usando cj_data_*.txt + radiomics_merge.csv "
+            "(e opcionalmente displacement 12/23)."
         ),
     )
     parser.add_argument(
@@ -378,6 +694,29 @@ def main() -> None:
         type=str,
         default="12,13,23",
         help="Ordem dos pares quando --sequence-source pairs. Ex.: 12,13,23",
+    )
+    parser.add_argument(
+        "--triplets-csv",
+        type=str,
+        default=DEFAULT_TRIPLETS,
+        help="Tabela cj_data (1 linha por imagem) para montar i1->i2->i3 quando --sequence-source images.",
+    )
+    parser.add_argument(
+        "--radiomics-csv",
+        type=str,
+        default=DEFAULT_RADIOMICS,
+        help="CSV radiomics_merge (ID_IMG x roi x side) para --sequence-source images.",
+    )
+    parser.add_argument(
+        "--include-displacement",
+        action="store_true",
+        help="Se ligado, concatena displacement 12 no timestep i2 e displacement 23 no timestep i3 (sequence-source images).",
+    )
+    parser.add_argument(
+        "--displacement-csv",
+        type=str,
+        default=DEFAULT_DISPLACEMENT,
+        help="CSV de displacement (com colunas pair=12/23) para --include-displacement.",
     )
     parser.add_argument("--n-splits", type=int, default=5, help="Folds do StratifiedGroupKFold.")
     parser.add_argument(
@@ -445,6 +784,16 @@ def main() -> None:
         help="Quantas amostras (sequências) usar no SHAP (para acelerar).",
     )
     parser.add_argument(
+        "--shap-max-evals",
+        type=int,
+        default=0,
+        help=(
+            "max_evals do PermutationExplainer do SHAP. "
+            "0 = auto (usa o mínimo exigido: 2*num_features + 1). "
+            "Se >0, o script força pelo menos esse valor (e ainda respeita o mínimo exigido)."
+        ),
+    )
+    parser.add_argument(
         "--shap-background",
         type=int,
         default=200,
@@ -486,23 +835,28 @@ def main() -> None:
         except Exception:
             pass
 
-    csv_path = Path(args.csv)
-    if not csv_path.exists():
-        raise FileNotFoundError(f"CSV não encontrado: {csv_path}")
+    # Lê CSV principal apenas para modos baseados nesse arquivo.
+    df: pd.DataFrame
+    if args.sequence_source in ("pairs", "columns"):
+        csv_path = Path(args.csv)
+        if not csv_path.exists():
+            raise FileNotFoundError(f"CSV não encontrado: {csv_path}")
+        df = pd.read_csv(csv_path)
+        rois = _parse_csv_list(args.roi)
+        labels = [int(x) for x in _parse_csv_list(args.label)]
+        roi_label = _parse_csv_list(args.roi_label)
+        if rois or labels or roi_label:
+            before = df.shape
+            df = filter_by_roi_label(df, rois=rois, labels=labels, roi_label=roi_label)
+            print(f"[ROI] filtro aplicado: {before} -> {df.shape}")
 
-    df = pd.read_csv(csv_path)
-    rois = _parse_csv_list(args.roi)
-    labels = [int(x) for x in _parse_csv_list(args.label)]
-    roi_label = _parse_csv_list(args.roi_label)
-    if rois or labels or roi_label:
-        before = df.shape
-        df = filter_by_roi_label(df, rois=rois, labels=labels, roi_label=roi_label)
-        print(f"[ROI] filtro aplicado: {before} -> {df.shape}")
-
-    required = {"ID_PT", "GROUP", "SEX"}
-    missing = required - set(df.columns)
-    if missing:
-        raise KeyError(f"CSV sem colunas obrigatórias: {sorted(missing)}")
+        required = {"ID_PT", "GROUP", "SEX"}
+        missing = required - set(df.columns)
+        if missing:
+            raise KeyError(f"CSV sem colunas obrigatórias: {sorted(missing)}")
+    else:
+        # placeholder; será substituído no modo images pelo meta_df (uma linha por conjunto)
+        df = pd.DataFrame()
 
     if args.sequence_source == "pairs":
         pair_order = [p.strip() for p in args.pair_order.split(",") if p.strip()]
@@ -530,7 +884,7 @@ def main() -> None:
         sex = sex_s.astype(np.float32).reshape(-1, 1)
         groups = id_pt_raw.astype(str)
         strat_col = (pd.Series(y_raw).astype(str) + "_" + pd.Series(sex_raw).astype(str)).to_numpy()
-    else:
+    elif args.sequence_source == "columns":
         # Sequência baseada em colunas *_base/_follow/_delta
         timesteps = [t.strip() for t in args.timesteps.split(",") if t.strip()]
         X, roots = _build_temporal_tensor(df, timesteps=timesteps, drop_if_nan=args.drop_nan)
@@ -550,6 +904,32 @@ def main() -> None:
             if ("roi" in df.columns and "label" in df.columns)
             else pd.DataFrame()
         )
+        feat_cols = roots
+    else:
+        # Sequência temporal real i1->i2->i3 usando cj_data + radiomics_merge (+ opcional displacement 12/23)
+        triplets_path = Path(str(args.triplets_csv))
+        radiomics_path = Path(str(args.radiomics_csv))
+        disp_path = Path(str(args.displacement_csv)) if bool(args.include_displacement) else None
+        rois = _parse_csv_list(args.roi)
+        labels = [int(x) for x in _parse_csv_list(args.label)]
+        roi_label = _parse_csv_list(args.roi_label)
+        X, y_raw, sex, groups, meta_df, feat_cols = _build_image_triplet_sequence(
+            triplets_path=triplets_path,
+            radiomics_path=radiomics_path,
+            displacement_path=disp_path,
+            include_displacement=bool(args.include_displacement),
+            rois=rois,
+            labels=labels,
+            roi_label=roi_label,
+            drop_if_nan=args.drop_nan,
+        )
+        # Para manter a mesma lógica do restante do script (balanceamento e stats),
+        # usamos um df meta (1 linha por conjunto) com ID_PT/GROUP/SEX.
+        df = meta_df[["ID_PT", "GROUP", "SEX", "COMBINATION_NUMBER", "ID_IMG_i1", "ID_IMG_i2", "ID_IMG_i3"]].copy()
+        strat_col = (df["GROUP"].astype(str) + "_" + df["SEX"].astype(str)).to_numpy()
+        print(f"X shape: {X.shape}  (seq_len={X.shape[1]}, n_feat={X.shape[2]})")
+        print("Sequence source: images (i1->i2->i3)")
+        print(f"Features por passo: {len(feat_cols)}")
 
     classes = sorted(np.unique(y_raw).tolist())
     if len(classes) != 2:
@@ -759,8 +1139,15 @@ def main() -> None:
             bg_flat = np.concatenate([bg_flat, sex_tr[:n_bg].astype(np.float32)], axis=1)
             X_flat = np.concatenate([X_flat, sex_eval.astype(np.float32)], axis=1)
 
+            # O SHAP para modelos arbitrários cai no PermutationExplainer, que exige:
+            # max_evals >= 2 * num_features + 1
+            n_features_flat = int(X_flat.shape[1])
+            min_required = int(2 * n_features_flat + 1)
+            user_max = int(getattr(args, "shap_max_evals", 0) or 0)
+            max_evals = max(min_required, user_max) if user_max > 0 else min_required
+
             explainer = shap.Explainer(predict_proba_pos, shap.maskers.Independent(bg_flat))
-            shap_values = explainer(X_flat)
+            shap_values = explainer(X_flat, max_evals=max_evals)
             sv = np.asarray(shap_values.values)
             abs_sv = np.abs(sv)
             sample_mean_abs = abs_sv.mean(axis=1)

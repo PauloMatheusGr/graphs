@@ -558,7 +558,7 @@ def process_longitudinal_combinations_to_features(
     parquet_dataset_dir = os.path.join(features_output_dir, "parquet_dataset")
     os.makedirs(parquet_dataset_dir, exist_ok=True)
 
-    out_csv_path = os.path.join(csvs_root, ab, f"features_displacement_teste.csv")
+    out_csv_path = os.path.join(csvs_root, ab, f"features_displacement_abordagem_4_sMCI_pMCI.csv")
 
     persist_run_metadata(
         run_meta_path=run_meta_path,
