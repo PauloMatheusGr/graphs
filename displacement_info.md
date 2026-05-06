@@ -6,6 +6,133 @@ Este documento descreve o pipeline de **registro deformável** e a construção 
 
 ---
 
+## 0) Construção do template groupwise estratificado (`groupwise_ants.py`)
+
+O template groupwise estratificado \(T\) é construído previamente por estrato (diagnóstico, sexo e faixa etária) usando ANTsPy, produzindo uma imagem “média” (template) que representa um subconjunto de indivíduos cognitivamente normais (CN). No repositório, esse processo está implementado em `groupwise_ants.py`.
+
+### 0.1 Seleção do estrato (CN, sexo, idade)
+
+Seja um *dataset* tabular \(D\) (CSV) contendo, para cada exame, pelo menos:
+\(\{\texttt{ID\_IMG}, \texttt{SEX}, \texttt{AGE}, \texttt{DIAG}\}\).
+
+O script filtra o estrato fixando:
+
+- Diagnóstico: \(\texttt{DIAG} = \text{"CN"}\)
+- Sexo: \(\texttt{SEX} \in \{\text{"F"}, \text{"M"}\}\)
+- Idade: \(\texttt{AGE} \in [a_{\min}, a_{\max}]\)
+
+Se o conjunto filtrado tiver mais de \(N_{\max}\) imagens, o script aplica uma amostragem aleatória reprodutível (semente fixa) para limitar o número de casos:
+
+\[
+S = \mathrm{sample}(D_{\text{filtrado}}, N_{\max}; \text{seed})
+\]
+
+Por padrão em `groupwise_ants.py`:
+
+- \(N_{\max}=20\)
+- `RANDOM_SEED = 7`
+- `DIAG_FILTER = "CN"`
+
+O script também salva um CSV com os casos efetivamente usados (`selected_*.csv`), para auditoria e reprodutibilidade.
+
+### 0.2 Resolução de caminhos e entradas de imagem
+
+Para cada `ID_IMG` selecionado, o caminho do volume T1 pré-processado é resolvido como:
+
+\[
+p(\texttt{ID\_IMG}) = \texttt{IMAGES\_DIR} \; / \; (\texttt{ID\_IMG} + \texttt{SUFFIX})
+\]
+
+IDs sem arquivo correspondente são descartados. O groupwise exige pelo menos 2 imagens válidas.
+
+### 0.3 Padronização de orientação, intensidades e grade
+
+Antes do groupwise, cada imagem é padronizada para reduzir variações não-biológicas.
+
+1) **Reorientação**: todas as imagens são reorientadas para uma convenção fixa (por padrão, RAS).
+
+2) **Casamento de histograma (Histogram Matching)**: as intensidades são harmonizadas usando um template MNI como referência (\(\mathrm{MNI}\)), de forma mascarada no cérebro. Em notação conceitual:
+
+\[
+\tilde{C}_i = \mathrm{HM}\big(C_i; \mathrm{MNI}\big)
+\]
+
+3) **Reamostragem isotrópica**: cada volume é reamostrado para espaçamento isotrópico desejado (por padrão, \(1\text{ mm}\)) com interpolação adequada para T1 contínua (Bspline).
+
+\[
+\hat{C}_i = \mathrm{Resample}\big(\tilde{C}_i; 1\text{ mm}\big)
+\]
+
+4) **Escolha de um “target” comum com padding**: dentre as imagens, escolhe-se a de maior extensão física como target e aplica-se padding para garantir FOV suficiente. Em seguida, todas as imagens são reamostradas para o grid desse target:
+
+\[
+\bar{C}_i = \mathrm{ResampleToTarget}(\hat{C}_i; \text{target})
+\]
+
+5) **Máscaras e normalização robusta**: para cada imagem e para o target, obtém-se uma máscara cerebral automática e faz-se uma reescala robusta baseada em percentis dentro do cérebro para reduzir outliers:
+
+\[
+C_i^{(0)} = \mathrm{RobustRescale}(\bar{C}_i; \text{mask}, p_{0.5}, p_{99.5})
+\]
+
+### 0.4 Pré-alinhamento (Rigid → Affine)
+
+Para estabilizar o groupwise, cada imagem \(C_i^{(0)}\) é pré-alinhada ao target por uma cadeia de registros globais:
+
+\[
+C_i^{(1)} = \mathrm{Affine}\big(\mathrm{Rigid}(C_i^{(0)} \rightarrow \text{target}) \rightarrow \text{target}\big)
+\]
+
+onde as máscaras são usadas para restringir o cálculo ao cérebro.
+
+### 0.5 Inicialização do template e iterações groupwise (SyN + média)
+
+O template inicial é a média das imagens pré-alinhadas:
+
+\[
+T^{(0)} = \frac{1}{n}\sum_{i=1}^{n} C_i^{(1)}
+\]
+
+Em seguida, o template é refinado iterativamente. Na iteração \(t\):
+
+1) para cada imagem \(C_i^{(1)}\), estima-se um registro deformável para o template corrente:
+
+\[
+G_{i}^{(t)} = \mathrm{Reg}\big(C_i^{(1)} \rightarrow T^{(t-1)}\big)
+\]
+
+2) aplica-se o warp para obter a imagem deformada no espaço do template:
+
+\[
+W_i^{(t)} = C_i^{(1)} \circ \big(G_{i}^{(t)}\big)^{-1}
+\]
+
+3) atualiza-se o template como a média das imagens deformadas:
+
+\[
+T^{(t)} = \frac{1}{n}\sum_{i=1}^{n} W_i^{(t)}
+\]
+
+No `groupwise_ants.py`, o tipo de transformação deformável padrão é `SyN` e o número de iterações do template é `N_ITER_TEMPLATE = 5`.
+
+Ao final, o template é novamente normalizado (percentis no cérebro) para facilitar visualização/consistência de intensidades.
+
+### 0.6 Saídas e convenção de nomes
+
+O script grava o template final como NIfTI comprimido:
+
+`groupwise_DIAG-CN_SEX-<F|M>_AGE-<min>-<max>_N-<n>_template.nii.gz`
+
+e o CSV correspondente:
+
+`selected_DIAG-CN_SEX-<F|M>_AGE-<min>-<max>_N-<n>.csv`
+
+Esses arquivos são usados posteriormente como \(T\) (template estratificado) no pipeline de deslocamento.
+
+**Observação importante (faixas etárias):** `features_displacement.py` constrói o nome do template usando faixas do tipo `50-59`, `60-69`, etc. Portanto, ao gerar templates com `groupwise_ants.py`, recomenda-se chamar o script com limites coerentes (por exemplo, `50 59` em vez de `50 60`) para que o nome do arquivo resultante seja compatível com a regra de nomenclatura usada na etapa longitudinal.
+
+---
+
 ## 1) Espaços (referenciais) e notação
 
 Sejam:
