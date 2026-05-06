@@ -2,7 +2,7 @@
 
 ## Visão geral
 
-Este documento descreve o pipeline de **registro deformável** e a construção de **atributos derivados de campos de deslocamento** utilizados em `features_displacement.py`. A ideia central é usar um **template groupwise estratificado** (por sexo e faixa etária) como **referencial comum**, e então caracterizar (i) o deslocamento do template até cada imagem clínica de um indivíduo (por tempo) e (ii) formas opcionais de representar mudanças entre tempos via esse mesmo template.
+Este documento descreve o pipeline de **registro deformável** e a construção de **atributos derivados de campos de deslocamento** utilizados em `features_displacement.py`. A ideia central é usar um **template groupwise estratificado** (por sexo e faixa etária) como “ponte” comum: estima-se \(F_k\) e \(I_k\) (template↔clínica) para cada tempo e, a partir disso, constroem-se **campos de deslocamento relativos entre tempos** via composição \(I_b \circ F_a\), definidos no **domínio de uma imagem clínica** (dependendo do par), onde então são resumidos por ROIs.
 
 ---
 
@@ -194,38 +194,43 @@ Em registro, a composição é essencial para “conectar” espaços via um ter
 
 ---
 
-## 4) Campo de deslocamento no referencial do template (por tempo)
+## 4) Campo de deslocamento relativo entre tempos (implementado)
 
-Se o **referencial de análise** é sempre o template groupwise, o objeto natural é o campo de deslocamento por tempo definido em \(\Omega_T\):
+O `features_displacement.py` não exporta um campo \(u_k\) no domínio do template \(\Omega_T\). Em vez disso, para cada par de tempos \((a,b)\), ele define um mapeamento “via template”:
 
 \[
-u_k(x) = F_k(x) - x, \quad x \in \Omega_T
+S_{a\to b} = I_b \circ F_a
+\]
+
+e constrói o **campo de deslocamento relativo** no domínio físico de uma imagem clínica de referência \(\Omega_{\mathrm{dom}}\):
+
+\[
+\delta_{a\to b}(y) = S_{a\to b}(y) - y,
+\quad y \in \Omega_{\mathrm{dom}}
 \]
 
 Interpretação:
 
-- \(x\) é uma posição no template (mm),
-- \(F_k(x)\) é a posição correspondente no espaço da clínica \(C_k\),
-- \(u_k(x)\) é um vetor 3D (mm) medindo “quanto o template precisa se deslocar” para alinhar-se à clínica do tempo \(k\), naquele ponto.
+- \(y\) é uma posição (mm) no domínio clínico escolhido para o par,
+- \(S_{a\to b}(y)\) é a posição transformada após aplicar \(F_a\) e depois \(I_b\),
+- \(\delta_{a\to b}(y)\) é um vetor 3D (mm) medindo o deslocamento relativo induzido pela composição via template.
 
 ### Componentes
 
 \[
-u_k(x) = \big(u_{x,k}(x),\; u_{y,k}(x),\; u_{z,k}(x)\big)
+\delta_{a\to b}(y) = \big(\delta_x(y),\; \delta_y(y),\; \delta_z(y)\big)
 \]
-
-Cada componente preserva direção e sinal do deslocamento ao longo de cada eixo.
 
 ---
 
-## 5) Atributos derivados do campo \(u_k\)
+## 5) Atributos derivados do campo \(\delta_{a\to b}\)
 
-O campo vetorial \(u_k\) permite derivar mapas escalares e componentes, que são resumidos por ROIs.
+O campo vetorial \(\delta_{a\to b}\) permite derivar mapas escalares e componentes, que são resumidos por ROIs no mesmo domínio do par.
 
 ### 5.1 Magnitude do deslocamento
 
 \[
-\|u_k(x)\| = \sqrt{u_{x,k}(x)^2 + u_{y,k}(x)^2 + u_{z,k}(x)^2}
+\|\delta_{a\to b}(y)\| = \sqrt{\delta_x(y)^2 + \delta_y(y)^2 + \delta_z(y)^2}
 \]
 
 Interpretação: intensidade do deslocamento (mm) independentemente da direção.
@@ -233,10 +238,10 @@ Interpretação: intensidade do deslocamento (mm) independentemente da direção
 ### 5.2 Divergência (expansão/contração)
 
 \[
-\nabla \cdot u_k(x) =
-\frac{\partial u_{x,k}}{\partial x} +
-\frac{\partial u_{y,k}}{\partial y} +
-\frac{\partial u_{z,k}}{\partial z}
+\nabla \cdot \delta_{a\to b}(y) =
+\frac{\partial \delta_x}{\partial x} +
+\frac{\partial \delta_y}{\partial y} +
+\frac{\partial \delta_z}{\partial z}
 \]
 
 - valores positivos: comportamento local expansivo,
@@ -245,28 +250,28 @@ Interpretação: intensidade do deslocamento (mm) independentemente da direção
 ### 5.3 Rotacional (curl) e sua magnitude
 
 \[
-\nabla \times u_k(x) =
+\nabla \times \delta_{a\to b}(y) =
 \begin{pmatrix}
-\frac{\partial u_{z,k}}{\partial y} - \frac{\partial u_{y,k}}{\partial z} \\
-\frac{\partial u_{x,k}}{\partial z} - \frac{\partial u_{z,k}}{\partial x} \\
-\frac{\partial u_{y,k}}{\partial x} - \frac{\partial u_{x,k}}{\partial y}
+\frac{\partial \delta_z}{\partial y} - \frac{\partial \delta_y}{\partial z} \\
+\frac{\partial \delta_x}{\partial z} - \frac{\partial \delta_z}{\partial x} \\
+\frac{\partial \delta_y}{\partial x} - \frac{\partial \delta_x}{\partial y}
 \end{pmatrix}
 \]
 
 e
 
 \[
-\|\nabla \times u_k(x)\|
+\|\nabla \times \delta_{a\to b}(y)\|
 \]
 
 Interpretação: intensidade da componente “giratória” local do campo.
 
 ### 5.4 Jacobiano e log-Jacobiano (variação volumétrica local)
 
-Define-se o mapeamento total:
+Define-se o mapeamento total (no domínio do par):
 
 \[
-\varphi_k(x) = x + u_k(x)
+\varphi_{a\to b}(y) = y + \delta_{a\to b}(y)
 \]
 
 Seu Jacobiano é:
@@ -276,7 +281,9 @@ J_{\varphi_k}(x) = \frac{\partial \varphi_k(x)}{\partial x}
 = I + \frac{\partial u_k(x)}{\partial x}
 \]
 
-O determinante \(\det(J_{\varphi_k}(x))\) mede variação volumétrica local:
+**Observação (consistência com o script):** em `features_displacement.py`, o campo usado nas derivadas é \(\delta_{a\to b}(y)\) (Seção 4/6), portanto a forma do Jacobiano deve ser entendida como \(J_{\varphi_{a\to b}}(y)=I+\frac{\partial \delta_{a\to b}(y)}{\partial y}\), com \(\varphi_{a\to b}(y)=y+\delta_{a\to b}(y)\).
+
+O determinante \(\det(J_{\varphi_{a\to b}}(y))\) mede variação volumétrica local:
 
 - \(> 1\): expansão,
 - \(< 1\): contração,
@@ -285,50 +292,62 @@ O determinante \(\det(J_{\varphi_k}(x))\) mede variação volumétrica local:
 Frequentemente usa-se o log-Jacobiano:
 
 \[
-\log\det(J_{\varphi_k}(x))
+\log\det(J_{\varphi_{a\to b}}(y))
 \]
 
 ---
 
 ## 6) Representações opcionais “via template” para mudança entre tempos
 
-Mesmo sem registrar clínica↔clínica diretamente, é possível representar relações entre tempos usando o template como ponte.
+Mesmo sem registrar clínica↔clínica diretamente, o `features_displacement.py` representa relações entre tempos usando o template como “ponte”, mas **computando um campo relativo por par no domínio de uma imagem clínica** (não no domínio do template).
 
-### 6.1 Diferença vetorial direta entre campos no template
+### 6.1 Composição via template e campo relativo no domínio clínico
 
-Se \(u_1\) e \(u_2\) são ambos definidos em \(\Omega_T\), então:
+Dados dois tempos \(a\) e \(b\), com:
 
-\[
-\Delta u_{1\to2}(x) = u_2(x) - u_1(x)
-\]
+- \(F_a\): Template \(\rightarrow\) Clínica\(_a\) (forward do registro do tempo \(a\))
+- \(I_b\): Clínica\(_b\) \(\rightarrow\) Template (inverse do registro do tempo \(b\))
 
-Interpretação: quanto o deslocamento (template→clínica) “mudou” do tempo 1 para o tempo 2, ponto a ponto no template.
-
-### 6.2 Composição Template→Template entre dois alinhamentos
-
-Outra forma é construir um mapeamento no próprio template que “compara” dois alinhamentos:
+o script constrói, para pontos no domínio físico de uma imagem clínica de referência \(\Omega_{\mathrm{dom}}\), a composição:
 
 \[
-S_{1\to2} = I_2 \circ F_1
-\quad \Rightarrow \quad
-S_{1\to2}(x) = I_2(F_1(x))
+S_{a\to b} = I_b \circ F_a
 \]
 
-O campo correspondente no template pode ser escrito como:
+e define o **campo de deslocamento relativo** nesse domínio como:
 
 \[
-w_{1\to2}(x) = S_{1\to2}(x) - x
+\delta_{a\to b}(y) = S_{a\to b}(y) - y, \quad y \in \Omega_{\mathrm{dom}}
 \]
 
-Esse \(w_{1\to2}\) também pode ter magnitude, Jacobiano, divergência, curl, etc.
+Na prática, em `features_displacement.py`, \(\delta_{a\to b}\) é calculado aplicando \(F_a\) e depois \(I_b\) a uma malha de pontos físicos do domínio \(\Omega_{\mathrm{dom}}\) (via `ants.apply_transforms_to_points`), e então subtraindo a posição original.
+
+### 6.2 Pares usados no triplet \((i_1,i_2,i_3)\) e escolha do domínio
+
+Para cada triplet ordenado temporalmente \((i_1,i_2,i_3)\), o script computa três campos relativos (sem salvar NIfTI; apenas em memória para extração de estatísticas por ROI):
+
+- **Par 12**: usa \(\Omega_{\mathrm{dom}}=\Omega_1\) (domínio da clínica do baseline \(i_1\))
+  \[
+  \delta_{1\to2}(y) = (I_2 \circ F_1)(y) - y,\quad y\in\Omega_1
+  \]
+- **Par 13**: usa \(\Omega_{\mathrm{dom}}=\Omega_1\)
+  \[
+  \delta_{1\to3}(y) = (I_3 \circ F_1)(y) - y,\quad y\in\Omega_1
+  \]
+- **Par 23**: usa \(\Omega_{\mathrm{dom}}=\Omega_2\) (domínio da clínica no tempo 2, \(i_2\))
+  \[
+  \delta_{2\to3}(y) = (I_3 \circ F_2)(y) - y,\quad y\in\Omega_2
+  \]
+
+Para cada \(\delta_{a\to b}\), o script deriva mapas escalares (log-Jacobiano, magnitude, divergência, componentes \(x/y/z\), magnitude do curl) e resume por ROIs (note que os mapas de ROIs também são usados no mesmo domínio do par: pares 12/13 usam ROIs de \(i_1\); par 23 usa ROIs de \(i_2\)).
 
 ---
 
 ## 7) Agregação por ROIs (features por região)
 
-Seja \(R \subset \Omega_T\) uma região de interesse (ROI) no referencial do template (ou reamostrada para ele). Para um mapa escalar \(s(x)\) (por exemplo, \(\|u_k(x)\|\) ou \(\log\det J_{\varphi_k}(x)\)), extrai-se um conjunto de estatísticas:
+Seja \(R \subset \Omega_{\mathrm{dom}}\) uma região de interesse (ROI) no **mesmo domínio do par** (no script, as ROIs são lidas de `*_regions.nii.gz` e reamostradas para o `ref_img` do par). Para um mapa escalar \(s(y)\) (por exemplo, \(\|\delta_{a\to b}(y)\|\) ou \(\log\det J_{\varphi_{a\to b}}(y)\)), extrai-se um conjunto de estatísticas:
 
-- média: \(\mu_R = \frac{1}{|R|}\sum_{x\in R} s(x)\)
+- média: \(\mu_R = \frac{1}{|R|}\sum_{y\in R} s(y)\)
 - desvio padrão: \(\sigma_R\)
 - quantis: \(q_{0.05}, q_{0.50}, q_{0.95}\)
 - tamanho amostral: \(|R|\)
@@ -345,9 +364,9 @@ O resultado final é um vetor de atributos por ROI, por tempo (e/ou por relaçã
 - **\(F_k\)**: transformação Template→Clínica\(_k\) (*forward*).
 - **\(I_k\)**: transformação Clínica\(_k\)→Template (*inverse*).
 - **\(\circ\)**: composição; \((A\circ B)(x)=A(B(x))\).
-- **\(u_k(x)=F_k(x)-x\)**: campo de deslocamento no template.
-- **\(\varphi_k(x)=x+u_k(x)\)**: mapeamento total.
-- **\(J_{\varphi_k}(x)\)**: Jacobiano do mapeamento; **\(\det\)** determinante.
+- **\(\delta_{a\to b}(y)=(I_b\circ F_a)(y)-y\)**: campo relativo via template (no domínio do par).
+- **\(\varphi_{a\to b}(y)=y+\delta_{a\to b}(y)\)**: mapeamento total (no domínio do par).
+- **\(J_{\varphi_{a\to b}}(y)\)**: Jacobiano do mapeamento; **\(\det\)** determinante.
 - **\(\log\det(J)\)**: log-Jacobiano (expansão/contração em escala log).
 - **\(\nabla\cdot u\)**: divergência; **\(\nabla\times u\)**: rotacional (curl).
 
