@@ -28,7 +28,7 @@ DEFAULT_LIST = Path("/mnt/study-data/pgirardi/graphs/image_data_teste.txt")
 DEFAULT_IMAGE_DIR = Path("/mnt/study-data/pgirardi/graphs/images/resampled_1.0mm")
 DEFAULT_IMAGE_SUFFIX = "_stripped_nlm_denoised_biascorrected_mni_template.nii.gz"
 DEFAULT_REGIONS_DIR = Path("/mnt/study-data/pgirardi/graphs/images/regions")
-DEFAULT_OUT = Path("/mnt/study-data/pgirardi/graphs/csvs/features_radiomic_teste.csv")
+DEFAULT_OUT = Path("/mnt/study-data/pgirardi/graphs/csvs/abordagem_teste/features_radiomic_teste.csv")
 
 # Seleção de features no código (em vez de Params.yaml).
 # Referência das classes: https://github.com/AIM-Harvard/pyradiomics/blob/master/docs/features.rst

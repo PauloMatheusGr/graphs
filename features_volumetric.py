@@ -213,7 +213,7 @@ def main() -> None:
         "--out",
         type=Path,
         default=Path(
-            "/mnt/study-data/pgirardi/graphs/csvs/features_volumetric_teste.csv"
+            "/mnt/study-data/pgirardi/graphs/csvs/abordagem_teste/features_volumetric_teste.csv"
         ),
         help="Caminho do CSV de saida",
     )
