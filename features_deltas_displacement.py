@@ -11,8 +11,8 @@ import pandas as pd
 # =========================
 # Defaults (edite aqui)
 # =========================
-DEFAULT_IMAGES_CSV = "image_data_sMCI_pMCI.txt"
-DEFAULT_COMBINATIONS_CSV = "cj_data_abordagem_4_sMCI_pMCI.txt"
+DEFAULT_IMAGES_CSV = "image_data_teste.txt"
+DEFAULT_COMBINATIONS_CSV = "cj_data_abordagem_teste.txt"
 
 # Fases: "1" (warps), "2" (features), "both"
 DEFAULT_PHASE = "both"
@@ -827,7 +827,7 @@ if __name__ == "__main__":
         )
 
     print(
-        "[DONE] features_displacement.py terminou. "
+        "[DONE] features_deltas_displacement.py terminou. "
         f"phase={DEFAULT_PHASE} images_csv={images_csv} combinations_csv={comb_path}"
     )
 

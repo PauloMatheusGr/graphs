@@ -1,5 +1,19 @@
 Last updated: 04/05/2006 - By Paulo Girardi
 
+dado o seguinte csv "/mnt/study-data/pgirardi/graphs/csvs/abordagem_teste/all_delta_features_neurocombat.csv", verifique se meu designe a seguir está coerente para que eu consiga iniciar a modelagem? 
+
+1. Da maneira que está cada 3 linhas representam um conjunto com 3 imagens, sendo 20 regiões de interesse (coluna roi + side) vezes 3 pares de imagens (coluna pair), para cada linha representar um conjunto com 3 imagens longitudinais eu preciso realizar um flatten (concatenar as informações a cada tres linhas ou mesmo ID_PT + COMBINATION_NUMBER + TRIPLET_IDX) para que os atributos dos pares de imagens fiquem na sequencia na mesma linha e salvar esse novo arquivo que será a entrada dos modelos.
+
+2. Com um arquivo csv com todos os atributos, em que cada linha representa um conjunto com 3 imagens, iniciar a etapa de balancemento dos dados em nível de paciente, para a classe sMCI e pMCI (coluna GROUP) e sexo F e M (coluna SEX) com downsampling.  
+
+3. Após o balanceamento, realizar a selação de atributos, a priori em dois niveis, sendo 1. para filtrar atributos com alta correlação (features vs features), e 2. para filtrar atributos com baixa variância (features vs variância) e de alguma maneira printar a quantidade de atributos após as etapas e plotar isso para documentação. Em seguida (caso essas duas abordagens não sejam suficientemente robustas), utilizar o método selectkbest (univariado) do sklearn para mais uma etapa de filtragem e novamente de alguma maneira printar a quantidade de atributos após as etapas e plotar isso para documentação, e em seguida, caso ainda não seja suficiente, utilizar o método SFS sequential feature selector (multivariado) do sklearn para finalizar a seleção de atributos.  Finalmente, salvar o arquivo com os atributos filtrados. 
+
+4. Realizar a etapa se separação dos folds de treino, validação e teste, tendo o cuidado pra não ter conjuntos (linhas) do mesmo paciente (coluna ID_PT) do treinamento no teste para evitar vazameto de dados (leakage).  Também para evitar vazamento de dados, aplicar a normalização z-score apenas no fold de treinamento, e a média e desvio padrão obtidos do treino aplicar no fold de validação e teste. 
+
+5. iniciar de fato a modelagem para classificação supervisionada. 
+
+##############################################
+
 Descrição Pré-processamento
 
 [14:00, 5/4/2026] PM: Todos os volumes de RM estrutural ponderados em T1 foram primeiramente submetidos à extração de crânio (skull-stripping) utilizando a função brain_extraction() do pacote ANTsPyNet, dentro do ecossistema ANTsX \cite{tustison-2021}. As entradas foram carregadas via ants.image_read() e as imagens 4D foram convertidas em 3D através da extração do primeiro volume com ants.slice_image(axis=3, idx=0). A extração cerebral foi realizada com modality="t1" e o diretório de cache do ANTsXNet fixado em /workspace/cache para garantir a reprodutibilidade, resultando em volumes sem crânio e máscaras cerebrais binárias.
