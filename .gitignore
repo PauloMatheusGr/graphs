@@ -4,3 +4,4 @@ csvs/
 graphs/
 images/
 zold/
+.venv/
