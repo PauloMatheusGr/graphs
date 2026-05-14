@@ -1,6 +1,6 @@
-Tenho uma planilha de delta atributos de um conjunto com 3 imagens, cuja alocação está em csvs/abordagem_teste/all_delta_features_neurocombat.csv.
+Tenho uma planilha de atributos absolutos por imagens individuais de um conjunto com 3 imagens, cuja alocação está em /mnt/study-data/pgirardi/graphs/csvs/abordagem_4_sMCI_pMCI/all_unitary_features_neurocombat.csv.
 
-Cada 60 linhas dessa planilha eu tenho um datapoint, que é 20 regiões de interesse na coluna label vezes 3 diferenças entre as aquisições na coluna pair, que são 12=i2-i1, 13=i3-i1, 23=i3-i2.
+Cada 60 linhas dessa planilha eu tenho um datapoint, que é 20 regiões de interesse na coluna label vezes 3 diferenças entre as aquisições na coluna pair, que são 1=imagem 1, 2=imagem 2, 3=imagem 3.
 
 Cada linha representa um vetor de atributos de uma região de interesse especifica em um temnpo de aquisição especifico. Para você saber qual imagem é essa linha olhe a coluna pair, para saber qual paciente olhe a coluna ID_PT, para saber qual região de interesse olhe as colunas roi+side+label. 
 
@@ -15,7 +15,7 @@ são as quantidades de conjuntos (datapoint) de cada paciente.
 
 O split é por paciente na coluna ID_PT.
 
-Drope as colunas ID_IMG_i1	ID_IMG_i2	ID_IMG_i3	roi	side    DIAG	AGE	TIME_PROG	ID_IMG_ref	FIELD_STRENGTH	SLICE_THICKNESS	MANUFACTURER	MFG_MODEL	batch pois não são atributos.
+Drope as colunas ID_IMG_i1	ID_IMG_i2	ID_IMG_i3	ref_tag	roi	side    DIAG	AGE	TIME_PROG	ID_IMG_ref	FIELD_STRENGTH	SLICE_THICKNESS	MANUFACTURER	MFG_MODEL	batch pois não são atributos.
 
 As colunas de atributos são SEX	centroid_x	centroid_y	centroid_z	logjac_n	logjac_mean	logjac_std	logjac_p05	logjac_p50	logjac_p95	mag_n	mag_mean	mag_std	mag_p05	mag_p50	mag_p95	div_n	div_mean	div_std	div_p05	div_p50	div_p95	ux_n	ux_mean	ux_std	ux_p05	ux_p50	ux_p95	uy_n	uy_mean	uy_std	uy_p05	uy_p50	uy_p95	uz_n	uz_mean	uz_std	uz_p05	uz_p50	uz_p95	curlmag_n	curlmag_mean	curlmag_std	curlmag_p05	curlmag_p50	curlmag_p95	original_firstorder_10Percentile	original_firstorder_90Percentile	original_firstorder_Energy	original_firstorder_Entropy	original_firstorder_InterquartileRange	original_firstorder_Kurtosis	original_firstorder_Maximum	original_firstorder_Mean	original_firstorder_MeanAbsoluteDeviation	original_firstorder_Median	original_firstorder_Minimum	original_firstorder_Range	original_firstorder_RobustMeanAbsoluteDeviation	original_firstorder_RootMeanSquared	original_firstorder_Skewness	original_firstorder_TotalEnergy	original_firstorder_Uniformity	original_firstorder_Variance	original_glcm_Autocorrelation	original_glcm_ClusterProminence	original_glcm_ClusterShade	original_glcm_ClusterTendency	original_glcm_Contrast	original_glcm_Correlation	original_glcm_DifferenceAverage	original_glcm_DifferenceEntropy	original_glcm_DifferenceVariance	original_glcm_Id	original_glcm_Idm	original_glcm_Idmn	original_glcm_Idn	original_glcm_Imc1	original_glcm_Imc2	original_glcm_InverseVariance	original_glcm_JointAverage	original_glcm_JointEnergy	original_glcm_JointEntropy	original_glcm_MCC	original_glcm_MaximumProbability	original_glcm_SumAverage	original_glcm_SumEntropy	original_glcm_SumSquares	original_gldm_DependenceEntropy	original_gldm_DependenceNonUniformity	original_gldm_DependenceNonUniformityNormalized	original_gldm_DependenceVariance	original_gldm_GrayLevelNonUniformity	original_gldm_GrayLevelVariance	original_gldm_HighGrayLevelEmphasis	original_gldm_LargeDependenceEmphasis	original_gldm_LargeDependenceHighGrayLevelEmphasis	original_gldm_LargeDependenceLowGrayLevelEmphasis	original_gldm_LowGrayLevelEmphasis	original_gldm_SmallDependenceEmphasis	original_gldm_SmallDependenceHighGrayLevelEmphasis	original_gldm_SmallDependenceLowGrayLevelEmphasis	original_glrlm_GrayLevelNonUniformity	original_glrlm_GrayLevelNonUniformityNormalized	original_glrlm_GrayLevelVariance	original_glrlm_HighGrayLevelRunEmphasis	original_glrlm_LongRunEmphasis	original_glrlm_LongRunHighGrayLevelEmphasis	original_glrlm_LongRunLowGrayLevelEmphasis	original_glrlm_LowGrayLevelRunEmphasis	original_glrlm_RunEntropy	original_glrlm_RunLengthNonUniformity	original_glrlm_RunLengthNonUniformityNormalized	original_glrlm_RunPercentage	original_glrlm_RunVariance	original_glrlm_ShortRunEmphasis	original_glrlm_ShortRunHighGrayLevelEmphasis	original_glrlm_ShortRunLowGrayLevelEmphasis	original_glszm_GrayLevelNonUniformity	original_glszm_GrayLevelNonUniformityNormalized	original_glszm_GrayLevelVariance	original_glszm_HighGrayLevelZoneEmphasis	original_glszm_LargeAreaEmphasis	original_glszm_LargeAreaHighGrayLevelEmphasis	original_glszm_LargeAreaLowGrayLevelEmphasis	original_glszm_LowGrayLevelZoneEmphasis	original_glszm_SizeZoneNonUniformity	original_glszm_SizeZoneNonUniformityNormalized	original_glszm_SmallAreaEmphasis	original_glszm_SmallAreaHighGrayLevelEmphasis	original_glszm_SmallAreaLowGrayLevelEmphasis	original_glszm_ZoneEntropy	original_glszm_ZonePercentage	original_glszm_ZoneVariance	original_ngtdm_Busyness	original_ngtdm_Coarseness	original_ngtdm_Complexity	original_ngtdm_Contrast	original_ngtdm_Strength	original_shape_Elongation	original_shape_Flatness	original_shape_LeastAxisLength	original_shape_MajorAxisLength	original_shape_Maximum2DDiameterColumn	original_shape_Maximum2DDiameterRow	original_shape_Maximum2DDiameterSlice	original_shape_Maximum3DDiameter	original_shape_MeshVolume	original_shape_MinorAxisLength	original_shape_Sphericity	original_shape_SurfaceArea	original_shape_SurfaceVolumeRatio	original_shape_VoxelVolume
 
@@ -128,89 +128,3 @@ classifier.fit(X_train_transform, y)
 | *Complexidade* | Fácil de implementar, difícil de tunar aqui | Requer sktime, mas geralmente "funciona de primeira" |
 
 *Veredito:* Comece pelo *ROCKET*. Para dados neurocientíficos, onde a relação entre as regiões (colunas) e o tempo (linhas) é complexa e não-linear, o ROCKET costuma ter uma acurácia 15-20% superior a modelos tabulares como o XGBoost.
-
----
-
-## Implementação e pipeline (`colab/exp1_xgboost.py`, `colab/exp1_rocket.py`, `colab/exp1_svm.py`)
-
-Esta secção descreve o que está **efetivamente implementado** nos scripts Colab (pode divergir do roteiro ilustrativo acima, que é pedagógico).
-
-### Dados e ficheiros
-
-| Item | Valor nos scripts |
-| --- | --- |
-| Raiz do projeto | `ROOT = parents[1]` relativamente a `colab/` |
-| CSV lido | `csvs/abordagem_4_sMCI_pMCI/all_delta_features_neurocombat.csv` |
-| Lista de atributos | Lida de `exp1.md`, linha que começa por `As colunas de atributos são` |
-| Figuras e tabelas | `colab/exp1/{balanced|unbalanced}/{xgboost|rocket|svm}/` — subpastas `figures/`, `tables/` (CSV + `run_meta.json`); regenerar PDFs a partir dos CSV: editar `RUN_DIR` e títulos no topo de `colab/exp1_plot_from_artifacts.py` e correr `python colab/exp1_plot_from_artifacts.py` |
-
-*(A primeira linha deste ficheiro pode referir outro caminho de CSV; o treino reproduzível usa o caminho da tabela acima.)*
-
-### Tensor e alvo
-
-- Cada amostra é um tensor **`X_3d` de forma `(n_amostras, 60, n_atributos)`**: 60 linhas = 20 ROIs × 3 pares (`12`, `13`, `23` em `PAIR_ORDER`), por `(ID_PT, COMBINATION_NUMBER, TRIPLET_IDX)`.
-- **`y`**: `GROUP` → sMCI=0, pMCI=1.
-- **`groups`**: `ID_PT` (split por paciente).
-- **`sex`**: codificado para downsample (F=0, M=1); coluna `SEX` entra na matriz de atributos como float conforme `exp1.md`.
-- **`slot_labels`**: um rótulo por linha do bloco 60, formato `pair|roi|side|label`, usado para agregar SHAP por ROI / nome de atributo (XGBoost).
-
-### Validação cruzada (externa e interna)
-
-- **Externo:** `StratifiedGroupKFold`, **5 folds**, `shuffle=True`, `random_state=42`, agrupamento por `ID_PT`.
-- **Opcional — downsample no treino externo:** flag `DOWNSAMPLE_GROUP_SEX` (por defeito **False** no XGBoost, **True** no ROCKET): por paciente, equipara o número de pacientes por estrato **rótulo × sexo** dentro do treino de cada fold.
-- **Nested CV interno (Optuna):** `INNER_NCV_SPLITS = 3` folds `StratifiedGroupKFold` **dentro do treino externo** de cada fold. O Optuna maximiza a **média da AUC** nesses 3 validadores internos (sem usar o teste externo).
-- **Holdout para refit / curvas (XGBoost):** após o NCV interno, `inner_train_val` devolve um par `tr_fit` / `val` (primeiro split de um SGK interno com até 5 splits) sobre o treino externo: o modelo final do fold usa esse par para **early stopping** (XGBoost) e para o PDF de curvas no fold 1.
-
-### Pré-processamento (por fold externo, alinhado ao `tr_fit` do holdout)
-
-Ordem aplicada ao treino de ajuste `tr_fit` (e transformação de `val` / `test` com o mesmo `keep_final` e scaler):
-
-1. **Correlação entre colunas** no flatten de `X_3d[tr_fit]`: limiar **0,9** (`CORR_THR`), seleção greedy.
-2. **`VarianceThreshold(VAR_THR)`** com `VAR_THR = 0.0` (remove só colunas constantes no treino de ajuste).
-3. **`StandardScaler`** ajustado nas linhas achatadas do tensor de treino de ajuste, aplicado a val e teste.
-
-**Nota (NCV interno no XGBoost):** em cada trial Optuna e cada split interno, correlação + variância + scaler são **recalculados só no treino interno** daquele split (sem vazamento para a validação interna).
-
-### `colab/exp1_xgboost.py` (tabular / XGBoost)
-
-- **Achatar:** `(n, 60, p) → (n, 60·p)` para o classificador.
-- **Hiperparâmetros (Optuna, 25 trials, TPE):** `spw_mul` (multiplicador sobre `scale_pos_weight = n_neg/n_pos` do treino relevante), `max_depth`, `learning_rate`, `subsample`, `colsample_bytree`, `reg_lambda`, `min_child_weight`, `gamma`.
-- **Treino:** API nativa `xgboost.train` com `eval_metric=logloss`, até `N_ESTIMATORS_MAX = 500` árvores, **`EARLY_STOPPING_ROUNDS = 50`**, validação no conjunto interno apropriado; o booster final é carregado em `XGBClassifier` via `load_model` (compatível com SHAP).
-- **Métricas de teste por fold:** acurácia, AUC, F1 (limiar 0,5 nas probabilidades).
-- **Figuras:** em `figures/`: contagens de atributos; curvas **logloss** e **acurácia na validação** vs número de árvores (só fold 1); matriz de confusão **OOF** agregada; **ROC** e **PR** (média ±1 dp entre folds); boxplot Acc/AUC/F1; barras horizontais **|SHAP|** agregadas por ROI e por nome de atributo; **SHAP summary** no maior fold de teste. **Não** se gera gain/importância nativa XGB.
-
-### `colab/exp1_rocket.py` (ROCKET + regressão logística L1)
-
-- **Entrada ROCKET:** tensor transposto `(n, n_atributos, 60)` (eixo de “tempo” = 60 posições).
-- **Pré-processamento:** o mesmo pipeline correlação + variância + scaler que no XGBoost, no `tr_fit` do fold, depois transposição.
-- **NCV interno:** para cada um dos `INNER_NCV_SPLITS` splits internos, **novo** `Rocket(num_kernels=10_000)` ajustado só no treino interno; guardam-se `Z_tr` e `Z_val` transformados. O Optuna **não** refaz o ROCKET a cada trial — só a regressão.
-- **Classificador:** `LogisticRegression(penalty="l1", solver="saga", max_iter=10000)`, hiperparâmetro **`C`** em escala log \([10^{-4}, 10^4]\), **25 trials** Optuna, objetivo = **média da AUC** nos folds internos.
-- **Refit final:** melhor `C`, ajuste em `Z_tr` do `tr_fit` do holdout (ROCKET desse fold).
-- **Figuras:** contagens de atributos; no fold 1, acurácia na validação vs **`log10(C)`** (`figures/l1_C_validation_curve.pdf`); matriz de confusão OOF; ROC/PR; boxplot de métricas. **Sem SHAP** neste script (espaço ROCKET de alta dimensão + modelo linear).
-
-### `colab/exp1_svm.py` (tabular / SVM linear)
-
-- **Mesmo pré-processamento** que o XGBoost (achatado, correlação, variância, `StandardScaler` no `tr_fit` do fold).
-- **Hiperparâmetros (Optuna, 25 trials):** `C` em escala log \([10^{-4}, 10^4]\); objetivo = média da AUC nos folds internos (`decision_function` na validação interna).
-- **Modelo final:** `LinearSVC` ajustado em `tr_fit`; no teste usam-se `predict` e **sigmóide** da `decision_function` como score para AUC/PR e limiar 0,5 para F1/acurácia alinhados ao XGBoost.
-- **Importância:** agregação por ROI / atributo com **média dos \|coef.\|** por fold (análogo ao agregado de \|SHAP\| no XGBoost).
-- **Figuras:** contagens de atributos; confusão OOF; ROC/PR; boxplot; barras por ROI e por atributo (`coef_top_*.pdf`).
-
-### `colab/exp1_plot_from_artifacts.py`
-
-Lê `tables/*.csv` de um run e grava PDFs em `figures/`. **Sem argumentos de linha de comando:** defina `RUN_DIR` e os textos dos gráficos na secção `CONFIG` no início do ficheiro, depois execute o script.
-
-### Dependências relevantes
-
-Python: `numpy`, `pandas`, `scikit-learn`, `matplotlib`, `optuna`, `xgboost`, `shap` (XGBoost), `sktime` (ROCKET).
-
-### Execução
-
-Na raiz do repositório (com ambiente que tenha as dependências):
-
-```bash
-python colab/exp1_xgboost.py
-python colab/exp1_rocket.py
-python colab/exp1_svm.py
-python colab/exp1_plot_from_artifacts.py
-```
