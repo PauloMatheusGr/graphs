@@ -1,4 +1,4 @@
-"""exp1: XGBoost tabular a partir de exp1.md (Optuna + nested CV interno + early stopping).
+"""exp2: XGBoost tabular a partir de exp2.md (Optuna + nested CV interno + early stopping).
 
 Nested CV: o Optuna maximiza a média da AUC em vários StratifiedGroupKFold internos
 dentro do treino externo; o refit final usa tr_fit/val (holdout) como antes.
@@ -26,13 +26,13 @@ from xgboost import XGBClassifier
 
 ROOT = Path(__file__).resolve().parents[1]
 COLAB_DIR = Path(__file__).resolve().parent
-CSV_PATH = ROOT / "csvs/abordagem_4_sMCI_pMCI/all_delta_features_neurocombat.csv"
-EXP1_PATH = ROOT / "exp1.md"
+CSV_PATH = ROOT / "csvs/abordagem_4_sMCI_pMCI/all_unitary_features_neurocombat.csv"
+EXP2_PATH = ROOT / "exp2.md"
 MODEL_SLUG = "xgboost"
-PAIR_ORDER = ["12", "13", "23"]
+PAIR_ORDER = ["1", "2", "3"]
 GROUP_KEY = ["ID_PT", "COMBINATION_NUMBER", "TRIPLET_IDX"]
-# Deltas -> taxa por mês via t12/t13/t23 conforme pair (ver exp1.md e exp1_utils).
-TEMPORAL_RATE_NORM = True
+# Absolutos: img1 baseline; img2/3 taxa desde baseline (ver exp2.md e exp1_utils).
+TEMPORAL_MODE = "baseline_rate"
 DT_EPSILON = 0.5
 CORR_THR = 0.9
 # VarianceThreshold(0.0) remove apenas colunas constantes no treino (exp1: baixa variância).
@@ -205,7 +205,7 @@ def _shap_abs_mean_test(model: XGBClassifier, X_te: np.ndarray) -> np.ndarray:
 
 def main() -> None:
     t0 = time.perf_counter()
-    run_dir = u.exp1_run_dir(
+    run_dir = u.exp2_run_dir(
         COLAB_DIR,
         downsample_group_sex=DOWNSAMPLE_GROUP_SEX,
         model_slug=MODEL_SLUG,
@@ -215,11 +215,11 @@ def main() -> None:
 
     X_3d, y, groups, sex, feat_names, slot_labels = u.load_tensor(
         CSV_PATH,
-        EXP1_PATH,
+        EXP2_PATH,
         PAIR_ORDER,
         GROUP_KEY,
         require_sex=DOWNSAMPLE_GROUP_SEX,
-        temporal_mode="delta_rate" if TEMPORAL_RATE_NORM else "none",
+        temporal_mode=TEMPORAL_MODE,
         dt_epsilon=DT_EPSILON,
     )
     n_raw = X_3d.shape[2]
@@ -533,7 +533,7 @@ def main() -> None:
         extra={
             "inner_ncv_splits": INNER_NCV_SPLITS,
             "optuna_trials": OPTUNA_XGB_TRIALS,
-            "temporal_mode": "delta_rate" if TEMPORAL_RATE_NORM else "none",
+            "temporal_mode": TEMPORAL_MODE,
             "dt_epsilon": DT_EPSILON,
             "csv_schema": "metrics_per_fold, oof_predictions, fold_test_scores, importance_shap_*",
         },

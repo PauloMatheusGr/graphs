@@ -1,4 +1,4 @@
-"""Funções partilhadas entre exp1_xgboost.py, exp1_rocket.py, exp1_svm.py (dados, CV, plots)."""
+"""Funções partilhadas entre exp1/exp2 (xgboost, rocket, svm): dados, CV, plots."""
 
 from __future__ import annotations
 
@@ -59,6 +59,96 @@ def block_to_feature_float_matrix(block: pd.DataFrame, feat_names: list[str]) ->
     return np.column_stack(cols)
 
 
+# pair (deltas i2-i1, i3-i1, i3-i2) -> coluna de intervalo em meses no CSV
+PAIR_DT_COLUMN: dict[str, str] = {"12": "t12", "13": "t13", "23": "t23"}
+
+
+def apply_temporal_rate_norm(
+    X: np.ndarray,
+    block: pd.DataFrame,
+    feat_names: list[str],
+    *,
+    dt_epsilon: float = 0.5,
+) -> np.ndarray:
+    """Converte deltas em taxa por mês: x' = x / max(dt, dt_epsilon); SEX não é escalado."""
+    if "pair" not in block.columns:
+        raise ValueError("Coluna pair ausente (necessária para ponderação temporal).")
+    missing_t = [c for c in PAIR_DT_COLUMN.values() if c not in block.columns]
+    if missing_t:
+        raise ValueError(f"Colunas de tempo ausentes: {missing_t}")
+
+    X_out = np.array(X, dtype=np.float64, copy=True)
+    pairs = block["pair"].astype(str).str.strip().to_numpy()
+    scale_cols = [j for j, name in enumerate(feat_names) if name != "SEX"]
+    if not scale_cols:
+        return X_out
+
+    eps = float(dt_epsilon)
+    if eps <= 0.0 or not np.isfinite(eps):
+        raise ValueError(f"dt_epsilon deve ser finito e > 0; recebido {dt_epsilon!r}.")
+
+    for i, p in enumerate(pairs):
+        dt_col = PAIR_DT_COLUMN.get(str(p))
+        if dt_col is None:
+            raise ValueError(
+                f"pair={p!r} sem mapeamento temporal (esperado um de {list(PAIR_DT_COLUMN)})."
+            )
+        dt = float(pd.to_numeric(block[dt_col].iloc[i], errors="coerce"))
+        if not np.isfinite(dt):
+            raise ValueError(f"Valor não finito em {dt_col!r} na linha {i} (pair={p!r}).")
+        denom = max(dt, eps)
+        X_out[i, scale_cols] /= denom
+    return X_out
+
+
+def apply_temporal_baseline_rate(
+    X: np.ndarray,
+    block: pd.DataFrame,
+    feat_names: list[str],
+    pair_order: list[str],
+    *,
+    dt_epsilon: float = 0.5,
+) -> np.ndarray:
+    """Exp2: pair=1 mantém absolutos; pair=2/3 -> (x - x_baseline) / max(t12|t13, eps)."""
+    if len(pair_order) != 3:
+        raise ValueError(
+            f"baseline_rate exige 3 passos temporais; pair_order={pair_order!r}."
+        )
+    for c in ("t12", "t13"):
+        if c not in block.columns:
+            raise ValueError(f"Coluna {c!r} ausente (necessária para baseline_rate).")
+
+    n_rows = len(block)
+    n_per = n_rows // 3
+    if n_per * 3 != n_rows:
+        raise ValueError(f"Bloco com {n_rows} linhas; esperado múltiplo de 3.")
+
+    eps = float(dt_epsilon)
+    if eps <= 0.0 or not np.isfinite(eps):
+        raise ValueError(f"dt_epsilon deve ser finito e > 0; recebido {dt_epsilon!r}.")
+
+    X_orig = np.asarray(X, dtype=np.float64)
+    X_out = X_orig.copy()
+    scale_cols = [j for j, name in enumerate(feat_names) if name != "SEX"]
+    if not scale_cols:
+        return X_out
+
+    for slot in range(n_per):
+        i_base = slot
+        i2 = n_per + slot
+        i3 = 2 * n_per + slot
+        dt12 = float(pd.to_numeric(block["t12"].iloc[i2], errors="coerce"))
+        dt13 = float(pd.to_numeric(block["t13"].iloc[i3], errors="coerce"))
+        if not np.isfinite(dt12) or not np.isfinite(dt13):
+            raise ValueError(f"t12/t13 não finitos no slot ROI {slot}.")
+        d12 = max(dt12, eps)
+        d13 = max(dt13, eps)
+        base = X_orig[i_base, scale_cols]
+        X_out[i2, scale_cols] = (X_orig[i2, scale_cols] - base) / d12
+        X_out[i3, scale_cols] = (X_orig[i3, scale_cols] - base) / d13
+    return X_out
+
+
 def load_tensor(
     csv_path: Path,
     exp_md_path: Path,
@@ -66,7 +156,19 @@ def load_tensor(
     group_key: list[str],
     *,
     require_sex: bool = False,
+    temporal_mode: str = "none",
+    temporal_rate_norm: bool | None = None,
+    dt_epsilon: float = 0.5,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list[str], list[str]]:
+    """temporal_mode: none | delta_rate (exp1) | baseline_rate (exp2)."""
+    if temporal_rate_norm is not None:
+        temporal_mode = "delta_rate" if temporal_rate_norm else "none"
+    if temporal_mode not in ("none", "delta_rate", "baseline_rate"):
+        raise ValueError(
+            f"temporal_mode inválido: {temporal_mode!r} "
+            "(esperado none, delta_rate ou baseline_rate)."
+        )
+
     feat_names = parse_feature_columns(exp_md_path)
     df = pd.read_csv(csv_path)
     df["ID_PT"] = df["ID_PT"].astype(str)
@@ -113,7 +215,16 @@ def load_tensor(
                 label = str(row["label"]) if "label" in block.columns else "NA"
                 lab_row.append(f"{pair}|{roi}|{side}|{label}")
             slot_labels_ref = lab_row
-        samples.append(block_to_feature_float_matrix(block, feat_names))
+        mat = block_to_feature_float_matrix(block, feat_names)
+        if temporal_mode == "delta_rate":
+            mat = apply_temporal_rate_norm(
+                mat, block, feat_names, dt_epsilon=dt_epsilon
+            )
+        elif temporal_mode == "baseline_rate":
+            mat = apply_temporal_baseline_rate(
+                mat, block, feat_names, pair_order, dt_epsilon=dt_epsilon
+            )
+        samples.append(mat)
         y_out.append(float(block["y"].iloc[0]))
         groups.append(str(block["ID_PT"].iloc[0]))
         if has_sex:
@@ -578,15 +689,41 @@ def plot_top_bars_pdf(
     save_pdf(fig, path)
 
 
-def exp1_run_dir(
-    colab_dir: Path, *, downsample_group_sex: bool, model_slug: str
+def exp_run_dir(
+    colab_dir: Path,
+    *,
+    exp_name: str,
+    downsample_group_sex: bool,
+    model_slug: str,
 ) -> Path:
-    """colab/exp1/{balanced|unbalanced}/{model_slug}/ com subpastas figures/ e tables/."""
+    """colab/{exp_name}/{balanced|unbalanced}/{model_slug}/ com figures/ e tables/."""
     scenario = "balanced" if downsample_group_sex else "unbalanced"
-    root = colab_dir / "exp1" / scenario / model_slug
+    root = colab_dir / exp_name / scenario / model_slug
     (root / "figures").mkdir(parents=True, exist_ok=True)
     (root / "tables").mkdir(parents=True, exist_ok=True)
     return root
+
+
+def exp1_run_dir(
+    colab_dir: Path, *, downsample_group_sex: bool, model_slug: str
+) -> Path:
+    return exp_run_dir(
+        colab_dir,
+        exp_name="exp1",
+        downsample_group_sex=downsample_group_sex,
+        model_slug=model_slug,
+    )
+
+
+def exp2_run_dir(
+    colab_dir: Path, *, downsample_group_sex: bool, model_slug: str
+) -> Path:
+    return exp_run_dir(
+        colab_dir,
+        exp_name="exp2",
+        downsample_group_sex=downsample_group_sex,
+        model_slug=model_slug,
+    )
 
 
 def write_run_meta_json(
@@ -660,6 +797,42 @@ def save_training_curve_csv(
     for k, v in columns.items():
         d[k] = np.asarray(v)
     pd.DataFrame(d).to_csv(path, index=False)
+
+
+def save_feature_counts_fold0_csv(
+    path: Path,
+    *,
+    n_raw: int,
+    n_after_corr: int,
+    n_after_variance: int,
+    stage_labels: tuple[str, str, str] | None = None,
+) -> None:
+    """Contagens no fold externo 0 (tr_fit), alinhadas ao gráfico de barras dos scripts exp1."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    labs = stage_labels or ("Raw", "Após correlação", "Após variância")
+    pd.DataFrame(
+        {
+            "stage": list(labs),
+            "n_features": [int(n_raw), int(n_after_corr), int(n_after_variance)],
+        }
+    ).to_csv(path, index=False)
+
+
+def plot_feature_counts_bar_pdf(
+    csv_path: Path,
+    out_pdf: Path,
+    *,
+    title: str,
+    ylabel: str = "Nº atributos",
+) -> None:
+    """Lê CSV gravado por save_feature_counts_fold0_csv e gera PDF de barras."""
+    df = pd.read_csv(csv_path)
+    fig, ax = plt.subplots()
+    ax.bar(df["stage"].astype(str), df["n_features"].astype(int))
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    fig.tight_layout()
+    save_pdf(fig, out_pdf)
 
 
 def load_fold_test_scores_for_plots(path: Path) -> tuple[list[np.ndarray], list[np.ndarray]]:

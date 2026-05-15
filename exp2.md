@@ -1,10 +1,10 @@
 Tenho uma planilha de atributos absolutos por imagens individuais de um conjunto com 3 imagens, cuja alocação está em /mnt/study-data/pgirardi/graphs/csvs/abordagem_4_sMCI_pMCI/all_unitary_features_neurocombat.csv.
 
-Cada 60 linhas dessa planilha eu tenho um datapoint, que é 20 regiões de interesse na coluna label vezes 3 diferenças entre as aquisições na coluna pair, que são 1=imagem 1, 2=imagem 2, 3=imagem 3.
+Cada 60 linhas dessa planilha eu tenho um datapoint, que é 20 regiões de interesse na coluna label vezes 3 aquisições na coluna **pair**: `1` = imagem 1 (baseline), `2` = imagem 2, `3` = imagem 3.
 
-Cada linha representa um vetor de atributos de uma região de interesse especifica em um temnpo de aquisição especifico. Para você saber qual imagem é essa linha olhe a coluna pair, para saber qual paciente olhe a coluna ID_PT, para saber qual região de interesse olhe as colunas roi+side+label. 
+Cada linha representa um vetor de **atributos absolutos** de uma região de interesse numa aquisição específica. Para saber qual imagem é essa linha olhe a coluna `pair`, para saber qual paciente olhe a coluna `ID_PT`, para saber qual região de interesse olhe as colunas `roi`+`side`+`label`.
 
-As colunas t12 t13 t23 é a diferença de tempo em meses entre as imagens 1 2 3, i.e., t12=t2-t1,t13=t3-t1,t23=t3-t2, que são importantes para ponderar os atributos, pois quanto mais próximo (menos valor pro delta tempo) mais similares as imagens serão, e quanto mais distante (maior valor pro delta tempo) mais alterações estruturais as imagens terão entre si, e consequentemente, mais diferenças entre os atributos. Será uma maneira de reduzir as diferenças dos atributos em imagens próximas e aumentar as diferenças dos atributos em imagens distantes. 
+As colunas **t12**, **t13** e **t23** são o intervalo em meses entre as imagens (`t12=t2−t1`, `t13=t3−t1`, `t23=t3−t2`). Nos scripts `colab/exp2_*.py`, elas entram na **ponderação temporal** (taxa de mudança desde a imagem 1); ver secção *Ponderação temporal* abaixo. A coluna **SEX** não é dividida pelo tempo.
 
 A coluna SEX é o sexo do paciente, que deverá ser convertida para F=0 e M=1. 
 
@@ -128,3 +128,113 @@ classifier.fit(X_train_transform, y)
 | *Complexidade* | Fácil de implementar, difícil de tunar aqui | Requer sktime, mas geralmente "funciona de primeira" |
 
 *Veredito:* Comece pelo *ROCKET*. Para dados neurocientíficos, onde a relação entre as regiões (colunas) e o tempo (linhas) é complexa e não-linear, o ROCKET costuma ter uma acurácia 15-20% superior a modelos tabulares como o XGBoost.
+
+---
+
+## Implementação e pipeline (`colab/exp2_xgboost.py`, `colab/exp2_rocket.py`, `colab/exp2_svm.py`)
+
+Esta secção descreve o que está **efetivamente implementado** nos scripts Colab (espelho do experimento 1, com CSV unitário e ponderação `baseline_rate`).
+
+### Dados e ficheiros
+
+| Item | Valor nos scripts |
+| --- | --- |
+| Raiz do projeto | `ROOT = parents[1]` relativamente a `colab/` |
+| CSV lido | `csvs/abordagem_4_sMCI_pMCI/all_unitary_features_neurocombat.csv` |
+| Lista de atributos | Lida de `exp2.md`, linha que começa por `As colunas de atributos são` |
+| Utilitários | `colab/exp1_utils.py` (`load_tensor`, CV, plots) |
+| Figuras e tabelas | `colab/exp2/{balanced\|unbalanced}/{xgboost\|rocket\|svm}/` — `figures/`, `tables/`, `run_meta.json`; PDFs: `colab/exp2_plots.py` |
+
+### Tensor e alvo
+
+- Cada amostra é um tensor **`X_3d` de forma `(n_amostras, 60, n_atributos)`**: 60 linhas = 20 ROIs × 3 imagens (`1`, `2`, `3` em `PAIR_ORDER`), por `(ID_PT, COMBINATION_NUMBER, TRIPLET_IDX)`.
+- **`y`**: `GROUP` → sMCI=0, pMCI=1.
+- **`groups`**: `ID_PT` (split por paciente).
+- **`sex`**: F=0, M=1; `SEX` entra na matriz de atributos.
+- **`slot_labels`**: `pair|roi|side|label` por linha (SHAP / coef no XGBoost e SVM).
+
+### Ponderação temporal (t12 / t13 / t23) — atributos absolutos
+
+**Objetivo:** usar o tempo entre aquisições sem dividir volumes absolutos por meses (o que não é interpretável). Em vez disso, para as imagens 2 e 3 calcula-se a **taxa de mudança desde a baseline** (imagem 1, `pair=1`), alinhada à lógica do exp1 (taxa por mês).
+
+**Baseline:** `pair = 1` (primeira imagem da tripla) — valores **absolutos** mantidos.
+
+**Mapeamento temporal:**
+
+| `pair` | Papel | Transformação (por ROI e atributo, exceto `SEX`) |
+| --- | --- | --- |
+| `1` | baseline | \(x' = x\) (absoluto) |
+| `2` | imagem 2 | \(x' = (x - x_{\mathrm{baseline}}) / \max(t_{12}, \varepsilon)\) |
+| `3` | imagem 3 | \(x' = (x - x_{\mathrm{baseline}}) / \max(t_{13}, \varepsilon)\) |
+
+\(x_{\mathrm{baseline}}\) é o valor na **mesma ROI** (`roi`, `side`, `label`) na linha com `pair=1` do mesmo datapoint. \(\varepsilon =\) `DT_EPSILON` (por defeito **0,5** meses).
+
+**Implementação:** `colab/exp1_utils.py`, função `apply_temporal_baseline_rate`, activada por `load_tensor(..., temporal_mode="baseline_rate")`.
+
+**Nota:** não se usa `t23` nesta variante (mudança img2→img3); usa-se sempre o referencial desde a **imagem 1** (`t13` para `pair=3`).
+
+**Ordem no pipeline:** CSV → tensor 60×atributos → **baseline_rate** → CV → por fold: correlação (0,9) → variância → z-score.
+
+**Flags nos scripts** (`exp2_xgboost.py`, `exp2_svm.py`, `exp2_rocket.py`):
+
+- `TEMPORAL_MODE = "baseline_rate"`
+- `DT_EPSILON = 0.5`
+- `PAIR_ORDER = ["1", "2", "3"]`
+
+`TIME_PROG` **não** entra como feature (vazamento de rótulo); ver `readme.md` §4.1.
+
+Metadados: `tables/run_meta.json` inclui `temporal_mode`, `dt_epsilon`.
+
+### Validação cruzada (externa e interna)
+
+**Igual ao experimento 1** nos scripts `exp2_xgboost.py`, `exp2_svm.py`, `exp2_rocket.py` (mesma lógica em `colab/exp1_utils.py`). **Não há** split fixo 70/15/15 nem `train_test_split`; métricas = **OOF** em 5 folds por `ID_PT`.
+
+| Nível | Método | `n_splits` | Papel |
+|--------|--------|------------|--------|
+| **Externo** | `StratifiedGroupKFold` | **5** | Teste (OOF) |
+| **Interno (Optuna)** | `StratifiedGroupKFold` no treino externo | **5** (`INNER_NCV_SPLITS`) | Hiperparâmetros (média da AUC) |
+| **Holdout interno** | `inner_train_val()` — 1.º fold SGK (até 5) | ~4 treino / 1 val | Early stopping, curvas, refit |
+
+`StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=42)`; `INNER_NCV_SPLITS = 5`.
+
+#### Percentagens aproximadas (por fold externo)
+
+| Conjunto | % do total |
+|----------|------------|
+| **Teste (externo)** | **~20 %** |
+| **`tr_fit`** | **~64 %** |
+| **`val`** (holdout interno) | **~16 %** |
+
+Por fold: **~64 % treino · ~16 % validação · ~20 % teste** (pacientes inteiros em cada parte). O NCV interno do Optuna roda **dentro** dos ~80 % de treino externo e não define um terceiro holdout fixo além de `tr_fit`/`val`.
+
+#### Regras e flags
+
+- **Externo:** 5 folds, `random_state=42`, agrupamento por `ID_PT`.
+- **Downsample opcional:** `DOWNSAMPLE_GROUP_SEX` (por defeito **False** em XGBoost/SVM); só reduz amostras no treino externo, sem mudar 80/20 do fold.
+- **Nested CV (Optuna):** `INNER_NCV_SPLITS = 5`; objetivo = média da AUC nos folds internos.
+- **Holdout `tr_fit` / `val`:** early stopping (XGBoost) e curvas no fold 1.
+- Poucos pacientes: até `min(5, n_pacientes)` folds internos; fallback 80/20 se o SGK falhar.
+
+### Pré-processamento (por fold)
+
+0. **Ponderação temporal** na carga (`baseline_rate`).
+1. Correlação > **0,9** (`CORR_THR`).
+2. `VarianceThreshold(0.0)` (`VAR_THR`).
+3. `StandardScaler` (z-score, fit só em `tr_fit`).
+
+### Modelos
+
+- **`exp2_xgboost.py`:** tabular achatado, Optuna, SHAP, mesmas figuras que exp1.
+- **`exp2_rocket.py`:** ROCKET + L1 logística, Optuna em `C`.
+- **`exp2_svm.py`:** `LinearSVC`, Optuna em `C`, |coef.| por ROI/atributo.
+
+### Execução
+
+```bash
+python colab/exp2_xgboost.py
+python colab/exp2_rocket.py
+python colab/exp2_svm.py
+python colab/exp2_plots.py
+```
+
+Comparar com o experimento 1: mesmo pipeline de CV e filtros; difere o CSV (deltas vs absolutos), `PAIR_ORDER` e modo temporal (`delta_rate` no exp1 vs `baseline_rate` no exp2).

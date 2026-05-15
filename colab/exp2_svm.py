@@ -1,4 +1,4 @@
-"""exp1: SVM linear (LinearSVC) tabular — mesmo pipeline que exp1_xgboost (Optuna + NCV interno).
+"""exp2: SVM linear (LinearSVC) tabular — mesmo pipeline que exp2_xgboost (Optuna + NCV interno).
 
 Nested CV: Optuna maximiza a média da AUC em StratifiedGroupKFold internos; o modelo final
 ajusta-se em tr_fit e avalia-se em val (holdout) como no XGBoost. AUC usa decision_function.
@@ -24,12 +24,12 @@ from sklearn.svm import LinearSVC
 
 ROOT = Path(__file__).resolve().parents[1]
 COLAB_DIR = Path(__file__).resolve().parent
-CSV_PATH = ROOT / "csvs/abordagem_4_sMCI_pMCI/all_delta_features_neurocombat.csv"
-EXP1_PATH = ROOT / "exp1.md"
+CSV_PATH = ROOT / "csvs/abordagem_4_sMCI_pMCI/all_unitary_features_neurocombat.csv"
+EXP2_PATH = ROOT / "exp2.md"
 MODEL_SLUG = "svm"
-PAIR_ORDER = ["12", "13", "23"]
+PAIR_ORDER = ["1", "2", "3"]
 GROUP_KEY = ["ID_PT", "COMBINATION_NUMBER", "TRIPLET_IDX"]
-TEMPORAL_RATE_NORM = True
+TEMPORAL_MODE = "baseline_rate"
 DT_EPSILON = 0.5
 CORR_THR = 0.9
 VAR_THR = 0.0
@@ -103,7 +103,7 @@ def _fit_linear_svc_optuna(
 
 def main() -> None:
     t0 = time.perf_counter()
-    run_dir = u.exp1_run_dir(
+    run_dir = u.exp2_run_dir(
         COLAB_DIR,
         downsample_group_sex=DOWNSAMPLE_GROUP_SEX,
         model_slug=MODEL_SLUG,
@@ -113,11 +113,11 @@ def main() -> None:
 
     X_3d, y, groups, sex, feat_names, slot_labels = u.load_tensor(
         CSV_PATH,
-        EXP1_PATH,
+        EXP2_PATH,
         PAIR_ORDER,
         GROUP_KEY,
         require_sex=DOWNSAMPLE_GROUP_SEX,
-        temporal_mode="delta_rate" if TEMPORAL_RATE_NORM else "none",
+        temporal_mode=TEMPORAL_MODE,
         dt_epsilon=DT_EPSILON,
     )
     n_raw = X_3d.shape[2]
@@ -359,7 +359,7 @@ def main() -> None:
         extra={
             "inner_ncv_splits": INNER_NCV_SPLITS,
             "optuna_trials": OPTUNA_SVM_TRIALS,
-            "temporal_mode": "delta_rate" if TEMPORAL_RATE_NORM else "none",
+            "temporal_mode": TEMPORAL_MODE,
             "dt_epsilon": DT_EPSILON,
         },
     )

@@ -29,12 +29,14 @@ EXP1_PATH = ROOT / "exp1.md"
 MODEL_SLUG = "rocket"
 PAIR_ORDER = ["12", "13", "23"]
 GROUP_KEY = ["ID_PT", "COMBINATION_NUMBER", "TRIPLET_IDX"]
+TEMPORAL_RATE_NORM = True
+DT_EPSILON = 0.5
 CORR_THR = 0.9
 VAR_THR = 0.0
 RANDOM_STATE = 42
-NUM_KERNELS = 10_000
+NUM_KERNELS = 2_000
 # Optuna: média da AUC em INNER_NCV_SPLITS folds internos; C em escala log.
-OPTUNA_ROCKET_TRIALS = 25
+OPTUNA_ROCKET_TRIALS = 30
 INNER_NCV_SPLITS = 5
 # Grade só para figura diagnóstica (fold 1): acurácia vs log10(C).
 C_DIAG_GRID = np.logspace(-4, 4, 17)
@@ -111,6 +113,8 @@ def main() -> None:
         PAIR_ORDER,
         GROUP_KEY,
         require_sex=DOWNSAMPLE_GROUP_SEX,
+        temporal_mode="delta_rate" if TEMPORAL_RATE_NORM else "none",
+        dt_epsilon=DT_EPSILON,
     )
     n_raw = X_3d.shape[2]
     n_samples = len(y)
@@ -233,6 +237,12 @@ def main() -> None:
             ax.set_ylabel("Nº atributos")
             fig.tight_layout()
             u.save_pdf(fig, fig_dir / "feature_counts.pdf")
+            u.save_feature_counts_fold0_csv(
+                tab_dir / "feature_counts_fold0.csv",
+                n_raw=n_raw,
+                n_after_corr=n_after_corr,
+                n_after_variance=n_after_var,
+            )
 
             acc_c: list[float] = []
             for C in C_DIAG_GRID:
@@ -353,6 +363,8 @@ def main() -> None:
         extra={
             "inner_ncv_splits": INNER_NCV_SPLITS,
             "optuna_trials": OPTUNA_ROCKET_TRIALS,
+            "temporal_mode": "delta_rate" if TEMPORAL_RATE_NORM else "none",
+            "dt_epsilon": DT_EPSILON,
         },
     )
 

@@ -4,7 +4,7 @@ Cada 60 linhas dessa planilha eu tenho um datapoint, que é 20 regiões de inter
 
 Cada linha representa um vetor de atributos de uma região de interesse especifica em um temnpo de aquisição especifico. Para você saber qual imagem é essa linha olhe a coluna pair, para saber qual paciente olhe a coluna ID_PT, para saber qual região de interesse olhe as colunas roi+side+label. 
 
-As colunas t12 t13 t23 é a diferença de tempo em meses entre as imagens 1 2 3, i.e., t12=t2-t1,t13=t3-t1,t23=t3-t2, que são importantes para ponderar os atributos, pois quanto mais próximo (menos valor pro delta tempo) mais similares as imagens serão, e quanto mais distante (maior valor pro delta tempo) mais alterações estruturais as imagens terão entre si, e consequentemente, mais diferenças entre os atributos. Será uma maneira de reduzir as diferenças dos atributos em imagens próximas e aumentar as diferenças dos atributos em imagens distantes. 
+As colunas **t12**, **t13** e **t23** são o intervalo em meses entre as imagens 1, 2 e 3 (`t12=t2−t1`, `t13=t3−t1`, `t23=t3−t2`). Nos scripts `colab/exp1_*.py`, elas **ponderam os deltas** antes do treino: cada atributo numérico da linha é dividido pelo intervalo do par correspondente, obtendo uma **taxa de mudança por mês** (ver secção *Ponderação temporal* abaixo). A coluna **SEX** não é dividida.
 
 A coluna SEX é o sexo do paciente, que deverá ser convertida para F=0 e M=1. 
 
@@ -142,7 +142,7 @@ Esta secção descreve o que está **efetivamente implementado** nos scripts Col
 | Raiz do projeto | `ROOT = parents[1]` relativamente a `colab/` |
 | CSV lido | `csvs/abordagem_4_sMCI_pMCI/all_delta_features_neurocombat.csv` |
 | Lista de atributos | Lida de `exp1.md`, linha que começa por `As colunas de atributos são` |
-| Figuras e tabelas | `colab/exp1/{balanced|unbalanced}/{xgboost|rocket|svm}/` — subpastas `figures/`, `tables/` (CSV + `run_meta.json`); regenerar PDFs a partir dos CSV: editar `RUN_DIR` e títulos no topo de `colab/exp1_plot_from_artifacts.py` e correr `python colab/exp1_plot_from_artifacts.py` |
+| Figuras e tabelas | `colab/exp1/{balanced|unbalanced}/{xgboost|rocket|svm}/` — subpastas `figures/`, `tables/` (CSV + `run_meta.json`); regenerar PDFs a partir dos CSV: editar `RUN_DIR` e títulos no topo de `colab/exp1_plots.py` e correr `python colab/exp1_plots.py` |
 
 *(A primeira linha deste ficheiro pode referir outro caminho de CSV; o treino reproduzível usa o caminho da tabela acima.)*
 
@@ -154,17 +154,84 @@ Esta secção descreve o que está **efetivamente implementado** nos scripts Col
 - **`sex`**: codificado para downsample (F=0, M=1); coluna `SEX` entra na matriz de atributos como float conforme `exp1.md`.
 - **`slot_labels`**: um rótulo por linha do bloco 60, formato `pair|roi|side|label`, usado para agregar SHAP por ROI / nome de atributo (XGBoost).
 
+### Ponderação temporal (t12 / t13 / t23)
+
+**Objetivo:** separar a magnitude do **delta** do **tempo entre aquisições**. Um mesmo delta absoluto em 6 meses implica mudança mais rápida do que em 24 meses.
+
+**Mapeamento `pair` → coluna de tempo** (por linha do CSV / do tensor):
+
+| `pair` | Coluna `dt` |
+| --- | --- |
+| `12` | `t12` |
+| `13` | `t13` |
+| `23` | `t23` |
+
+**Fórmula** (aplicada em `colab/exp1_utils.py`, função `apply_temporal_rate_norm`, chamada a partir de `load_tensor` quando `temporal_rate_norm=True`):
+
+Para cada linha do bloco de 60 (uma ROI × um par), e para cada coluna de atributo exceto `SEX`:
+
+\[
+x'_{i,j} = \frac{x_{i,j}}{\max(\mathrm{dt}_i,\,\varepsilon)}
+\]
+
+em que \(\mathrm{dt}_i\) é o valor de `t12`, `t13` ou `t23` conforme o `pair` da linha \(i\), e \(\varepsilon =\) `DT_EPSILON` (por defeito **0,5** meses nos scripts, constante `DT_EPSILON`).
+
+**Ordem no pipeline:** leitura do CSV → montagem do tensor 60×atributos → **ponderação temporal** → validação cruzada → por fold: correlação → variância → z-score (`StandardScaler`). A ponderação **não** depende do fold (usa apenas `pair` e `t*` do CSV; é determinística por amostra).
+
+**Flags nos scripts** (`exp1_xgboost.py`, `exp1_svm.py`, `exp1_rocket.py`):
+
+- `TEMPORAL_RATE_NORM = True` — ativa a ponderação (passado a `load_tensor`).
+- `DT_EPSILON = 0.5` — piso do denominador em meses.
+
+Metadados do run (`tables/run_meta.json`): `temporal_rate_norm`, `dt_epsilon`.
+
 ### Validação cruzada (externa e interna)
 
+**Não há** um split fixo único (ex.: 70 % / 15 % / 15 %) nem `train_test_split` nos scripts de treino. O desenho é **CV aninhada por paciente** (`ID_PT`); as métricas reportadas são **out-of-fold (OOF)** — cada amostra entra no teste externo exactamente uma vez.
+
+| Nível | Método | `n_splits` | Papel |
+|--------|--------|------------|--------|
+| **Externo** | `StratifiedGroupKFold` | **5** | Métricas de teste (OOF) |
+| **Interno (Optuna)** | `StratifiedGroupKFold` no treino externo | **5** (`INNER_NCV_SPLITS`) | Hiperparâmetros (média da AUC) |
+| **Holdout interno** | `inner_train_val()` — 1.º fold de um SGK (até 5) | ~4 treino / 1 val | Early stopping (XGBoost), curvas, refit final |
+
+Constantes nos scripts (`exp1_xgboost.py`, `exp1_svm.py`, `exp1_rocket.py`): `StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=42)` no externo; `INNER_NCV_SPLITS = 5`.
+
+#### Percentagens aproximadas (por fold externo)
+
+Com 5 folds externos e pacientes inteiros em cada parte:
+
+| Conjunto | % do total | Notas |
+|----------|------------|--------|
+| **Teste (externo)** | **~20 %** | 1 de 5 folds |
+| **Treino externo** | **~80 %** | Restante |
+
+Dentro do treino externo, `inner_train_val` (em `colab/exp1_utils.py`) aplica outro SGK e usa o **primeiro** split:
+
+| Conjunto | % do total | % do treino externo |
+|----------|------------|---------------------|
+| **`tr_fit`** (ajuste final / early stopping) | **~64 %** | ~80 % |
+| **`val`** (holdout interno) | **~16 %** | ~20 % |
+
+Resumo por fold: **~64 % treino · ~16 % validação · ~20 % teste** (em amostras; grupos = pacientes).
+
+O **NCV interno do Optuna** (5 folds dentro dos ~80 % de treino externo) **não reserva um terceiro bloco fixo**: roda vários pares treino/val só para a média da AUC; o modelo final treina em `tr_fit` e avalia-se no teste externo (~20 %).
+
+**Não existe** conjunto de teste holdout separado dos 5 folds — só OOF agregado.
+
+#### Regras e flags
+
 - **Externo:** `StratifiedGroupKFold`, **5 folds**, `shuffle=True`, `random_state=42`, agrupamento por `ID_PT`.
-- **Opcional — downsample no treino externo:** flag `DOWNSAMPLE_GROUP_SEX` (por defeito **False** no XGBoost, **True** no ROCKET): por paciente, equipara o número de pacientes por estrato **rótulo × sexo** dentro do treino de cada fold.
-- **Nested CV interno (Optuna):** `INNER_NCV_SPLITS = 3` folds `StratifiedGroupKFold` **dentro do treino externo** de cada fold. O Optuna maximiza a **média da AUC** nesses 3 validadores internos (sem usar o teste externo).
-- **Holdout para refit / curvas (XGBoost):** após o NCV interno, `inner_train_val` devolve um par `tr_fit` / `val` (primeiro split de um SGK interno com até 5 splits) sobre o treino externo: o modelo final do fold usa esse par para **early stopping** (XGBoost) e para o PDF de curvas no fold 1.
+- **Opcional — downsample no treino externo:** flag `DOWNSAMPLE_GROUP_SEX` (por defeito **False** em XGBoost, SVM e ROCKET): equipara o número de **pacientes** por estrato **rótulo × sexo** dentro do treino de cada fold; **não altera** as frações 80/20 do fold.
+- **Nested CV interno (Optuna):** `INNER_NCV_SPLITS = 5` folds `StratifiedGroupKFold` **dentro do treino externo** de cada fold. O Optuna maximiza a **média da AUC** nesses validadores internos (sem usar o teste externo).
+- **Holdout para refit / curvas:** `inner_train_val` devolve `tr_fit` / `val` sobre o treino externo; o modelo final do fold usa esse par para **early stopping** (XGBoost) e para PDFs de curvas no fold 1.
+- Com poucos pacientes únicos, `inner_train_val` / `inner_cv_splits` usam `min(5, n_pacientes)` folds; se o SGK falhar, fallback **80 % / 20 %** por ordem de grupo.
 
 ### Pré-processamento (por fold externo, alinhado ao `tr_fit` do holdout)
 
-Ordem aplicada ao treino de ajuste `tr_fit` (e transformação de `val` / `test` com o mesmo `keep_final` e scaler):
+Ordem global e por fold:
 
+0. **Ponderação temporal** na carga dos dados (`load_tensor`, ver acima) — antes de qualquer split.
 1. **Correlação entre colunas** no flatten de `X_3d[tr_fit]`: limiar **0,9** (`CORR_THR`), seleção greedy.
 2. **`VarianceThreshold(VAR_THR)`** com `VAR_THR = 0.0` (remove só colunas constantes no treino de ajuste).
 3. **`StandardScaler`** ajustado nas linhas achatadas do tensor de treino de ajuste, aplicado a val e teste.
@@ -196,9 +263,9 @@ Ordem aplicada ao treino de ajuste `tr_fit` (e transformação de `val` / `test`
 - **Importância:** agregação por ROI / atributo com **média dos \|coef.\|** por fold (análogo ao agregado de \|SHAP\| no XGBoost).
 - **Figuras:** contagens de atributos; confusão OOF; ROC/PR; boxplot; barras por ROI e por atributo (`coef_top_*.pdf`).
 
-### `colab/exp1_plot_from_artifacts.py`
+### `colab/exp1_plots.py`
 
-Lê `tables/*.csv` de um run e grava PDFs em `figures/`. **Sem argumentos de linha de comando:** defina `RUN_DIR` e os textos dos gráficos na secção `CONFIG` no início do ficheiro, depois execute o script.
+Lê `tables/*.csv` de um run e grava PDFs em `figures/`. **Sem argumentos de linha de comando:** defina `RUN_DIR` e os textos dos gráficos na secção `CONFIG` no início do ficheiro, depois execute o script. Inclui o gráfico de contagens de atributos a partir de `tables/feature_counts_fold0.csv` (gravado no fold 1 dos scripts de treino; volte a correr o treino se o CSV não existir).
 
 ### Dependências relevantes
 
@@ -212,5 +279,5 @@ Na raiz do repositório (com ambiente que tenha as dependências):
 python colab/exp1_xgboost.py
 python colab/exp1_rocket.py
 python colab/exp1_svm.py
-python colab/exp1_plot_from_artifacts.py
+python colab/exp1_plots.py
 ```

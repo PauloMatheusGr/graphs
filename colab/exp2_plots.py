@@ -1,12 +1,12 @@
-"""Regenera PDFs a partir dos CSVs em tables/ (gerados por exp1_xgboost / exp1_rocket / exp1_svm).
+"""Regenera PDFs a partir dos CSVs em tables/ (gerados por exp2_xgboost / exp2_rocket / exp2_svm).
 
 Edite apenas a secção CONFIG abaixo (pasta do run e textos dos gráficos), depois execute:
 
-  python colab/exp1_plots.py
+  python colab/exp2_plots.py
 
 Se correr a partir da pasta colab/:
 
-  python exp1_plots.py
+  python exp2_plots.py
 """
 
 from __future__ import annotations
@@ -21,44 +21,34 @@ import pandas as pd
 # CONFIG — edite aqui
 # ---------------------------------------------------------------------------
 
-# Pasta do run: deve existir tables/ (e opcionalmente figures/) dentro dela.
-# Por defeito: relativa à pasta colab/ onde está este ficheiro.
 _COLAB = Path(__file__).resolve().parent
-RUN_DIR = _COLAB / "exp1" / "unbalanced" / "svm"
+RUN_DIR = _COLAB / "exp2" / "unbalanced" / "svm"
 
-# Grelhas ROC/PR (altere se quiser mais ou menos pontos)
 FPR_GRID = np.linspace(0.0, 1.0, 101)
 REC_GRID = np.linspace(0.0, 1.0, 101)
 
-# --- Contagens de atributos após filtragens (feature_counts_fold0.csv; fold externo 0) ---
-TITLE_FEATURE_COUNTS = "Nº de atributos — Raw vs correlação vs variância (fold 1, tr_fit)"
+TITLE_FEATURE_COUNTS = (
+    "Exp2 — Nº de atributos — Raw vs correlação vs variância (fold 1, tr_fit)"
+)
 YLABEL_FEATURE_COUNTS = "Nº atributos"
 
-# --- Matriz de confusão (oof_predictions.csv) ---
-TITLE_CONFUSION = "SVM linear — matriz de confusão (predições OOF, 5-fold)"
-# Cmap: "Blues", "Greens", etc. (ver plot_confusion_oof_pdf em exp1_utils)
+TITLE_CONFUSION = "Exp2 SVM linear — matriz de confusão (predições OOF, 5-fold)"
 CMAP_CONFUSION = "Blues"
 
-# --- ROC e PR (fold_test_scores.csv) ---
-# O prefixo aparece no título; o scope aparece em "ROC (scope)" / "PR (scope)"
-TITLE_PREFIX_ROC_PR = "SVM linear"
+TITLE_PREFIX_ROC_PR = "Exp2 SVM linear"
 ROC_SCOPE_LABEL = "teste por fold"
 PR_SCOPE_LABEL = "teste por fold"
 
-# --- Boxplot métricas (metrics_per_fold.csv) ---
-TITLE_METRICS_BOX = "SVM linear — distribuição das métricas no teste (5 folds)"
-# Rótulos do eixo X do boxplot (Acc, AUC, F1)
+TITLE_METRICS_BOX = "Exp2 SVM linear — distribuição das métricas no teste (5 folds)"
 XTICK_METRICS = ("Acc", "AUC", "F1")
 
-# --- Barras importância SHAP (importance_shap_*_mean.csv), se existirem ---
-TITLE_BARS_SHAP_ROI = "SVM linear — |SHAP| agregado por ROI (média dos folds)"
-TITLE_BARS_SHAP_ATTR = "SVM linear — |SHAP| agregado por atributo"
+TITLE_BARS_SHAP_ROI = "Exp2 XGBoost — |SHAP| agregado por ROI (média dos folds)"
+TITLE_BARS_SHAP_ATTR = "Exp2 XGBoost — |SHAP| agregado por atributo"
 XLABEL_BARS_SHAP = "Valor agregado"
 TOP_K_SHAP = 20
 
-# --- Barras |coef| SVM (importance_coef_*_mean.csv), se existirem ---
-TITLE_BARS_COEF_ROI = "SVM linear — |coef.| agregado por ROI"
-TITLE_BARS_COEF_ATTR = "SVM linear — |coef.| agregado por atributo"
+TITLE_BARS_COEF_ROI = "Exp2 SVM linear — |coef.| agregado por ROI"
+TITLE_BARS_COEF_ATTR = "Exp2 SVM linear — |coef.| agregado por atributo"
 XLABEL_BARS_COEF = "Valor agregado"
 TOP_K_COEF = 20
 
