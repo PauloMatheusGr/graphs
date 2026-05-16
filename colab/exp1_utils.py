@@ -421,6 +421,36 @@ def flat_scaled_tabular_train_val(
     return X_fit_3d.reshape(len(idx_fit), -1), X_va_3d.reshape(len(idx_va), -1)
 
 
+# 60 linhas do tensor = 3 passos temporais × 20 ROIs (ordem do load_tensor).
+PANEL_SEQ_STEPS = 3
+
+
+def panels_to_seq(X_3d: np.ndarray) -> np.ndarray:
+    """(n, 60, f) → (n, 3, 20·f): concatena ROIs por passo temporal (pair)."""
+    n, n_slots, f = X_3d.shape
+    if n_slots % PANEL_SEQ_STEPS != 0:
+        raise ValueError(
+            f"Tensor com {n_slots} linhas; esperado múltiplo de {PANEL_SEQ_STEPS}."
+        )
+    n_per = n_slots // PANEL_SEQ_STEPS
+    return X_3d.reshape(n, PANEL_SEQ_STEPS, n_per, f).reshape(n, PANEL_SEQ_STEPS, n_per * f)
+
+
+def seq_scaled_train_val(
+    X_3d: np.ndarray,
+    idx_fit: np.ndarray,
+    idx_va: np.ndarray,
+    *,
+    corr_thr: float,
+    var_thr: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """NCV interno LSTM: correlação + variância + scaler no idx_fit; devolve sequências (n, 3, ·)."""
+    X_fit_3d, X_va_3d = _corr_var_scale_panels(
+        X_3d, idx_fit, idx_va, corr_thr=corr_thr, var_thr=var_thr
+    )
+    return panels_to_seq(X_fit_3d), panels_to_seq(X_va_3d)
+
+
 def prepare_scaled_rocket_inputs(
     X_3d: np.ndarray,
     idx_fit: np.ndarray,
@@ -831,6 +861,34 @@ def plot_feature_counts_bar_pdf(
     ax.bar(df["stage"].astype(str), df["n_features"].astype(int))
     ax.set_ylabel(ylabel)
     ax.set_title(title)
+    fig.tight_layout()
+    save_pdf(fig, out_pdf)
+
+
+def plot_training_curves_keras_pdf(
+    csv_path: Path,
+    out_pdf: Path,
+    *,
+    title: str,
+) -> None:
+    """Curvas de treino Keras a partir de training_curves_fold0.csv (colunas loss / val_*)."""
+    df = pd.read_csv(csv_path)
+    x = df["x"].to_numpy(dtype=np.int32)
+    fig, axes = plt.subplots(2, 1, figsize=(6, 6), sharex=True)
+    if "loss" in df.columns and "val_loss" in df.columns:
+        axes[0].plot(x, df["loss"], label="treino")
+        axes[0].plot(x, df["val_loss"], label="validação")
+        axes[0].set_ylabel("loss")
+        axes[0].legend(loc="best", fontsize=8)
+    if "val_auc" in df.columns:
+        axes[1].plot(x, df["val_auc"], label="val AUC")
+        axes[1].set_ylabel("AUC (validação)")
+    elif "accuracy" in df.columns and "val_accuracy" in df.columns:
+        axes[1].plot(x, df["accuracy"], label="treino")
+        axes[1].plot(x, df["val_accuracy"], label="validação")
+        axes[1].set_ylabel("acurácia")
+    axes[1].set_xlabel("época")
+    fig.suptitle(title)
     fig.tight_layout()
     save_pdf(fig, out_pdf)
 

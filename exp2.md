@@ -131,7 +131,7 @@ classifier.fit(X_train_transform, y)
 
 ---
 
-## Implementação e pipeline (`colab/exp2_xgboost.py`, `colab/exp2_rocket.py`, `colab/exp2_svm.py`)
+## Implementação e pipeline (`colab/exp2_xgboost.py`, `colab/exp2_rocket.py`, `colab/exp2_svm.py`, `colab/exp2_lstm.py`)
 
 Esta secção descreve o que está **efetivamente implementado** nos scripts Colab (espelho do experimento 1, com CSV unitário e ponderação `baseline_rate`).
 
@@ -143,7 +143,7 @@ Esta secção descreve o que está **efetivamente implementado** nos scripts Col
 | CSV lido | `csvs/abordagem_4_sMCI_pMCI/all_unitary_features_neurocombat.csv` |
 | Lista de atributos | Lida de `exp2.md`, linha que começa por `As colunas de atributos são` |
 | Utilitários | `colab/exp1_utils.py` (`load_tensor`, CV, plots) |
-| Figuras e tabelas | `colab/exp2/{balanced\|unbalanced}/{xgboost\|rocket\|svm}/` — `figures/`, `tables/`, `run_meta.json`; PDFs: `colab/exp2_plots.py` |
+| Figuras e tabelas | `colab/exp2/{balanced\|unbalanced}/{xgboost\|rocket\|svm\|lstm}/` — `figures/`, `tables/`, `run_meta.json`; PDFs: `colab/exp2_plots.py` |
 
 ### Tensor e alvo
 
@@ -175,7 +175,7 @@ Esta secção descreve o que está **efetivamente implementado** nos scripts Col
 
 **Ordem no pipeline:** CSV → tensor 60×atributos → **baseline_rate** → CV → por fold: correlação (0,9) → variância → z-score.
 
-**Flags nos scripts** (`exp2_xgboost.py`, `exp2_svm.py`, `exp2_rocket.py`):
+**Flags nos scripts** (`exp2_xgboost.py`, `exp2_svm.py`, `exp2_rocket.py`, `exp2_lstm.py`):
 
 - `TEMPORAL_MODE = "baseline_rate"`
 - `DT_EPSILON = 0.5`
@@ -187,7 +187,7 @@ Metadados: `tables/run_meta.json` inclui `temporal_mode`, `dt_epsilon`.
 
 ### Validação cruzada (externa e interna)
 
-**Igual ao experimento 1** nos scripts `exp2_xgboost.py`, `exp2_svm.py`, `exp2_rocket.py` (mesma lógica em `colab/exp1_utils.py`). **Não há** split fixo 70/15/15 nem `train_test_split`; métricas = **OOF** em 5 folds por `ID_PT`.
+**Igual ao experimento 1** nos scripts `exp2_xgboost.py`, `exp2_svm.py`, `exp2_rocket.py`, `exp2_lstm.py` (mesma lógica em `colab/exp1_utils.py` e `colab/exp_lstm_common.py`). **Não há** split fixo 70/15/15 nem `train_test_split`; métricas = **OOF** em 5 folds por `ID_PT`.
 
 | Nível | Método | `n_splits` | Papel |
 |--------|--------|------------|--------|
@@ -227,6 +227,7 @@ Por fold: **~64 % treino · ~16 % validação · ~20 % teste** (pacientes 
 - **`exp2_xgboost.py`:** tabular achatado, Optuna, SHAP, mesmas figuras que exp1.
 - **`exp2_rocket.py`:** ROCKET + L1 logística, Optuna em `C`.
 - **`exp2_svm.py`:** `LinearSVC`, Optuna em `C`, |coef.| por ROI/atributo.
+- **`exp2_lstm.py`:** LSTM Keras em `(n, 3, 20·p)` após `baseline_rate`; Optuna; NCV interno; SHAP; `colab/exp_lstm_common.py`. **GPU:** `LSTM_DEVICE=gpu`, `LSTM_GPU_INDEX=0|1`; `use_cudnn=False` + XLA auto-jit off (evita erro cuDNN no driver 570 / TF 2.21).
 
 ### Execução
 
@@ -234,7 +235,10 @@ Por fold: **~64 % treino · ~16 % validação · ~20 % teste** (pacientes 
 python colab/exp2_xgboost.py
 python colab/exp2_rocket.py
 python colab/exp2_svm.py
+python colab/exp2_lstm.py
 python colab/exp2_plots.py
 ```
+
+Com `DOWNSAMPLE_GROUP_SEX = False` em `exp2_lstm.py` (e nos outros scripts), os resultados vão para `colab/exp2/unbalanced/lstm/`. Requer `tensorflow` além das dependências do exp1.
 
 Comparar com o experimento 1: mesmo pipeline de CV e filtros; difere o CSV (deltas vs absolutos), `PAIR_ORDER` e modo temporal (`delta_rate` no exp1 vs `baseline_rate` no exp2).

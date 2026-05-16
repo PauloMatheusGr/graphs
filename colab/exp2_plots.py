@@ -1,4 +1,4 @@
-"""Regenera PDFs a partir dos CSVs em tables/ (gerados por exp2_xgboost / exp2_rocket / exp2_svm).
+"""Regenera PDFs a partir dos CSVs em tables/ (exp2_xgboost / exp2_rocket / exp2_svm / exp2_lstm).
 
 Edite apenas a secção CONFIG abaixo (pasta do run e textos dos gráficos), depois execute:
 
@@ -22,28 +22,32 @@ import pandas as pd
 # ---------------------------------------------------------------------------
 
 _COLAB = Path(__file__).resolve().parent
-RUN_DIR = _COLAB / "exp2" / "unbalanced" / "svm"
+RUN_DIR = _COLAB / "exp2" / "unbalanced" / "lstm"
 
 FPR_GRID = np.linspace(0.0, 1.0, 101)
 REC_GRID = np.linspace(0.0, 1.0, 101)
 
 TITLE_FEATURE_COUNTS = (
-    "Exp2 — Nº de atributos — Raw vs correlação vs variância (fold 1, tr_fit)"
+    "Exp2 LSTM — Nº de atributos — Raw vs correlação vs variância (fold 1, tr_fit)"
 )
 YLABEL_FEATURE_COUNTS = "Nº atributos"
 
-TITLE_CONFUSION = "Exp2 SVM linear — matriz de confusão (predições OOF, 5-fold)"
+TITLE_TRAINING_CURVES = (
+    "Exp2 LSTM — loss e AUC na validação (fold 1, holdout tr_fit|val)"
+)
+
+TITLE_CONFUSION = "Exp2 LSTM — matriz de confusão (predições OOF, 5-fold)"
 CMAP_CONFUSION = "Blues"
 
-TITLE_PREFIX_ROC_PR = "Exp2 SVM linear"
+TITLE_PREFIX_ROC_PR = "Exp2 LSTM"
 ROC_SCOPE_LABEL = "teste por fold"
 PR_SCOPE_LABEL = "teste por fold"
 
-TITLE_METRICS_BOX = "Exp2 SVM linear — distribuição das métricas no teste (5 folds)"
+TITLE_METRICS_BOX = "Exp2 LSTM — distribuição das métricas no teste (5 folds)"
 XTICK_METRICS = ("Acc", "AUC", "F1")
 
-TITLE_BARS_SHAP_ROI = "Exp2 XGBoost — |SHAP| agregado por ROI (média dos folds)"
-TITLE_BARS_SHAP_ATTR = "Exp2 XGBoost — |SHAP| agregado por atributo"
+TITLE_BARS_SHAP_ROI = "Exp2 LSTM — |SHAP| agregado por ROI (média dos folds)"
+TITLE_BARS_SHAP_ATTR = "Exp2 LSTM — |SHAP| agregado por atributo"
 XLABEL_BARS_SHAP = "Valor agregado"
 TOP_K_SHAP = 20
 
@@ -73,6 +77,14 @@ def main() -> None:
             fig / "feature_counts.pdf",
             title=TITLE_FEATURE_COUNTS,
             ylabel=YLABEL_FEATURE_COUNTS,
+        )
+
+    tcurves = tab / "training_curves_fold0.csv"
+    if tcurves.is_file():
+        u.plot_training_curves_keras_pdf(
+            tcurves,
+            fig / "training_curves.pdf",
+            title=TITLE_TRAINING_CURVES,
         )
 
     oof_path = tab / "oof_predictions.csv"

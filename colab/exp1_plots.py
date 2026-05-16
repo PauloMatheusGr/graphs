@@ -1,4 +1,4 @@
-"""Regenera PDFs a partir dos CSVs em tables/ (gerados por exp1_xgboost / exp1_rocket / exp1_svm).
+"""Regenera PDFs a partir dos CSVs em tables/ (exp1_xgboost / exp1_rocket / exp1_svm / exp1_lstm).
 
 Edite apenas a secção CONFIG abaixo (pasta do run e textos dos gráficos), depois execute:
 
@@ -24,35 +24,41 @@ import pandas as pd
 # Pasta do run: deve existir tables/ (e opcionalmente figures/) dentro dela.
 # Por defeito: relativa à pasta colab/ onde está este ficheiro.
 _COLAB = Path(__file__).resolve().parent
-RUN_DIR = _COLAB / "exp1" / "unbalanced" / "svm"
+# Ex.: .../exp1/unbalanced/svm | .../balanced/lstm | .../unbalanced/xgboost
+RUN_DIR = _COLAB / "exp1" / "unbalanced" / "lstm"
 
 # Grelhas ROC/PR (altere se quiser mais ou menos pontos)
 FPR_GRID = np.linspace(0.0, 1.0, 101)
 REC_GRID = np.linspace(0.0, 1.0, 101)
 
 # --- Contagens de atributos após filtragens (feature_counts_fold0.csv; fold externo 0) ---
-TITLE_FEATURE_COUNTS = "Nº de atributos — Raw vs correlação vs variância (fold 1, tr_fit)"
+TITLE_FEATURE_COUNTS = "Exp1 LSTM — Nº de atributos (fold 1, tr_fit)"
 YLABEL_FEATURE_COUNTS = "Nº atributos"
 
+# --- Curvas de treino Keras (training_curves_fold0.csv; só LSTM) ---
+TITLE_TRAINING_CURVES = (
+    "Exp1 LSTM — loss e AUC na validação (fold 1, holdout tr_fit|val)"
+)
+
 # --- Matriz de confusão (oof_predictions.csv) ---
-TITLE_CONFUSION = "SVM linear — matriz de confusão (predições OOF, 5-fold)"
+TITLE_CONFUSION = "Exp1 LSTM — matriz de confusão (predições OOF, 5-fold)"
 # Cmap: "Blues", "Greens", etc. (ver plot_confusion_oof_pdf em exp1_utils)
 CMAP_CONFUSION = "Blues"
 
 # --- ROC e PR (fold_test_scores.csv) ---
 # O prefixo aparece no título; o scope aparece em "ROC (scope)" / "PR (scope)"
-TITLE_PREFIX_ROC_PR = "SVM linear"
+TITLE_PREFIX_ROC_PR = "Exp1 LSTM"
 ROC_SCOPE_LABEL = "teste por fold"
 PR_SCOPE_LABEL = "teste por fold"
 
 # --- Boxplot métricas (metrics_per_fold.csv) ---
-TITLE_METRICS_BOX = "SVM linear — distribuição das métricas no teste (5 folds)"
+TITLE_METRICS_BOX = "Exp1 LSTM — distribuição das métricas no teste (5 folds)"
 # Rótulos do eixo X do boxplot (Acc, AUC, F1)
 XTICK_METRICS = ("Acc", "AUC", "F1")
 
 # --- Barras importância SHAP (importance_shap_*_mean.csv), se existirem ---
-TITLE_BARS_SHAP_ROI = "SVM linear — |SHAP| agregado por ROI (média dos folds)"
-TITLE_BARS_SHAP_ATTR = "SVM linear — |SHAP| agregado por atributo"
+TITLE_BARS_SHAP_ROI = "Exp1 LSTM — |SHAP| agregado por ROI (média dos folds)"
+TITLE_BARS_SHAP_ATTR = "Exp1 LSTM — |SHAP| agregado por atributo"
 XLABEL_BARS_SHAP = "Valor agregado"
 TOP_K_SHAP = 20
 
@@ -83,6 +89,14 @@ def main() -> None:
             fig / "feature_counts.pdf",
             title=TITLE_FEATURE_COUNTS,
             ylabel=YLABEL_FEATURE_COUNTS,
+        )
+
+    tcurves = tab / "training_curves_fold0.csv"
+    if tcurves.is_file():
+        u.plot_training_curves_keras_pdf(
+            tcurves,
+            fig / "training_curves.pdf",
+            title=TITLE_TRAINING_CURVES,
         )
 
     oof_path = tab / "oof_predictions.csv"

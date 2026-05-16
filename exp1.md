@@ -131,7 +131,7 @@ classifier.fit(X_train_transform, y)
 
 ---
 
-## Implementação e pipeline (`colab/exp1_xgboost.py`, `colab/exp1_rocket.py`, `colab/exp1_svm.py`)
+## Implementação e pipeline (`colab/exp1_xgboost.py`, `colab/exp1_rocket.py`, `colab/exp1_svm.py`, `colab/exp1_lstm.py`)
 
 Esta secção descreve o que está **efetivamente implementado** nos scripts Colab (pode divergir do roteiro ilustrativo acima, que é pedagógico).
 
@@ -142,7 +142,7 @@ Esta secção descreve o que está **efetivamente implementado** nos scripts Col
 | Raiz do projeto | `ROOT = parents[1]` relativamente a `colab/` |
 | CSV lido | `csvs/abordagem_4_sMCI_pMCI/all_delta_features_neurocombat.csv` |
 | Lista de atributos | Lida de `exp1.md`, linha que começa por `As colunas de atributos são` |
-| Figuras e tabelas | `colab/exp1/{balanced|unbalanced}/{xgboost|rocket|svm}/` — subpastas `figures/`, `tables/` (CSV + `run_meta.json`); regenerar PDFs a partir dos CSV: editar `RUN_DIR` e títulos no topo de `colab/exp1_plots.py` e correr `python colab/exp1_plots.py` |
+| Figuras e tabelas | `colab/exp1/{balanced|unbalanced}/{xgboost|rocket|svm|lstm}/` — subpastas `figures/`, `tables/` (CSV + `run_meta.json`); regenerar PDFs: editar `RUN_DIR` em `colab/exp1_plots.py` |
 
 *(A primeira linha deste ficheiro pode referir outro caminho de CSV; o treino reproduzível usa o caminho da tabela acima.)*
 
@@ -178,7 +178,7 @@ em que \(\mathrm{dt}_i\) é o valor de `t12`, `t13` ou `t23` conforme o `pair` d
 
 **Ordem no pipeline:** leitura do CSV → montagem do tensor 60×atributos → **ponderação temporal** → validação cruzada → por fold: correlação → variância → z-score (`StandardScaler`). A ponderação **não** depende do fold (usa apenas `pair` e `t*` do CSV; é determinística por amostra).
 
-**Flags nos scripts** (`exp1_xgboost.py`, `exp1_svm.py`, `exp1_rocket.py`):
+**Flags nos scripts** (`exp1_xgboost.py`, `exp1_svm.py`, `exp1_rocket.py`, `exp1_lstm.py`):
 
 - `TEMPORAL_RATE_NORM = True` — ativa a ponderação (passado a `load_tensor`).
 - `DT_EPSILON = 0.5` — piso do denominador em meses.
@@ -195,7 +195,7 @@ Metadados do run (`tables/run_meta.json`): `temporal_rate_norm`, `dt_epsilon`.
 | **Interno (Optuna)** | `StratifiedGroupKFold` no treino externo | **5** (`INNER_NCV_SPLITS`) | Hiperparâmetros (média da AUC) |
 | **Holdout interno** | `inner_train_val()` — 1.º fold de um SGK (até 5) | ~4 treino / 1 val | Early stopping (XGBoost), curvas, refit final |
 
-Constantes nos scripts (`exp1_xgboost.py`, `exp1_svm.py`, `exp1_rocket.py`): `StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=42)` no externo; `INNER_NCV_SPLITS = 5`.
+Constantes nos scripts (`exp1_xgboost.py`, `exp1_svm.py`, `exp1_rocket.py`, `exp1_lstm.py`): `StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=42)` no externo; `INNER_NCV_SPLITS = 5`.
 
 #### Percentagens aproximadas (por fold externo)
 
@@ -263,13 +263,25 @@ Ordem global e por fold:
 - **Importância:** agregação por ROI / atributo com **média dos \|coef.\|** por fold (análogo ao agregado de \|SHAP\| no XGBoost).
 - **Figuras:** contagens de atributos; confusão OOF; ROC/PR; boxplot; barras por ROI e por atributo (`coef_top_*.pdf`).
 
+### `colab/exp1_lstm.py` (sequencial / LSTM)
+
+- **Pipeline partilhado:** `colab/exp_lstm_common.py` (mesma CV aninhada, downsample opcional e filtros que o XGBoost).
+- **Entrada:** após correlação, variância e z-score no `tr_fit`, o tensor `(n, 60, p)` é reorganizado em **`(n, 3, 20·p)`** — 3 passos temporais (`pair` 12, 13, 23) com as 20 ROIs concatenadas por passo (`panels_to_seq` em `exp1_utils.py`).
+- **Ponderação temporal:** `load_tensor(..., temporal_mode="delta_rate")` (deltas divididos por `t12`/`t13`/`t23` conforme o par).
+- **Hiperparâmetros (Optuna, 20 trials):** `units` (16–96), `dropout`, `learning_rate`, `batch_size`; objetivo = **média da AUC** nos `INNER_NCV_SPLITS` folds internos (em cada split interno, pré-processamento recalculado sem vazamento).
+- **Treino:** Keras LSTM + `Dense(1, sigmoid)`, `class_weight` balanceado no treino do fold, até `EPOCHS_MAX = 100`, **early stopping** em `val_auc` (`patience = 10`); refit final em `tr_fit` com validação em `val` (holdout).
+- **SHAP:** `shap.Explainer` (Kernel) no vetor achatado equivalente a `60·p` (mesma ordem que o XGBoost); agregação por ROI/atributo com `accumulate_flat_importance`; barras `shap_top_*.pdf` e `shap_summary.pdf` (top \|SHAP\|).
+- **Figuras:** iguais ao XGBoost onde aplicável (`feature_counts`, confusão OOF, ROC/PR, boxplot, curvas `training_curves.pdf` a partir de `tables/training_curves_fold0.csv` no fold 1).
+- **Saídas:** `colab/exp1/{balanced|unbalanced}/lstm/` — flag `DOWNSAMPLE_GROUP_SEX` (por defeito **True** = balanced).
+- **GPU:** nos scripts `exp1_lstm.py` / `exp2_lstm.py`, `LSTM_DEVICE="gpu"` e `LSTM_GPU_INDEX="0"` ou `"1"` (RTX 4090). O treino usa `use_cudnn=False` e desativa XLA auto-jit (`TF_XLA_FLAGS=--tf_xla_auto_jit=0`) para evitar `CUDNN_STATUS_NOT_INITIALIZED`. Para CPU: `LSTM_DEVICE=cpu`.
+
 ### `colab/exp1_plots.py`
 
-Lê `tables/*.csv` de um run e grava PDFs em `figures/`. **Sem argumentos de linha de comando:** defina `RUN_DIR` e os textos dos gráficos na secção `CONFIG` no início do ficheiro, depois execute o script. Inclui o gráfico de contagens de atributos a partir de `tables/feature_counts_fold0.csv` (gravado no fold 1 dos scripts de treino; volte a correr o treino se o CSV não existir).
+Lê `tables/*.csv` de um run e grava PDFs em `figures/`. Defina `RUN_DIR` (ex.: `exp1/balanced/lstm`) e os títulos na secção `CONFIG`. Suporta XGBoost, ROCKET, SVM (|coef.|) e **LSTM** (`training_curves_fold0.csv` → `training_curves.pdf`, SHAP, etc.).
 
 ### Dependências relevantes
 
-Python: `numpy`, `pandas`, `scikit-learn`, `matplotlib`, `optuna`, `xgboost`, `shap` (XGBoost), `sktime` (ROCKET).
+Python: `numpy`, `pandas`, `scikit-learn`, `matplotlib`, `optuna`, `xgboost`, `shap` (XGBoost e LSTM), `sktime` (ROCKET), `tensorflow` (LSTM).
 
 ### Execução
 
@@ -279,5 +291,8 @@ Na raiz do repositório (com ambiente que tenha as dependências):
 python colab/exp1_xgboost.py
 python colab/exp1_rocket.py
 python colab/exp1_svm.py
+python colab/exp1_lstm.py
 python colab/exp1_plots.py
 ```
+
+Para **treino desbalanceado** com LSTM (ou outros modelos), defina `DOWNSAMPLE_GROUP_SEX = False` no script correspondente antes de correr; os artefactos vão para `colab/exp1/unbalanced/<modelo>/`.
