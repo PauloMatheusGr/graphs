@@ -40,7 +40,7 @@ VAR_THR = 0.0
 RANDOM_STATE = 42
 # True: antes do split interno, subsampling de pacientes no treino do fold
 # para min(# pacientes) por estrato GROUP×SEX (F/M × sMCI/pMCI).
-DOWNSAMPLE_GROUP_SEX = False
+DOWNSAMPLE_GROUP_SEX = True
 FPR_GRID = np.linspace(0.0, 1.0, 101)
 REC_GRID = np.linspace(0.0, 1.0, 101)
 TOP_K_ROI = 10

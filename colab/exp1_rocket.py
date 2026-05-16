@@ -40,7 +40,7 @@ OPTUNA_ROCKET_TRIALS = 30
 INNER_NCV_SPLITS = 5
 # Grade só para figura diagnóstica (fold 1): acurácia vs log10(C).
 C_DIAG_GRID = np.logspace(-4, 4, 17)
-DOWNSAMPLE_GROUP_SEX = False
+DOWNSAMPLE_GROUP_SEX = True
 FPR_GRID = np.linspace(0.0, 1.0, 101)
 REC_GRID = np.linspace(0.0, 1.0, 101)
 
