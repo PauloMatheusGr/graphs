@@ -1,16 +1,20 @@
 Last updated: 04/05/2006 - By Paulo Girardi
 
-dado o seguinte csv "/mnt/study-data/pgirardi/graphs/csvs/abordagem_teste/all_delta_features_neurocombat.csv", verifique se meu designe a seguir está coerente para que eu consiga iniciar a modelagem? 
+**Nota (modelagem):** o desenho inicial abaixo (itens 1–5) foi o ponto de partida. O pipeline **implementado** está na [secção 4](#4-modelagem-supervisionada-exp1--exp2--pipeline-implementado) e em [`exp1.md`](exp1.md) / [`exp2.md`](exp2.md) — tensor `(n, 60, atributos)` via `load_tensor`, sem CSV wide intermédio; modelos XGBoost, ROCKET, SVM, LSTM; CV aninhada por `ID_PT`.
 
-1. Da maneira que está cada 3 linhas representam um conjunto com 3 imagens, sendo 20 regiões de interesse (coluna roi + side) vezes 3 pares de imagens (coluna pair), para cada linha representar um conjunto com 3 imagens longitudinais eu preciso realizar um flatten (concatenar as informações a cada tres linhas ou mesmo ID_PT + COMBINATION_NUMBER + TRIPLET_IDX) para que os atributos dos pares de imagens fiquem na sequencia na mesma linha e salvar esse novo arquivo que será a entrada dos modelos.
+---
 
-2. Com um arquivo csv com todos os atributos, em que cada linha representa um conjunto com 3 imagens, iniciar a etapa de balancemento dos dados em nível de paciente, para a classe sMCI e pMCI (coluna GROUP) e sexo F e M (coluna SEX) com downsampling.  
+Desenho inicial (referência histórica) — CSV de exemplo: `csvs/abordagem_teste/all_delta_features_neurocombat.csv`:
 
-3. Após o balanceamento, realizar a selação de atributos, a priori em dois niveis, sendo 1. para filtrar atributos com alta correlação (features vs features), e 2. para filtrar atributos com baixa variância (features vs variância) e de alguma maneira printar a quantidade de atributos após as etapas e plotar isso para documentação. Em seguida (caso essas duas abordagens não sejam suficientemente robustas), utilizar o método selectkbest (univariado) do sklearn para mais uma etapa de filtragem e novamente de alguma maneira printar a quantidade de atributos após as etapas e plotar isso para documentação, e em seguida, caso ainda não seja suficiente, utilizar o método SFS sequential feature selector (multivariado) do sklearn para finalizar a seleção de atributos.  Finalmente, salvar o arquivo com os atributos filtrados. 
+1. Cada 3 linhas = um conjunto (20 ROIs × 3 pares). Ideia original: flatten para uma linha por conjunto e gravar CSV wide.
 
-4. Realizar a etapa se separação dos folds de treino, validação e teste, tendo o cuidado pra não ter conjuntos (linhas) do mesmo paciente (coluna ID_PT) do treinamento no teste para evitar vazameto de dados (leakage).  Também para evitar vazamento de dados, aplicar a normalização z-score apenas no fold de treinamento, e a média e desvio padrão obtidos do treino aplicar no fold de validação e teste. 
+2. Balanceamento em nível de paciente (`GROUP` × `SEX`) com downsampling.
 
-5. iniciar de fato a modelagem para classificação supervisionada. 
+3. Seleção de atributos: correlação, variância, opcionalmente SelectKBest / SFS.
+
+4. Split treino/val/teste sem leakage por `ID_PT`; z-score só no treino.
+
+5. Classificação supervisionada sMCI vs pMCI. 
 
 ##############################################
 
@@ -18,7 +22,227 @@ Descrição Pré-processamento
 
 [14:00, 5/4/2026] PM: Todos os volumes de RM estrutural ponderados em T1 foram primeiramente submetidos à extração de crânio (skull-stripping) utilizando a função brain_extraction() do pacote ANTsPyNet, dentro do ecossistema ANTsX \cite{tustison-2021}. As entradas foram carregadas via ants.image_read() e as imagens 4D foram convertidas em 3D através da extração do primeiro volume com ants.slice_image(axis=3, idx=0). A extração cerebral foi realizada com modality="t1" e o diretório de cache do ANTsXNet fixado em /workspace/cache para garantir a reprodutibilidade, resultando em volumes sem crânio e máscaras cerebrais binárias.
 
-Posteriormente, aplicou-se a redução de ruído utilizando o filtro de médias não-locais adaptativo (adaptive non-local means filter) implementado em ants.denoise_image() \cite{manjon-2010}, com os parâmetros: mask=None, shrink_factor=1, p=1, r=2, noise_model="Rician" e v=0. As inomogeneidades do campo de viés (bias field) foram corrigidas utilizando o algoritmo N4 implementado em ants.n4_bias_field_correction() \cite{tustison-2010}, empregando a configuração padrão do ANTsPy (mask=None, shrink_factor=1, rescale_intensities=True, spline_param=200 e convergência {'iters': [50, 50, 50, 50], 'tol': 1e-7}).
+Posteriormente, aplicou-se a redução de ruído utilizando o filtro de médias não-locais adaptativo (adaptive non-local means filter) implementado em ants.denoise_image() \cite{manjon-2010}, com os parâmetros: mask=None, shrink_factor=1, p=1, r=2, noise_model="Rician" e v=0. As inomogeneidades do campo de viés (bias field) foram corrigidas utilizando o algoritmo N4 implementado em ants.n4_bias_field_correction() \cite{tustison-2010}, empregando a configuração padrão do ANTsPy (mask=None, shrink_factor=3, rescale_intensities=True, spline_param=200 e convergência {'iters': [50, 50, 50, 50], 'tol': 1e-7}).
+
+Parâmetros de pré-processamento (pipeline de testes)
+====================================================
+Documentação dos valores escolhidos após experimentação no notebook
+preproc.ipynb. Pastas de saída em ./testes/.
+
+Fluxo: skull stripping → denoise → bias field → histogram matching (MNI)
+
+
+1. Skull stripping (ANTsXNet brain_extraction)
+--------------------------------------------
+
+@article{tustison-2021,
+ title         = {{The ANTsX ecosystem for quantitative biological and medical imaging}},
+ author        = {Tustison, Nicholas J. and Cook, Philip A. and Holbrook, Andrew J. and Johnson, Hans J. and Muschelli, John and Devenyi, Gabriel A. and Duda, Duda, Jeffrey T. and Das, Sandhitsu R. and Cullen, Nicholas C. and Gillen, Daniel L. and Yassa, Michael A. and Stone, James R. and Gee, James C. and Avants, Brian B.},
+ journal       = {Scientific Reports},
+ publisher     = {Nature},
+ volume        = {11},
+ number        = {9068},
+ pages         = {1--13},
+ note          = {},
+ doi           = {10.1038/s41598-021-87564-6},
+ issn          = {2045-2322},
+ year          = {2021}
+ }
+
+Ferramenta : antspynet.brain_extraction
+Modalidade : t1  (recomendado; outras modalidades são mais lentas e o
+                  resultado é semelhante)
+
+Parâmetros principais
+  modality = "t1"
+  verbose  = True
+
+Saídas (em ./testes/skullstrip/)
+  {ID}_brain_mask.nii.gz
+  {ID}_stripped.nii.gz
+
+Notas
+  - Modalidades alternativas no ANTsXNet: t1v0, t1nobrainer, t1combined,
+    flair, t2, bold, fa, etc. Não usadas aqui por custo/tempo vs. ganho.
+  - Cache dos pesos: ~/antspynet_cache (configurável no notebook).
+
+
+2. Denoise (ANTs — Non-Local Means adaptativo)
+----------------------------------------------
+
+@article{manjon-2010,
+ title         = {{Adaptive non-local means denoising of MR images with spatially varying noise levels}},
+ author        = {Manjón, José V. and Coupé, Pierrick and Martí-Bonmatí, Luis and Collins, D. Louis and Robles, Montserrat},
+ journal       = {journal of Magnetic Resonance imaging},
+ publisher     = {Wiley},
+ volume        = {31},
+ number        = {1},
+ pages         = {192--203},
+ note          = {},
+ doi           = {10.1002/jmri.22003},
+ issn          = {1522-2586},
+ year          = {2010}
+}
+
+Ferramenta : ants.denoise_image
+Referência : Manjón et al., JMRI 2010 (NLM adaptativo)
+
+Parâmetros escolhidos
+  shrink_factor = 1    # fator de downsample interno (s)
+  p             = 2    # raio do patch local (ver abaixo)
+  r             = 3    # raio de busca (radius; ver abaixo)
+  noise_model   = "Rician"
+  mask          = None
+
+O que significa "p"?
+  No ANTs, p é o raio do patch local usado para estimar o ruído e aplicar
+  o filtro NLM (não é "potência" nem número de bins). Valores maiores
+  aumentam o tamanho da vizinhança local e tendem a suavizar mais a imagem.
+
+O que significa "r" (radius no notebook)?
+  r é o raio de busca: distância até onde o algoritmo procura patches
+  semelhantes para a média não-local. Valores maiores denoisam mais, com
+  maior custo computacional.
+
+Sufixo no nome do ficheiro : sf_{shrink_factor}_p_{p}_r_{r}
+Exemplo de saída : I100004_stripped_sf_1_p_2_r_3.nii.gz
+
+Observações da experimentação
+  - shrink_factor > 1 remove o ruído de forma insatisfatória.
+  - r > 3 e/ou p > 2 suaviza demais a imagem (perda de detalhe).
+  - r < 3 e/ou p < 2 remove pouco ruído.
+
+
+3. Bias field correction (N4 / ANTs)
+------------------------------------
+
+@article{tustison-2010,
+ title     = {{N4ITK: Improved N3 Bias Correction}},
+ author    = {Tustison, Nicholas J. and Avants, Brian B. and Cook, Philip A. and Zheng, Yuanjie and Egan, Alexander and Yushkevich, Paul A. and Gee, James C.},
+ journal   = {IEEE Transactions on Medical Imaging},
+ publisher = {IEEE},
+ volume    = {29},
+ number    = {6},
+ pages     = {1310--1320},
+ note      = {},
+ doi       = {10.1109/TMI.2010.2046908},
+ issn      = {},
+ year      = {2010}
+}
+
+Ferramenta : ants.n4_bias_field_correction
+
+Parâmetros escolhidos
+  shrink_factor     = 3
+  convergence       = {"iters": [50, 50, 50, 50], "tol": 1e-7}
+  return_bias_field = False
+
+Sufixo no nome do ficheiro : sf_{shrink_factor}
+Exemplo de saída : I100004_stripped_sf_1_p_2_r_3_sf_3.nii.gz
+  (quando encadeado após denoise; no notebook de testes o bias lê
+   *_stripped.nii.gz e grava {base}_sf_3.nii.gz)
+
+
+4. Histogram matching (ANTs → template MNI)
+-----------------------------------------
+
+@article{tustison-2021,
+ title         = {{The ANTsX ecosystem for quantitative biological and medical imaging}},
+ author        = {Tustison, Nicholas J. and Cook, Philip A. and Holbrook, Andrew J. and Johnson, Hans J. and Muschelli, John and Devenyi, Gabriel A. and Duda, Duda, Jeffrey T. and Das, Sandhitsu R. and Cullen, Nicholas C. and Gillen, Daniel L. and Yassa, Michael A. and Stone, James R. and Gee, James C. and Avants, Brian B.},
+ journal       = {Scientific Reports},
+ publisher     = {Nature},
+ volume        = {11},
+ number        = {9068},
+ pages         = {1--13},
+ note          = {},
+ doi           = {10.1038/s41598-021-87564-6},
+ issn          = {2045-2322},
+ year          = {2021}
+ }
+
+Ferramenta : ants.histogram_match_image2
+Referência : atlases/templates/mni152_2009c_template.nii.gz
+
+Parâmetros escolhidos
+  bins   = 128   # transform_domain_size no código (b no nome do ficheiro)
+  points = 16    # match_points no código (p no nome do ficheiro)
+
+Outros (fixos no notebook)
+  match_points e transform_domain_size passados a histogram_match_image2
+  Normalização min-max da fonte e referência; reescala pelo p99.9 da MNI
+
+Sufixo no nome do ficheiro : _b_{bins}_p_{points}
+Exemplo de saída : I100004_stripped_b_128_p_16.nii.gz
+
+Mapeamento nome ↔ parâmetro ANTs
+  b (bins)   → transform_domain_size
+  p (points) → match_points
+
+
+Resumo rápido
+-------------
+  Etapa              | Parâmetro-chave              | Valor
+  -------------------|------------------------------|-------
+  Skull stripping    | modality                     | t1
+  Denoise            | shrink_factor / p / r        | 1 / 2 / 3
+  Bias field (N4)    | shrink_factor                | 3
+  Histogram matching | bins / points (MNI)          | 128 / 16
+
+5. Detecção de outliers
+
+https://github.com/viswanath-lab/RadQy
+
+@article{mrqy-2020,
+  title     = {{Technical Note: MRQy — An open‐source tool for quality control of MR imaging data}},
+  author    = {Sadri, Amir Reza and Janowczyk, Andrew and Ren, Zhou and Verma, Ruchika and Beig, Niha and Antunes, Jacob and Madabhushi, Anant and Tiwari, Pallavi and Viswanath, Satish E.},
+  journal   = {Medical Physics},
+  publisher = {wiley},
+  volume    = {47},
+  number    = {12},
+  pages     = {6029--6038},
+  note      = {},
+  doi       = {10.1002/mp.14593 },
+  issn      = {2473-4209},
+  year      = {2020}
+}
+
+A verificação de outliers nas imagens foi realizada por meio do pacote MRQy \cite{mrqy-2020}, aplicado diretamente sobre as imagens em formato RAW para a extração automática de métricas quantitativas de qualidade de imagem (Image Quality Metrics -- IQMs), sem a necessidade de imagens de referência. O MRQy gerou uma planilha contendo métricas estatísticas básicas (MEAN, RNG, VAR, CV), métricas de contraste (CPP, CNR), múltiplas estimativas da relação sinal-ruído (PSNR, SNR1 a SNR9), medidas de não uniformidade de intensidade (CVP, CJV) e indicadores sensíveis a artefatos e borramento (EFC, FBER), além de informações geométricas do volume (VRX, VRY, VRZ, ROW, COL, NUM). Em seguida, cada métrica foi avaliada estatisticamente pelo método do intervalo interquartil (Interquartile Range -- IQR), no qual os limites inferior e superior foram definidos como $Q_1 - \alpha \cdot IQR$ e $Q_3 + \alpha \cdot IQR$, respectivamente, com fator $\alpha = 1.0$, considerando direções específicas de degradação (two-sided, low-bad e high-bad) de acordo com a natureza de cada métrica. Para cada imagem, foi computado um escore de outlier correspondente ao número de métricas que ultrapassaram os limites estabelecidos, sendo classificadas como suspeitas aquelas com escore maior ou igual a $3$. Esse procedimento possibilitou a identificação automática de volumes com potenciais artefatos, ruído excessivo, baixa relação sinal-ruído ou inconsistências de intensidade, constituindo um mecanismo objetivo de controle de qualidade antes das etapas subsequentes de pré-processamento e análise quantitativa.
+
+6. Parcelamento das regiões do cérebro
+
+@article{tustison-2021,
+ title         = {{The ANTsX ecosystem for quantitative biological and medical imaging}},
+ author        = {Tustison, Nicholas J. and Cook, Philip A. and Holbrook, Andrew J. and Johnson, Hans J. and Muschelli, John and Devenyi, Gabriel A. and Duda, Duda, Jeffrey T. and Das, Sandhitsu R. and Cullen, Nicholas C. and Gillen, Daniel L. and Yassa, Michael A. and Stone, James R. and Gee, James C. and Avants, Brian B.},
+ journal       = {Scientific Reports},
+ publisher     = {Nature},
+ volume        = {11},
+ number        = {9068},
+ pages         = {1--13},
+ note          = {},
+ doi           = {10.1038/s41598-021-87564-6},
+ issn          = {2045-2322},
+ year          = {2021}
+ }
+
+ função desikan_killiany_tourville_labeling
+
+7. Segmentação dos tecidos do cérebro
+
+@article{tustison-2021,
+ title         = {{The ANTsX ecosystem for quantitative biological and medical imaging}},
+ author        = {Tustison, Nicholas J. and Cook, Philip A. and Holbrook, Andrew J. and Johnson, Hans J. and Muschelli, John and Devenyi, Gabriel A. and Duda, Duda, Jeffrey T. and Das, Sandhitsu R. and Cullen, Nicholas C. and Gillen, Daniel L. and Yassa, Michael A. and Stone, James R. and Gee, James C. and Avants, Brian B.},
+ journal       = {Scientific Reports},
+ publisher     = {Nature},
+ volume        = {11},
+ number        = {9068},
+ pages         = {1--13},
+ note          = {},
+ doi           = {10.1038/s41598-021-87564-6},
+ issn          = {2045-2322},
+ year          = {2021}
+ }
+
+ função deep_atropos
 
 Finalmente, a segmentação de tecidos foi realizada por meio do framework Atropos baseado em aprendizado profundo (antspynet.deep_atropos()), com o pré-processamento interno ativado. A parcelação anatômica foi obtida através do método de rotulagem Desikan Killiany Tourville (antspynet.desikan_killiany_tourville_labeling()) com agrupamento lobar, ambos pertencentes ao ecossistema ANTsX \cite{tustison-2021}.
 
@@ -119,6 +343,47 @@ Finalmente, a segmentação de tecidos foi realizada por meio do framework Atrop
 
 A verificação de outliers nas imagens foi realizada por meio do pacote MRQy \cite{mrqy-2020}, aplicado diretamente sobre as imagens em formato RAW para a extração automática de métricas quantitativas de qualidade de imagem (Image Quality Metrics -- IQMs), sem a necessidade de imagens de referência. O MRQy gerou uma planilha contendo métricas estatísticas básicas (MEAN, RNG, VAR, CV), métricas de contraste (CPP, CNR), múltiplas estimativas da relação sinal-ruído (PSNR, SNR1 a SNR9), medidas de não uniformidade de intensidade (CVP, CJV) e indicadores sensíveis a artefatos e borramento (EFC, FBER), além de informações geométricas do volume (VRX, VRY, VRZ, ROW, COL, NUM). Em seguida, cada métrica foi avaliada estatisticamente pelo método do intervalo interquartil (Interquartile Range -- IQR), no qual os limites inferior e superior foram definidos como $Q_1 - \alpha \cdot IQR$ e $Q_3 + \alpha \cdot IQR$, respectivamente, com fator $\alpha = 1.0$, considerando direções específicas de degradação (two-sided, low-bad e high-bad) de acordo com a natureza de cada métrica. Para cada imagem, foi computado um escore de outlier correspondente ao número de métricas que ultrapassaram os limites estabelecidos, sendo classificadas como suspeitas aquelas com escore maior ou igual a $3$. Esse procedimento possibilitou a identificação automática de volumes com potenciais artefatos, ruído excessivo, baixa relação sinal-ruído ou inconsistências de intensidade, constituindo um mecanismo objetivo de controle de qualidade antes das etapas subsequentes de pré-processamento e análise quantitativa
 
+==============================
+= Pipeline de prodcessamento =
+==============================
+
+Harmonização neuro combat
+
+@article{beer-2020,
+  title     = {{Longitudinal ComBat: A method for harmonizing longitudinal multi-scanner imaging data}},
+  author    = {Beer, Joanne C. and Tustison, Nicholas J. and Cook, Philip A. and Davatzikos, Christos and Sheline, Yvette I. and Shinohara, Russell T. and Linn, Kristin A.},
+  journal   = {NeuroImage},
+  publisher = {},
+  volume    = {220},
+  number    = {},
+  pages     = {117129},
+  note      = {},
+  doi       = {10.1016/j.neuroimage.2020.117129},
+  issn      = {},
+  year      = {2020}
+}
+
+================================
+
+Shap analisys
+
+@inproceedings{lundberg-2017,
+  title     = {{A Unified Approach to Interpreting Model Predictions}},
+  author    = {Lundberg, Scott M and Lee, Su-In},
+  booktitle = {Advances in Neural Information Processing Systems},
+  publisher = {Curran Associates, Inc.},
+  volume    = {30},
+  number    = {},
+  address   = {},
+  pages     = {1--10},
+  note      = {},
+  doi       = {10.48550/arXiv.1705.07874},
+  issn      = {},
+  isbn      = {},
+  year      = {2017}
+}
+
+===================================
 
 Documentação Técnica: Pipeline de Deformação Longitudinal (ANTsPy)
 
@@ -217,345 +482,154 @@ Ao concluir este passo, obtém-se, por conjunto de três imagens, mapas que desc
 
 ---
 
-## 4. Modelagem (CNN / LSTM / PyCaret) + SHAP + Anti-vazamento por paciente
+## 4. Modelagem supervisionada (exp1 / exp2) — pipeline implementado
 
-Esta secção documenta os scripts em `colab/` usados para classificação (pMCI vs sMCI) a partir do CSV:
+Esta secção descreve o pipeline **efetivamente implementado** em `colab/` para classificação binária **sMCI vs pMCI** (`GROUP`). Detalhes por experimento: [`exp1.md`](exp1.md) (deltas) e [`exp2.md`](exp2.md) (absolutos + taxa desde baseline).
 
-- `csvs/abordagem_teste/all_delta_features_neurocombat.csv`
+**Relação com o desenho inicial (itens 1–5 no topo deste README):** não é necessário gerar um CSV “wide” (uma linha por conjunto com flatten manual). O tensor `(n, 60, n_atributos)` é montado em memória por `colab/exp1_utils.py::load_tensor`. A seleção de atributos (correlação + variância) e o z-score são feitas **por fold**, sem vazamento. O balanceamento é opcional via flag `DOWNSAMPLE_GROUP_SEX` (downsample por **paciente** nos estratos `GROUP×SEX`).
 
-O CSV contém colunas de metadados (ex.: `ID_PT`, `GROUP`, `SEX`, `roi`, `label`, `pair`, ...) e colunas numéricas (features) que entram nos modelos.
+### 4.0. Visão geral dos dois experimentos
 
----
+| | **Experimento 1 (exp1)** | **Experimento 2 (exp2)** |
+|---|--------------------------|---------------------------|
+| **CSV** | `csvs/abordagem_4_sMCI_pMCI/all_delta_features_neurocombat.csv` | `csvs/abordagem_4_sMCI_pMCI/all_unitary_features_neurocombat.csv` |
+| **Conteúdo** | Deltas entre imagens (pares `12`, `13`, `23`) | Absolutos na img1; img2/3 como taxa desde baseline |
+| **Ponderação temporal** | `delta_rate`: \(x' = x / \max(dt, \varepsilon)\) por par | `baseline_rate`: img1 absoluto; img2/3 \((x-x_{\mathrm{baseline}})/\max(t_{12\|13},\varepsilon)\) |
+| **`PAIR_ORDER`** | `["12", "13", "23"]` | `["1", "2", "3"]` |
+| **Scripts** | `exp1_xgboost.py`, `exp1_rocket.py`, `exp1_svm.py`, `exp1_lstm.py` | `exp2_xgboost.py`, `exp2_rocket.py`, `exp2_svm.py`, `exp2_lstm.py` |
+| **Regenerar figuras** | `colab/exp1_plots.py` | `colab/exp2_plots.py` |
 
-## 4.0. Objetivo experimental e “abordagens”
+Em ambos: cada amostra = `(ID_PT, COMBINATION_NUMBER, TRIPLET_IDX)` com tensor **`X_3d` de forma `(n, 60, n_feat)`** — 60 linhas = **20 ROIs × 3 passos temporais**; alvo `y`: sMCI=0, pMCI=1; split por **`ID_PT`**.
 
-Você vai executar dois blocos principais:
+### 4.0.1. Utilitários partilhados
 
-### Abordagem 1 — Detecção de outliers (one-class / clustering)
+- **`colab/exp1_utils.py`:** `load_tensor`, `downsample_train_indices`, `inner_cv_splits`, `inner_train_val`, filtros correlação/variância, plots, CSVs de métricas OOF, agregação SHAP/coef por ROI e atributo (`slot_labels`: `pair|roi|side|label`).
+- **`colab/exp_lstm_common.py`:** pipeline LSTM (Optuna, Keras, SHAP Kernel) reutilizado por `exp1_lstm.py` e `exp2_lstm.py`.
 
-**Objetivo**: detectar **amostras anômalas** sem usar (ou usando minimamente) o rótulo `GROUP`. Há dois usos típicos e complementares:
+### 4.0.2. Cenários balanced / unbalanced
 
-- **QC / limpeza de dataset**: encontrar conjuntos/imagens que “fogem” do padrão por artefato, erro de segmentação, erro de ROI, merge errado, ou scanner/site. (Aqui o “outlier” é problema de qualidade, não necessariamente pMCI.)
-- **Anomalia como sinal clínico** (semi-supervisionado): treinar o modelo **somente nos sMCI** como “normal” e usar o *anomaly score* para rankear quão “pMCI-like” é um conjunto. A avaliação vira uma *classificação via score* (AUC/PR-AUC) sem treinar um classificador discriminativo.
+Em cada script de treino, a constante **`DOWNSAMPLE_GROUP_SEX`** controla o cenário:
 
-**O que entra como entrada** (pré-modelagem):
+| Valor | Pasta de saída | Comportamento |
+|-------|----------------|---------------|
+| `True` | `colab/exp{1,2}/balanced/<modelo>/` | Antes do split interno, equipara o nº de **pacientes** por estrato `GROUP×SEX` no treino externo de cada fold |
+| `False` | `colab/exp{1,2}/unbalanced/<modelo>/` | Usa todos os pacientes disponíveis no treino externo |
 
-- **Entrada tabular wide**: 1 linha por conjunto `(ID_PT, COMBINATION_NUMBER, TRIPLET_IDX)` com features “roi|side|pair|atributo” (ver `colab/datasets.py::build_wide_tabular_from_long_pairs`).
-- **Entrada por sequência** (opcional): i1→i2→i3 com features radiômicas por imagem (ver `colab/datasets.py::build_triplet_sequence_from_radiomics`).
+O conjunto de **teste externo (~20 %)** mantém a distribuição natural; o downsample **não** altera o teste.
 
-**Nota (grafos)**: nesta fase, **nenhum script usa grafos**. A geração/modelagem por grafos fica para uma etapa posterior, depois que o pipeline “sem grafos” estiver fechado (normalização por fold, balanceamento por paciente, SHAP e baseline de resultados).
+Para comparar as duas estratégias: correr cada script duas vezes (ou duplicar a flag) — **4 modelos × 2 cenários × 2 experimentos = até 16 runs** completos.
 
-**Modelos a inserir (convencionais)**:
+### 4.0.3. Validação cruzada (sem vazamento por paciente)
 
-- **IsolationForest**: robusto em alta dimensão, rápido, bom baseline.  
-  - Por quê: não assume distribuição gaussiana e lida melhor com múltiplas fontes de variação.
-- **One-Class SVM (RBF)**: forte em fronteira não-linear, mas sensível a escala.  
-  - Por quê: boa alternativa quando a “normalidade” é um manifold.
-- **EllipticEnvelope** (covariância robusta): útil quando as features ficam “quase gaussianas” após z-score e redução de dimensão.  
-  - Por quê: baseline interpretável quando o comportamento é elipsoidal.
-- **LocalOutlierFactor / KNN distance**: captura anomalia “local” (densidade).  
-  - Por quê: útil se o dataset tem subgrupos normais (ex.: por idade/sexo).
-- **PCA reconstruction error** (ou Autoencoder MLP como extensão deep):  
-  - Por quê: detecta amostras que não podem ser reconstruídas bem por um subespaço “normal”.
+**Não há** `train_test_split` fixo 70/15/15. Métricas reportadas = **OOF** em 5 folds externos.
 
-**Clustering** (para exploração e pseudo-rótulos):
+| Nível | Método | Folds | Papel |
+|-------|--------|-------|--------|
+| **Externo** | `StratifiedGroupKFold` (`groups=ID_PT`) | 5 | Teste OOF (~20 % por fold) |
+| **Interno (Optuna)** | `StratifiedGroupKFold` no treino externo | 5 (`INNER_NCV_SPLITS`) | Média da AUC → hiperparâmetros |
+| **Holdout interno** | `inner_train_val()` | ~64 % `tr_fit` / ~16 % `val` do total | Early stopping (XGBoost/LSTM), curvas no fold 1 |
 
-- **KMeans / MiniBatchKMeans** (com distância ao centróide como score de anomalia)
-- **Gaussian Mixture** (score = -loglik)
-- **DBSCAN/HDBSCAN** (quando houver clusters densos + ruído)
+Constantes comuns: `random_state=42`, `CORR_THR=0.9`, `VAR_THR=0.0`, `DT_EPSILON=0.5`.
 
-**Como avaliar**:
+**Pré-processamento por fold externo** (fit só em `tr_fit`, salvo nota):
 
-- Se for **QC**: inspeção manual das top-N amostras por score + checagem de metadados (scanner/site) para evitar que o “outlier” seja só batch.  
-- Se for **anômalo vs normal (semi-supervisionado)**:  
-  - treine só em `sMCI`, aplique em todos, use `GROUP` apenas para computar métricas (AUC, balanced accuracy no threshold escolhido, etc.).
+1. Ponderação temporal na carga (`load_tensor`).
+2. Correlação entre colunas > 0,9 no flatten de `X_3d[tr_fit]`.
+3. `VarianceThreshold(0.0)` (remove colunas constantes no treino).
+4. `StandardScaler` (z-score).
 
-### Abordagem 4 — Classificação binária (pMCI vs sMCI)
+No **NCV interno do Optuna** (XGBoost e LSTM), correlação + variância + scaler são **recalculados em cada split interno** (sem vazamento).
 
-**Objetivo**: treinar modelos supervisionados com `GROUP` como ground truth.
+### 4.0.4. Modelos e saídas
 
-**Regras**:
+| Modelo | Script(s) | Entrada | Optuna (trials) | Importância |
+|--------|-----------|---------|-----------------|-------------|
+| **XGBoost** | `exp*_xgboost.py` | Tabular achatado `(n, 60·p)` | 30 | SHAP (`TreeExplainer`) → ROI / atributo |
+| **ROCKET** | `exp*_rocket.py` | `(n, p, 60)` + L1 logística | 30 (`C`) | \|coef.\| L1 (sem SHAP no espaço kernel) |
+| **SVM linear** | `exp*_svm.py` | Tabular achatado | 30 (`C`) | \|coef.\| agregado por ROI / atributo |
+| **LSTM** | `exp*_lstm.py` | `(n, 3, 20·p)` após `panels_to_seq` | 20 | SHAP Kernel no vetor `60·p` achatado |
 
-- **Split por paciente** (sempre): `StratifiedGroupKFold` com `groups=ID_PT`.
-- **Estratificação**: `GROUP+SEX` como `strat_col` para reduzir viés.
-- **Normalização sem vazamento**: ver a secção “Regras importantes” abaixo (varia por script).
+**Artefactos por run** (`colab/exp{1,2}/{balanced|unbalanced}/{xgboost|rocket|svm|lstm}/`):
 
----
+- `tables/`: `metrics_per_fold.csv`, `oof_predictions.csv`, `fold_test_scores.csv`, `importance_shap_*` ou `importance_coef_*`, `feature_counts_fold0.csv`, `run_meta.json` (+ `training_curves_fold0.csv` no LSTM).
+- `figures/`: confusão OOF, ROC/PR, boxplot de métricas, contagens de atributos, barras SHAP/coef; XGBoost/LSTM: curvas de treino no fold 1.
 
-## 4.1. Variáveis de tempo (t12/t13/t23) e TIME_PROG (sem vazamento)
+**LSTM e GPU:** definir **antes** de importar TensorFlow (já nos scripts `exp*_lstm.py`):
 
-### t12/t13/t23 (intervalo entre imagens do conjunto)
-
-- **Uso recomendado**: como feature **por par** (isto é, `dt` dependente de `pair`) quando você está no modo por pares (12/13/23).  
-  - Exemplo: em cada “passo” do LSTM por pares, adicionar a feature `dt`. (O `lstm_example.py` já faz isso quando `t12/t13/t23` existem.)
-  - No tabular wide, você pode armazenar `roi|side|pair|dt` como mais uma coluna.
-- **Por quê**: separa “mudança por mês” de “mudança total”. Sem isso, o modelo pode confundir deltas grandes com intervalos longos.
-
-### TIME_PROG (tempo até progressão para demência)
-
-Como você notou, **TIME_PROG é estruturalmente ligado ao rótulo** (em geral pMCI terá TIME_PROG>0 e sMCI=0), então:
-
-- **Para classificação binária (abordagem 4)**: **NÃO usar TIME_PROG como feature**.  
-  - Motivo: vazamento de target (o modelo aprende um atalho).
-- **Usos válidos**:
-  - **análise pós-hoc**: correlacionar score do modelo com TIME_PROG apenas nos pMCI (quanto menor TIME_PROG, mais “agressivo”).
-  - **modelagem alternativa**: como alvo de regressão/survival (Cox/DeepSurv) ou classificação em múltiplos horizontes (ex.: converter em “progride em <=24 meses?”), mas isso vira outro experimento.
-
----
-
-## 4.2. Padronização de entrada: “uma função por script” vs vários scripts
-
-**Recomendação**: manter **um construtor de dataset** (funções utilitárias) e scripts separados por modelo.
-
-- **Por quê**:
-  - reduz duplicação e inconsistências (ex.: scaler, pivots, colunas ignoradas)
-  - mantém cada experimento reprodutível e simples de rodar (um comando por modelo)
-  - facilita log/outputs por abordagem (pasta por script/execução)
-
-Implementação sugerida (já iniciada):
-
-- `colab/datasets.py`
-  - `build_wide_tabular_from_long_pairs`: gera wide+flatten para sklearn/MLP
-  - `build_triplet_sequence_from_radiomics`: monta i1→i2→i3 a partir de `radiomics_merge.csv` + `cj_data_*.txt`
-
----
-
-## 4.3. Deep tabular (MLP)
-
-Script novo:
-
-- `colab/mlp_example.py`
-
-**Entrada**:
-
-- `--input-mode wide_from_long`: faz pivot e usa 1 linha por conjunto (recomendado)
-- `--input-mode as_is_rows`: usa o CSV como está (1 linha = 1 exemplo)
-
-**O que testar (hiperparâmetros)**:
-
-- `--kbest`: \{200, 400, 600, 1000, 2000\} (depende do nº total de features)
-- `--hidden`: \{`256,64`, `512,128`, `1024,256`\}
-- `--dropout`: \{0.0, 0.2, 0.3, 0.5\}
-- `--lr`: \{1e-4, 3e-4, 1e-3\}
-- `--batch-size`: \{32, 64, 128\}
-- `--balance`: `none` vs `downsample`
-
----
-
-## 4.4. Hiperparâmetros a testar por script (resumo prático)
-
-### `colab/sklearn_models_teste.py`
-
-Esse script hoje roda “várias famílias” com hiperparâmetros default. Para uma bateria de testes controlada, os knobs mais importantes são:
-
-- **Pré-processamento/seleção**
-  - `--remove-constant` (on/off)
-  - `--corr-threshold`: \{0.0, 0.90, 0.95\}
-  - `--feature-selection`: `none` / `kbest` / `two_stage`
-  - `--fs-k-pre`: \{50, 100, 200, 400\}
-  - `--fs-k-final`: \{20, 30, 50\}
-- **Modelos (rodar um subconjunto)**
-  - `--models`: começar com `"Logistic Regression,Extra Trees Classifier,SVM - RBF Kernel,Gradient Boosting Classifier"`
-
-Motivo: você controla a capacidade efetiva via seleção de features (sem explodir o espaço de busca) e compara famílias com vieses diferentes (linear / kernel / árvores / boosting).
-
-### `colab/cnn_example.py`
-
-Hoje a CNN é “tabular conv1D” com `kbest` + z-score e early stopping.
-
-Parâmetros a testar:
-
-- `--kbest`: \{50, 100, 200, 400\}
-- `--epochs`: \{50, 80, 120\}
-- `--batch-size`: \{32, 64, 128\}
-- `--balance`: `none` vs `downsample`
-
-(Se você evoluir a arquitetura para tratar `pair` como canais e conv sobre `ROI`, aí os hiperparâmetros passam a incluir `filters`, `kernel_size`, `dropout`, `lr`.)
-
-### `colab/lstm_example.py`
-
-Parâmetros a testar:
-
-- `--sequence-source`: `pairs` (deltas por par) vs `columns` (se você exportar *_base/_follow/_delta)
-- `--pair-order`: fixo `12,13,23` (ou experimentar `12,23,13` só se houver hipótese forte de ordem)
-- `--epochs`: \{40, 60, 80\}
-- `--batch-size`: \{32, 64\}
-- `--balance`: `none` vs `downsample`
-
-Para a sua nova proposta (reconstrução i1→i2→i3 via radiomics_merge), o ideal é criar um modo extra no LSTM que consuma a sequência real (não implementado ainda neste script; está implementado no construtor em `colab/datasets.py`).
-
-### 4.1. Regras importantes (sem vazamento)
-
-- **Separação por paciente**: os scripts consideram `ID_PT` como grupo; um paciente não aparece em treino/validação/teste ao mesmo tempo.
-- **Nested split**:
-  - **split externo**: (folds) para avaliação
-  - **split interno**: validação (early stopping / seleção) dentro do treino externo
-- **Z-score sem vazamento** (por script):
-  - `cnn_example.py`, `lstm_example.py`, `mlp_example.py`: scaler fitado **somente** no `fit` (treino interno) e aplicado em `val/test`.
-  - `sklearn_models_teste.py`: o `StandardScaler` faz parte do `ColumnTransformer` e é fitado no **treino do fold externo** (antes do CV interno de ranking), e aplicado no teste externo.
-  - `models_teste.py` (PyCaret): z-score manual nas features numéricas selecionadas, fitado no **treino do fold externo** e aplicado no teste externo.
-
-### 4.2. Filtro por ROI/label (todas as abordagens)
-
-Os filtros atuam em **linhas** do CSV (cada linha representa um exemplo associado a uma ROI/label/side/pair):
-
-- `--roi "hippocampus,amygdala"`: filtra pela coluna `roi`
-- `--label "17,53"`: filtra pela coluna `label`
-- `--roi-label "hippocampus:17,hippocampus:53"`: define combinações explícitas `roi:label`
-
-Se você **omitir** `--roi`, `--label` e `--roi-label`, o script usa **todas** as ROIs do CSV.
-
-### 4.3. Balanceamento (2 modos)
-
-Todos os scripts suportam a flag `--balance` (quando existe no script), mas **o ponto exato onde ela atua varia**:
-
-- `--balance none`: sem balanceamento (default)
-- `--balance downsample`: **downsampling por paciente (`ID_PT`)** balanceando simultaneamente os estratos `GROUP+SEX` (ex.: `pMCI_F`, `pMCI_M`, `sMCI_F`, `sMCI_M`).
-  - `cnn_example.py`, `lstm_example.py`, `mlp_example.py`: aplica no `fit` (treino interno) e nunca altera `val/test`.
-  - `sklearn_models_teste.py`: aplica no **treino do fold externo** (antes do preprocessing), e nunca altera o teste externo.
-  - `models_teste.py` (PyCaret): aplica no **treino do fold externo**.
-
-### 4.4. SHAP (importância de features e de ROIs)
-
-Em `cnn_example.py` e `lstm_example.py`:
-
-- `--shap`: gera
-  - `shap_feature_importance_*.csv` (rank de atributos numéricos)
-  - `shap_roi_importance_*.csv` (rank por `roi,label`)
-  - plots: `shap_bar_*.png`, `shap_beeswarm_*.png`, `roi_bar_*.png`
-- `--shap-outdir`: diretório de saída (default `colab/outputs/`)
-- `--shap-samples` / `--shap-background`: amostragem para acelerar
-
-Os plots mostram **nomes reais** das features.
-
----
-
-## 5. Scripts em `colab/` e comandos
-
-### 5.1. `colab/cnn_example.py` (CNN 1D tabular)
-
-**O que faz**
-
-- CNN 1D sobre features tabulares
-- Split por paciente (`ID_PT`) sem vazamento
-- Split interno (validação) por paciente
-- Z-score fitado no `fit` e aplicado em `val`/`test`
-- Seleção de atributos: `SelectKBest(f_classif, k=--kbest)` **fitado apenas no treino externo**
-- (Opcional) SHAP + plots
-
-**Comandos**
-
-- Holdout (por paciente) em CPU:
-
-```bash
-python colab/cnn_example.py --device cpu --test-size 0.2
+```python
+os.environ.setdefault("LSTM_DEVICE", "gpu")      # ou "cpu"
+os.environ.setdefault("LSTM_GPU_INDEX", "0")   # "1" para a segunda RTX 4090
 ```
 
-- Holdout + downsample:
+Treino com `use_cudnn=False` e XLA auto-jit desligado (`TF_XLA_FLAGS=--tf_xla_auto_jit=0`). Correr exp1 e exp2 em paralelo: um processo por GPU (`LSTM_GPU_INDEX=0` vs `1`).
+
+### 4.0.5. Execução (raiz do repositório)
 
 ```bash
-python colab/cnn_example.py --device cpu --balance downsample --test-size 0.2
+# Experimento 1 — deltas
+python colab/exp1_xgboost.py
+python colab/exp1_rocket.py
+python colab/exp1_svm.py
+python colab/exp1_lstm.py
+
+# Experimento 2 — absolutos + baseline_rate
+python colab/exp2_xgboost.py
+python colab/exp2_rocket.py
+python colab/exp2_svm.py
+python colab/exp2_lstm.py
+
+# Regenerar PDFs a partir dos CSV (editar RUN_DIR em CONFIG)
+python colab/exp1_plots.py
+python colab/exp2_plots.py
 ```
 
-- Cross-validation externa (ex.: 5 folds) + validação interna:
+**Dependências:** `numpy`, `pandas`, `scikit-learn`, `matplotlib`, `optuna`, `xgboost`, `shap`, `sktime` (ROCKET), `tensorflow` (LSTM).
+
+Alterar `DOWNSAMPLE_GROUP_SEX` no topo de cada script antes de correr (balanced vs unbalanced).
+
+---
+
+## 4.1. Variáveis de tempo e vazamento de rótulo
+
+### t12 / t13 / t23
+
+Integrados na ponderação temporal (`delta_rate` no exp1; `baseline_rate` no exp2). Ver fórmulas em `exp1.md` e `exp2.md`.
+
+### TIME_PROG
+
+**Não usar como feature** na classificação binária sMCI/pMCI (vazamento de target). Usos válidos: análise pós-hoc ou modelos de survival (experimento futuro).
+
+---
+
+## 4.2. Outros objetivos e scripts exploratórios (legado)
+
+### Detecção de outliers (futuro / paralelo)
+
+Planeado para etapa posterior (QC ou one-class em sMCI): IsolationForest, One-Class SVM, LOF, etc. Entrada wide/sequência ainda em `colab/datasets.py`. **Não** faz parte dos runs `exp*_*.py`.
+
+**Nota (grafos):** modelagem por grafos fica para depois do baseline tabular/sequencial (exp1/exp2) estar fechado.
+
+### Scripts exploratórios anteriores (CLI, CSV `abordagem_teste`)
+
+Protótipos com interface `--balance`, `--shap`, `--roi`, etc. O pipeline **principal** de produção é `exp1_*` / `exp2_*` acima.
+
+| Script | Papel |
+|--------|--------|
+| `colab/cnn_example.py` | CNN 1D tabular + `SelectKBest` |
+| `colab/lstm_example.py` | LSTM antigo (substituído por `exp*_lstm.py` + `exp_lstm_common.py`) |
+| `colab/mlp_example.py` | MLP tabular |
+| `colab/sklearn_models_teste.py` | Várias famílias sklearn |
+| `colab/models_teste.py` | PyCaret + nested CV |
+| `colab/datasets.py` | Construtores wide / sequência i1→i2→i3 |
+
+Exemplo (legado):
 
 ```bash
 python colab/cnn_example.py --device cpu --n-splits 5 --inner-fold 5 --kbest 100
+python colab/lstm_example.py --device cpu --n-splits 5 --shap --sequence-source pairs
 ```
 
-- Rodar SHAP (todas as ROIs):
-
-```bash
-python colab/cnn_example.py --device cpu --shap
-```
-
-- Rodar SHAP filtrando ROI/label:
-
-```bash
-python colab/cnn_example.py --device cpu --shap --roi hippocampus --label 17,53
-```
-
-### 5.2. `colab/lstm_example.py` (LSTM com sequência por pares)
-
-**O que faz**
-
-- Monta sequência com 3 passos temporais por amostra (linhas `pair=12,13,23`)
-- Split externo por paciente (`ID_PT`) com `StratifiedGroupKFold`
-- Split interno por paciente para validação (`--inner-fold`)
-- Z-score fitado no `fit` e aplicado em `val`/`test`
-- (Opcional) SHAP + plots (por padrão roda SHAP no fold 1 para reduzir custo)
-
-**Comandos**
-
-- Cross-validation em CPU:
-
-```bash
-python colab/lstm_example.py --device cpu --n-splits 5 --inner-fold 5 --sequence-source pairs --pair-order 12,13,23
-```
-
-- Com downsample:
-
-```bash
-python colab/lstm_example.py --device cpu --n-splits 5 --inner-fold 5 --balance downsample --sequence-source pairs
-```
-
-- SHAP + plots:
-
-```bash
-python colab/lstm_example.py --device cpu --n-splits 5 --inner-fold 5 --shap --sequence-source pairs
-```
-
-### 5.3. `colab/models_teste.py` (PyCaret + nested CV externo)
-
-**O que faz**
-
-- Loop externo: `StratifiedGroupKFold(n_splits=--n-splits)` por paciente (`ID_PT`)
-- Dentro de cada fold externo:
-  - Seleção opcional de features numéricas (kbest/sfs/two_stage) **fitada só no treino**
-  - Z-score manual nas features numéricas selecionadas (fit no treino externo, aplica no teste externo)
-  - CV interno do PyCaret **group-aware** (splits gerados com `StratifiedGroupKFold` no treino externo)
-  - Balanceamento opcional por downsample (por paciente) no treino externo
-- SHAP:
-  - `--shap`: baseline SHAP (LogReg numérico) para ranking rápido
-  - `--shap-pycaret-topk K`: SHAP + plots para os top-K modelos do PyCaret em cada fold (usa features já pré-processadas pelo PyCaret)
-
-**Comandos**
-
-- Rodar PyCaret com 10 folds externos (default):
-
-```bash
-python colab/models_teste.py
-```
-
-- Sem balanceamento (explícito):
-
-```bash
-python colab/models_teste.py --balance none
-```
-
-- Downsample por `GROUP+SEX` (por paciente):
-
-```bash
-python colab/models_teste.py --balance downsample
-```
-
-- Seleção de features em 2 estágios (recomendado quando há muitas features):
-
-```bash
-python colab/models_teste.py --feature-selection two_stage --fs-k-pre 200 --fs-k-final 30
-```
-
-- SHAP baseline (rápido):
-
-```bash
-python colab/models_teste.py --shap
-```
-
-- SHAP dos top-2 modelos PyCaret por fold (gera CSV + plots por fold/modelo):
-
-```bash
-python colab/models_teste.py --shap-pycaret-topk 2 --shap-pycaret-samples 150 --shap-pycaret-background 120
-```
+---
 
 ## TODO
 
