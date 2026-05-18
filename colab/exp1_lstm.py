@@ -23,7 +23,7 @@ CSV_PATH = ROOT / "csvs/abordagem_4_sMCI_pMCI/all_delta_features_neurocombat.csv
 EXP1_PATH = ROOT / "exp1.md"
 PAIR_ORDER = ["12", "13", "23"]
 DT_EPSILON = 0.5
-DOWNSAMPLE_GROUP_SEX = False
+DOWNSAMPLE_GROUP_SEX = True
 
 
 def main() -> None:

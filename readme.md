@@ -385,6 +385,26 @@ Shap analisys
 
 ===================================
 
+optuna
+
+@inproceedings{akiba-2019,
+  title     = {{Optuna: A Next-generation Hyperparameter Optimization Framework}},
+  author    = {Akiba, Takuya and Sano, Shotaro and Yanase, Toshihiko and Ohta, Takeru and Koyama, Masanori},
+  booktitle = {The 25th ACM SIGKDD Conference on Knowledge Discovery and Data Mining (KDD '19)},
+  publisher = {ACM},
+  volume    = {},
+  number    = {},
+  address   = {New York, NY, USA},
+  pages     = {2623--2631},
+  note      = {},
+  doi       = {10.1145/3292500.3330701},
+  issn      = {},
+  isbn      = {},
+  year      = {2019}
+}
+
+===============================================
+
 Documentação Técnica: Pipeline de Deformação Longitudinal (ANTsPy)
 
 As deformações cerebrais observadas em exames de ressonância magnética (MRI) são o resultado da sobreposição de dois processos: o envelhecimento saudável (atrofia senescente) e a neurodegeneração patológica (demências). O objetivo deste pipeline é isolar as alterações estruturais inerentes exclusivamente à demência através da análise de campos de deformação (DF).

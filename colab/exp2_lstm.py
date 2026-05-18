@@ -19,7 +19,7 @@ CSV_PATH = ROOT / "csvs/abordagem_4_sMCI_pMCI/all_unitary_features_neurocombat.c
 EXP2_PATH = ROOT / "exp2.md"
 PAIR_ORDER = ["1", "2", "3"]
 DT_EPSILON = 0.5
-DOWNSAMPLE_GROUP_SEX = False
+DOWNSAMPLE_GROUP_SEX = True
 
 
 def main() -> None:
