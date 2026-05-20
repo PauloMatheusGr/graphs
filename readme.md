@@ -300,6 +300,23 @@ As deformações em RM refletem envelhecimento saudável e neurodegeneração. O
 #### Fundamentação e registo
 
 - **Referência CN:** atlas estratificado por sexo e década etária (indivíduos cognitivamente normais) — alinhado à ideia de modelos de envelhecimento normal (Wyman et al., 2012).
+
+```bibtex
+@article{wyman-2013,
+  title     = {{Standardization of analysis sets for reporting results from ADNI MRI data}},
+  author    = {Wyman, Bradley T. and Harveyb, Danielle J. and Crawfordc, Karen and Bernsteind, Matt A. and Carmichaele, Owen and Colef, Patricia E. and Craneg, Paul K. and DeCarlie, Charles and Foxh, Nick C. and Gunterd, Jeffrey L. and Hilli, Derek and Killianyj, Ronald J. and Pachaik, Chahin and Schwarzl, Adam J. and Schuffm, Norbert and Senjemd, Matthew L. and Suhyn, Joyce and Thompsonc, Paul M. and Weinero, Michael and Jack, Clifford R. and Jr.d and {for the Alzheimer’s Disease Neuroimaging Initiative}},
+  journal   = {Alzheimer's \& Dementia},
+  publisher = {},
+  volume    = {9},
+  number    = {},
+  pages     = {332--337},
+  note      = {},
+  doi       = {10.1016/j.jalz.2012.06.004},
+  issn      = {},
+  year      = {2013}
+}
+```
+
 - **Âncora longitudinal:** para cada trio (i1, i2, i3), **o mesmo** template CN (sexo e idade na i1). Registo: **fixed** = imagem clínica no tempo; **moving** = template CN.
 - **Delta (implementação):** composição ANTs \(T_{1\to k} = \mathrm{inv}_k \circ \mathrm{fwd}_1\); campo \(u(x) = T(x) - x\) no domínio MNI da **baseline clínica i1** (`resampled_1.0mm`).
 
@@ -478,6 +495,22 @@ Hiperparâmetros são escolhidos **por fold externo** (5 estudos Optuna independ
 
 #### SVM linear (`colab/exp2_svm.py`)
 
+```bibtex
+@article{cortes-1995,
+  title     = {{Support-vector networks}},
+  author    = {Cortes, Corinna and Vapnik, Vladimir},
+  journal   = {Machine learning},
+  publisher = {},
+  volume    = {20},
+  number    = {3},
+  pages     = {273--297},
+  note      = {},
+  doi       = {10.1007/BF00994018},
+  issn      = {},
+  year      = {1995}
+}
+```
+
 | Item | Valor |
 |------|--------|
 | Modelo | `LinearSVC`, `dual="auto"`, `max_iter=50000` |
@@ -487,6 +520,22 @@ Hiperparâmetros são escolhidos **por fold externo** (5 estudos Optuna independ
 
 #### ROCKET + L1 (`colab/exp2_rocket.py`)
 
+```bibtex
+@article{dempster-2020,
+  title     = {{ROCKET: exceptionally fast and accurate time series classification using random convolutional kernels}},
+  author    = {Dempster, A. and Petitjean, F. and Webb, G.I.},
+  journal   = {Alzheimer's \& Dementia},
+  publisher = {},
+  volume    = {34},
+  number    = {},
+  pages     = {1454--1495},
+  note      = {},
+  doi       = {10.1007/s10618-020-00701-z},
+  issn      = {},
+  year      = {2020}
+}
+```
+
 | Item | Valor |
 |------|--------|
 | Entrada | `(n, p', 60)` após transpose para sktime |
@@ -495,6 +544,22 @@ Hiperparâmetros são escolhidos **por fold externo** (5 estudos Optuna independ
 | Optuna | 30 trials; **`C`** ∈ [1e-4, 1e4] log |
 
 #### LSTM (`colab/exp2_lstm.py` → `exp_lstm_common.py`)
+
+```bibtex
+@article{hochreiter-1997,
+  title     = {{Long short-term memory}},
+  author    = {Hochreiter, Sepp and Schmidhuber, Jürgen},
+  journal   = {Neural Computation},
+  publisher = {},
+  volume    = {34},
+  number    = {},
+  pages     = {1735--1780},
+  note      = {},
+  doi       = {10.1162/neco.1997.9.8.1735},
+  issn      = {},
+  year      = {1997}
+}
+```
 
 | Item | Valor |
 |------|--------|
