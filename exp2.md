@@ -249,7 +249,7 @@ Por fold: **~64 % treino · ~16 % validação · ~20 % teste** (pacientes 
 #### Regras e flags
 
 - **Externo:** 5 folds, `random_state=42`, agrupamento por `ID_PT`.
-- **Downsample opcional:** `DOWNSAMPLE_GROUP_SEX` (por defeito **False** em XGBoost/SVM); só reduz amostras no treino externo, sem mudar 80/20 do fold.
+- **Downsample opcional:** `DOWNSAMPLE_GROUP_SEX` (por defeito **True** nos scripts `exp2_*.py`; `False` em `unbalanced` via `run_exp2_all.py`); só reduz amostras no treino externo, sem mudar ~20% de teste do fold.
 - **Nested CV (Optuna):** `INNER_NCV_SPLITS = 5`; objetivo = média da AUC nos folds internos.
 - **Holdout `tr_fit` / `val`:** early stopping (XGBoost) e curvas no fold 1.
 - Poucos pacientes: até `min(5, n_pacientes)` folds internos; fallback 80/20 se o SGK falhar.
