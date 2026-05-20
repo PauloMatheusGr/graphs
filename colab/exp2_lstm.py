@@ -19,7 +19,16 @@ CSV_PATH = ROOT / "csvs/abordagem_4_sMCI_pMCI/all_unitary_features_neurocombat.c
 EXP2_PATH = ROOT / "exp2.md"
 PAIR_ORDER = ["1", "2", "3"]
 DT_EPSILON = 0.5
-DOWNSAMPLE_GROUP_SEX = True
+
+
+def _env_bool(key: str, default: bool) -> bool:
+    v = os.environ.get(key)
+    if v is None:
+        return default
+    return v.strip().lower() in ("1", "true", "yes")
+
+
+DOWNSAMPLE_GROUP_SEX = _env_bool("DOWNSAMPLE_GROUP_SEX", True)
 
 
 def main() -> None:

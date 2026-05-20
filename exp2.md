@@ -131,6 +131,45 @@ classifier.fit(X_train_transform, y)
 
 ---
 
+## Segmento ativo (desenvolvimento)
+
+O **experimento 2** (atributos absolutos + `baseline_rate`) é o segmento em que se aplicam melhorias de pipeline (métrica AP, checkpoints, demografia OOF, plots). O experimento 1 (`colab/exp1/`, deltas) permanece como referência histórica; não é re-treinado neste ciclo.
+
+## Métricas de avaliação (teste por fold e OOF)
+
+| Métrica | Definição | Leitura com ~79% sMCI nos datapoints |
+| --- | --- | --- |
+| **Acc** | Acurácia com limiar 0,5 | Pode ser alta prevendo só sMCI (classe 0) |
+| **AUC** | Área sob a curva ROC | Capacidade de ranquear pMCI acima de sMCI; insensível ao limiar |
+| **F1** | F1 da classe positiva (pMCI = 1) | Foco na minoria |
+| **AP** | Average precision (classe 1) | Muito informativa com poucos positivos |
+
+Todas entram em `tables/metrics_per_fold.csv` após re-treino. OOF agregado em `tables/oof_predictions.csv` e `figures/confusion_oof.pdf`.
+
+## Artefactos por run
+
+| Pasta / ficheiro | Conteúdo |
+| --- | --- |
+| `figures/` | Confusão OOF, ROC/PR, boxplot métricas, SHAP/coef, curvas (fold 0) |
+| `tables/` | `metrics_per_fold.csv`, `oof_predictions.csv`, `fold_test_scores.csv`, importâncias |
+| `checkpoints/fold_{0..4}/` | Modelo final do fold (`model.json` / `.joblib` / `.keras`), `preprocess.joblib`, `meta.json` |
+| `tables/demographics/` | Métricas OOF por sexo (via `colab/analyze_oof_demographics.py`) |
+| `figures/demographics/` | Matrizes de confusão por F/M |
+| `run_meta.json` | Metadados do run (`metrics_schema`, `checkpoints`, etc.) |
+
+### Ablação LOO (XGBoost balanced)
+
+Após o baseline em `colab/exp2/balanced/xgboost/`:
+
+```bash
+python colab/run_roi_ablation_exp2.py
+```
+
+- Uma pasta por ROI removida (máscara a zero): `colab/exp2/balanced/xgboost_ablation/drop_<roi>/` com o mesmo `figures/` e `tables/` do treino.
+- Resumo: `xgboost_ablation/ablation_summary.csv` e `ablation_delta_auc_oof.pdf`.
+- Hiperparâmetros reutilizados do baseline (`ABLATION_SKIP_OPTUNA=1`); variável `ABLATION_FORCE_OPTUNA=1` para Optuna em cada ROI.
+- Uma execução manual: `ABLATION_DROP_ROIS=hippocampus RUN_DIR=colab/exp2/balanced/xgboost_ablation/drop_hippocampus DOWNSAMPLE_GROUP_SEX=1 python colab/exp2_xgboost.py` (com `ABLATION_BASELINE_RUN_DIR` e `ABLATION_SKIP_OPTUNA` se aplicável).
+
 ## Implementação e pipeline (`colab/exp2_xgboost.py`, `colab/exp2_rocket.py`, `colab/exp2_svm.py`, `colab/exp2_lstm.py`)
 
 Esta secção descreve o que está **efetivamente implementado** nos scripts Colab (espelho do experimento 1, com CSV unitário e ponderação `baseline_rate`).
@@ -143,7 +182,7 @@ Esta secção descreve o que está **efetivamente implementado** nos scripts Col
 | CSV lido | `csvs/abordagem_4_sMCI_pMCI/all_unitary_features_neurocombat.csv` |
 | Lista de atributos | Lida de `exp2.md`, linha que começa por `As colunas de atributos são` |
 | Utilitários | `colab/exp1_utils.py` (`load_tensor`, CV, plots) |
-| Figuras e tabelas | `colab/exp2/{balanced\|unbalanced}/{xgboost\|rocket\|svm\|lstm}/` — `figures/`, `tables/`, `run_meta.json`; PDFs: `colab/exp2_plots.py` |
+| Figuras e tabelas | `colab/exp2/{balanced\|unbalanced}/{xgboost\|rocket\|svm\|lstm}/` — `figures/`, `tables/`, `checkpoints/`, `run_meta.json`; PDFs: `colab/exp2_plots.py`; demografia: `colab/analyze_oof_demographics.py` |
 
 ### Tensor e alvo
 

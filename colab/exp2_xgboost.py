@@ -7,6 +7,8 @@ Downsample opcional no treino externo por paciente (GROUP×SEX).
 
 from __future__ import annotations
 
+import json
+import os
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -40,7 +42,30 @@ VAR_THR = 0.0
 RANDOM_STATE = 42
 # True: antes do split interno, subsampling de pacientes no treino do fold
 # para min(# pacientes) por estrato GROUP×SEX (F/M × sMCI/pMCI).
-DOWNSAMPLE_GROUP_SEX = True
+def _env_bool(key: str, default: bool) -> bool:
+    v = os.environ.get(key)
+    if v is None:
+        return default
+    return v.strip().lower() in ("1", "true", "yes")
+
+
+def _env_int(key: str, default: int) -> int:
+    v = os.environ.get(key)
+    if v is None or not str(v).strip():
+        return default
+    return int(v)
+
+
+def _parse_drop_rois_env() -> list[str]:
+    raw = os.environ.get("ABLATION_DROP_ROIS", "").strip()
+    if not raw:
+        return []
+    return [p.strip() for p in raw.split(",") if p.strip()]
+
+
+DOWNSAMPLE_GROUP_SEX = _env_bool("DOWNSAMPLE_GROUP_SEX", True)
+ABLATION_DROP_ROIS = _parse_drop_rois_env()
+ABLATION_SKIP_OPTUNA = _env_bool("ABLATION_SKIP_OPTUNA", False)
 FPR_GRID = np.linspace(0.0, 1.0, 101)
 REC_GRID = np.linspace(0.0, 1.0, 101)
 TOP_K_ROI = 10
@@ -121,6 +146,51 @@ def _xgbc_from_booster(bst: xgb.Booster) -> XGBClassifier:
     return clf
 
 
+def _load_baseline_xgb_params(baseline_run_dir: Path, fold_id: int) -> dict[str, Any]:
+    meta_path = (
+        baseline_run_dir / "checkpoints" / f"fold_{int(fold_id)}" / "meta.json"
+    )
+    if not meta_path.is_file():
+        raise FileNotFoundError(f"meta.json ausente: {meta_path}")
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    bp = meta.get("best_params")
+    if not isinstance(bp, dict) or not bp:
+        raise ValueError(f"best_params inválido em {meta_path}")
+    return dict(bp)
+
+
+def _fit_xgb_with_params(
+    best_bp: dict[str, Any],
+    X_refit_tr_flat: np.ndarray,
+    y: np.ndarray,
+    X_refit_val_flat: np.ndarray,
+    refit_val_idx: np.ndarray,
+    refit_tr_idx: np.ndarray,
+) -> tuple[XGBClassifier, dict[str, Any], float, dict[str, Any]]:
+    """Refit com hiperparâmetros fixos (ablacao sem Optuna)."""
+    base_spw_final = _scale_pos_weight_ratio(y[refit_tr_idx])
+    native_final = _xgb_train_params_from_optuna_dict(best_bp, base_spw=base_spw_final)
+    evals_res: dict[str, Any] = {}
+    bst_final = _xgb_train_booster_early(
+        X_refit_tr_flat,
+        y[refit_tr_idx],
+        X_refit_val_flat,
+        y[refit_val_idx],
+        native_final,
+        num_boost_round=N_ESTIMATORS_MAX,
+        early_stopping_rounds=EARLY_STOPPING_ROUNDS,
+        evals_result=evals_res,
+    )
+    proba_val = _booster_predict_proba_pos(bst_final, X_refit_val_flat)
+    y_va = y[refit_val_idx]
+    if len(np.unique(y_va)) < 2:
+        best_val_auc = float("nan")
+    else:
+        best_val_auc = float(roc_auc_score(y_va, proba_val))
+    model = _xgbc_from_booster(bst_final)
+    return model, dict(best_bp), best_val_auc, evals_res
+
+
 def _fit_xgb_optuna(
     X_3d: np.ndarray,
     y: np.ndarray,
@@ -131,6 +201,7 @@ def _fit_xgb_optuna(
     refit_val_idx: np.ndarray,
     *,
     fold_id: int,
+    n_trials: int,
 ) -> tuple[XGBClassifier, dict[str, Any], float, dict[str, Any]]:
     """Optuna com objetivo = média da AUC nos folds internos (NCV); refit com early stopping em refit val."""
     seed = RANDOM_STATE + 97 * int(fold_id)
@@ -175,7 +246,7 @@ def _fit_xgb_optuna(
 
     sampler = optuna.samplers.TPESampler(seed=seed)
     study = optuna.create_study(direction="maximize", sampler=sampler)
-    study.optimize(objective, n_trials=OPTUNA_XGB_TRIALS, show_progress_bar=False)
+    study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
 
     best_bp = dict(study.best_trial.params)
     base_spw_final = _scale_pos_weight_ratio(y[refit_tr_idx])
@@ -205,10 +276,26 @@ def _shap_abs_mean_test(model: XGBClassifier, X_te: np.ndarray) -> np.ndarray:
 
 def main() -> None:
     t0 = time.perf_counter()
-    run_dir = u.exp2_run_dir(
+    optuna_trials = _env_int("OPTUNA_XGB_TRIALS", OPTUNA_XGB_TRIALS)
+    model_slug = os.environ.get("MODEL_SLUG", MODEL_SLUG).strip() or MODEL_SLUG
+    run_dir_env = os.environ.get("RUN_DIR", "").strip()
+    run_dir_override = Path(run_dir_env) if run_dir_env else None
+    if run_dir_override is not None and not run_dir_override.is_absolute():
+        run_dir_override = ROOT / run_dir_override
+
+    baseline_env = os.environ.get("ABLATION_BASELINE_RUN_DIR", "").strip()
+    baseline_run_dir: Path | None = None
+    if baseline_env:
+        baseline_run_dir = Path(baseline_env)
+        if not baseline_run_dir.is_absolute():
+            baseline_run_dir = ROOT / baseline_run_dir
+
+    run_dir = u.resolve_exp2_run_dir(
         COLAB_DIR,
         downsample_group_sex=DOWNSAMPLE_GROUP_SEX,
-        model_slug=MODEL_SLUG,
+        model_slug=model_slug,
+        run_dir_override=run_dir_override,
+        create_checkpoints=True,
     )
     fig_dir = run_dir / "figures"
     tab_dir = run_dir / "tables"
@@ -222,6 +309,19 @@ def main() -> None:
         temporal_mode=TEMPORAL_MODE,
         dt_epsilon=DT_EPSILON,
     )
+    if ABLATION_DROP_ROIS:
+        X_3d = u.mask_rois_in_X_3d(X_3d, slot_labels, ABLATION_DROP_ROIS)
+        print(f"Ablação — ROIs zeradas ({len(ABLATION_DROP_ROIS)}): {ABLATION_DROP_ROIS}")
+
+    use_fixed_params = ABLATION_SKIP_OPTUNA and baseline_run_dir is not None
+    if ABLATION_SKIP_OPTUNA and baseline_run_dir is None:
+        print(
+            "Aviso: ABLATION_SKIP_OPTUNA=1 sem ABLATION_BASELINE_RUN_DIR; "
+            "usando Optuna."
+        )
+    elif use_fixed_params:
+        print(f"Ablação — hiperparâmetros do baseline: {baseline_run_dir}")
+
     n_raw = X_3d.shape[2]
     n_samples = len(y)
 
@@ -231,6 +331,7 @@ def main() -> None:
     acc_folds: list[float] = []
     auc_folds: list[float] = []
     f1_folds: list[float] = []
+    ap_folds: list[float] = []
 
     y_oof = np.full(n_samples, -1, dtype=np.int32)
     pred_oof = np.full(n_samples, -1, dtype=np.int32)
@@ -326,19 +427,55 @@ def main() -> None:
                 n_after_variance=n_after_var,
             )
 
-        model, best_params, best_val_auc, evals_res = _fit_xgb_optuna(
-            X_3d,
-            y,
-            inner_splits,
-            X_train_flat,
-            X_val_flat,
-            tr_fit_idx,
-            val_idx,
-            fold_id=fold_id,
-        )
-        print(
-            f"Fold {fold_id + 1}/5 — Optuna (AUC val interna média em {len(inner_splits)} folds NCV="
-            f"{best_val_auc:.4f}): {best_params}"
+        if use_fixed_params:
+            assert baseline_run_dir is not None
+            bp_fixed = _load_baseline_xgb_params(baseline_run_dir, fold_id)
+            model, best_params, best_val_auc, evals_res = _fit_xgb_with_params(
+                bp_fixed,
+                X_train_flat,
+                y,
+                X_val_flat,
+                val_idx,
+                tr_fit_idx,
+            )
+            print(
+                f"Fold {fold_id + 1}/5 — params baseline (AUC val refit={best_val_auc:.4f}): "
+                f"{best_params}"
+            )
+        else:
+            model, best_params, best_val_auc, evals_res = _fit_xgb_optuna(
+                X_3d,
+                y,
+                inner_splits,
+                X_train_flat,
+                X_val_flat,
+                tr_fit_idx,
+                val_idx,
+                fold_id=fold_id,
+                n_trials=optuna_trials,
+            )
+            print(
+                f"Fold {fold_id + 1}/5 — Optuna (AUC val interna média em {len(inner_splits)} folds NCV="
+                f"{best_val_auc:.4f}): {best_params}"
+            )
+
+        ckpt_extra = {
+            "corr_thr": CORR_THR,
+            "var_thr": VAR_THR,
+            "temporal_mode": TEMPORAL_MODE,
+            "dt_epsilon": DT_EPSILON,
+            "downsample_group_sex": DOWNSAMPLE_GROUP_SEX,
+            "ablation_drop_rois": ABLATION_DROP_ROIS,
+        }
+        u.save_xgb_fold_checkpoint(
+            run_dir,
+            fold_id,
+            model,
+            scaler=scaler,
+            keep_final=keep_final,
+            best_val_auc=best_val_auc,
+            best_params=best_params,
+            extra_meta=ckpt_extra,
         )
 
         if fold_id == 0:
@@ -395,28 +532,32 @@ def main() -> None:
             best_shap_n = len(test_idx)
             best_shap = (model, X_test_flat.copy(), keep_final.copy())
 
-        acc, auc, f1 = u.binary_metrics_from_proba(
+        acc, auc, f1, ap = u.binary_metrics_from_proba(
             y[test_idx], pred_te, proba_te
         )
         metrics_rows.append(
-            {"fold": int(fold_id) + 1, "acc": acc, "auc": auc, "f1": f1}
+            {"fold": int(fold_id) + 1, "acc": acc, "auc": auc, "f1": f1, "ap": ap}
         )
         acc_folds.append(acc)
         auc_folds.append(auc)
         f1_folds.append(f1)
+        ap_folds.append(ap)
         print(
-            f"Fold {fold_id + 1}/5 — teste: acc={acc:.4f}, AUC={auc:.4f}, F1={f1:.4f}"
+            f"Fold {fold_id + 1}/5 — teste: acc={acc:.4f}, AUC={auc:.4f}, "
+            f"F1={f1:.4f}, AP={ap:.4f}"
         )
 
     acc_a = np.asarray(acc_folds, dtype=np.float64)
     auc_a = np.asarray(auc_folds, dtype=np.float64)
     f1_a = np.asarray(f1_folds, dtype=np.float64)
+    ap_a = np.asarray(ap_folds, dtype=np.float64)
     suffix = " | treino com downsample GROUP×SEX." if DOWNSAMPLE_GROUP_SEX else "."
     print(
         "Resumo 5-fold SGK (média ± dp) — teste: "
         f"acc={acc_a.mean():.4f} ± {acc_a.std(ddof=0):.4f}, "
         f"AUC={np.nanmean(auc_a):.4f} ± {np.nanstd(auc_a):.4f}, "
-        f"F1={f1_a.mean():.4f} ± {f1_a.std(ddof=0):.4f}"
+        f"F1={f1_a.mean():.4f} ± {f1_a.std(ddof=0):.4f}, "
+        f"AP={np.nanmean(ap_a):.4f} ± {np.nanstd(ap_a):.4f}"
         f"{suffix}"
     )
 
@@ -473,6 +614,7 @@ def main() -> None:
         f1_a,
         fig_dir / "metrics_box_cv.pdf",
         title="XGBoost — distribuição das métricas no teste (5 folds)",
+        ap=ap_a,
     )
 
     u.plot_top_bars_pdf(
@@ -525,18 +667,30 @@ def main() -> None:
 
     elapsed = time.perf_counter() - t0
     print(f"Tempo total: {elapsed:.1f} s — artefactos em {run_dir}")
+    meta_extra: dict[str, Any] = {
+        "inner_ncv_splits": INNER_NCV_SPLITS,
+        "optuna_trials": optuna_trials,
+        "optuna_skipped": use_fixed_params,
+        "temporal_mode": TEMPORAL_MODE,
+        "dt_epsilon": DT_EPSILON,
+        "metrics_schema": "acc,auc,f1,ap",
+        "checkpoints": True,
+        "checkpoint_selection_metric": "val_auc",
+        "csv_schema": (
+            "metrics_per_fold, oof_predictions, fold_test_scores, "
+            "importance_shap_*, checkpoints/fold_*"
+        ),
+    }
+    if ABLATION_DROP_ROIS:
+        meta_extra["ablation_drop_rois"] = ABLATION_DROP_ROIS
+    if baseline_run_dir is not None:
+        meta_extra["ablation_baseline_run_dir"] = str(baseline_run_dir)
     u.write_run_meta_json(
         run_dir,
-        model_slug=MODEL_SLUG,
+        model_slug=model_slug,
         downsample_group_sex=DOWNSAMPLE_GROUP_SEX,
         duration_seconds=elapsed,
-        extra={
-            "inner_ncv_splits": INNER_NCV_SPLITS,
-            "optuna_trials": OPTUNA_XGB_TRIALS,
-            "temporal_mode": TEMPORAL_MODE,
-            "dt_epsilon": DT_EPSILON,
-            "csv_schema": "metrics_per_fold, oof_predictions, fold_test_scores, importance_shap_*",
-        },
+        extra=meta_extra,
     )
 
 

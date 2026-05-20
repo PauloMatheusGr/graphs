@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
+from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -467,19 +468,75 @@ def prepare_scaled_rocket_inputs(
 
 def binary_metrics_from_proba(
     y_te: np.ndarray, y_pred: np.ndarray, proba_pos: np.ndarray
-) -> tuple[float, float, float]:
+) -> tuple[float, float, float, float]:
     acc = float(accuracy_score(y_te, y_pred))
     f1 = float(f1_score(y_te, y_pred, zero_division=0))
     try:
         auc = float(roc_auc_score(y_te, proba_pos))
     except ValueError:
         auc = float("nan")
-    return acc, auc, f1
+    try:
+        ap = float(average_precision_score(y_te, proba_pos))
+    except ValueError:
+        ap = float("nan")
+    return acc, auc, f1, ap
 
 
 def roi_from_slot_label(slot_lab: str) -> str:
     parts = slot_lab.split("|")
     return parts[1] if len(parts) > 1 else slot_lab
+
+
+def unique_rois_from_slot_labels(slot_labels: list[str]) -> list[str]:
+    return sorted({roi_from_slot_label(s) for s in slot_labels})
+
+
+def slot_indices_for_rois(
+    slot_labels: list[str], rois_to_drop: set[str] | frozenset[str]
+) -> list[int]:
+    return [i for i, s in enumerate(slot_labels) if roi_from_slot_label(s) in rois_to_drop]
+
+
+def mask_rois_in_X_3d(
+    X_3d: np.ndarray,
+    slot_labels: list[str],
+    rois_to_drop: list[str] | set[str] | frozenset[str],
+) -> np.ndarray:
+    """Zera slots cujo roi está em rois_to_drop (3 pares × lados/labels dessa roi)."""
+    drop = {str(r).strip() for r in rois_to_drop if str(r).strip()}
+    if not drop:
+        return X_3d
+    idx = slot_indices_for_rois(slot_labels, drop)
+    if not idx:
+        return X_3d
+    X = np.array(X_3d, copy=True)
+    X[:, idx, :] = 0.0
+    return X
+
+
+def resolve_exp2_run_dir(
+    colab_dir: Path,
+    *,
+    downsample_group_sex: bool,
+    model_slug: str,
+    run_dir_override: Path | str | None = None,
+    create_checkpoints: bool = True,
+) -> Path:
+    """RUN_DIR explícito ou colab/exp2/{scenario}/{model_slug}/."""
+    if run_dir_override is not None:
+        root = Path(run_dir_override)
+        (root / "figures").mkdir(parents=True, exist_ok=True)
+        (root / "tables").mkdir(parents=True, exist_ok=True)
+        if create_checkpoints:
+            (root / "checkpoints").mkdir(parents=True, exist_ok=True)
+        return root
+    return exp_run_dir(
+        colab_dir,
+        exp_name="exp2",
+        downsample_group_sex=downsample_group_sex,
+        model_slug=model_slug,
+        create_checkpoints=create_checkpoints,
+    )
 
 
 def accumulate_flat_importance(
@@ -508,6 +565,16 @@ def save_pdf(fig: plt.Figure, path: Path) -> None:
     plt.close(fig)
 
 
+def _cm_text_color(value: float, vmin: float, vmax: float, cmap_name: str) -> str:
+    if vmax <= vmin:
+        t = 0.0
+    else:
+        t = float(np.clip((value - vmin) / (vmax - vmin), 0.0, 1.0))
+    rgba = plt.get_cmap(cmap_name)(t)
+    lum = 0.2126 * rgba[0] + 0.7152 * rgba[1] + 0.0722 * rgba[2]
+    return "white" if lum < 0.45 else "black"
+
+
 def plot_confusion_oof_pdf(
     y_true: np.ndarray,
     y_pred: np.ndarray,
@@ -522,10 +589,20 @@ def plot_confusion_oof_pdf(
         cmn = np.divide(cm.astype(np.float64), np.maximum(row, 1))
 
     fig, (ax0, ax1) = plt.subplots(1, 2, figsize=(8.5, 3.8))
-    im0 = ax0.imshow(cm, interpolation="nearest", cmap=cmap)
+    vmax0 = max(int(cm.max()), 1)
+    im0 = ax0.imshow(cm, interpolation="nearest", cmap=cmap, vmin=0, vmax=vmax0)
     ax0.set_title("Contagens (OOF)")
     for (i, j), v in np.ndenumerate(cm):
-        ax0.text(j, i, int(v), ha="center", va="center", color="black", fontsize=9)
+        ax0.text(
+            j,
+            i,
+            int(v),
+            ha="center",
+            va="center",
+            color=_cm_text_color(float(v), 0.0, float(vmax0), cmap),
+            fontsize=10,
+            fontweight="bold",
+        )
     ax0.set_xticks([0, 1])
     ax0.set_yticks([0, 1])
     ax0.set_xticklabels(["0", "1"])
@@ -536,7 +613,16 @@ def plot_confusion_oof_pdf(
     im1 = ax1.imshow(cmn, vmin=0, vmax=1, cmap=cmap, interpolation="nearest")
     ax1.set_title("Normalizada por linha (recall por classe)")
     for (i, j), v in np.ndenumerate(cmn):
-        ax1.text(j, i, f"{v:.2f}", ha="center", va="center", color="black", fontsize=9)
+        ax1.text(
+            j,
+            i,
+            f"{v:.2f}",
+            ha="center",
+            va="center",
+            color=_cm_text_color(float(v), 0.0, 1.0, cmap),
+            fontsize=10,
+            fontweight="bold",
+        )
     ax1.set_xticks([0, 1])
     ax1.set_yticks([0, 1])
     ax1.set_xticklabels(["0", "1"])
@@ -553,7 +639,7 @@ def plot_confusion_oof_pdf(
         fontsize=9,
         style="italic",
     )
-    fig.tight_layout(rect=[0, 0.06, 1, 0.95])
+    fig.tight_layout(rect=[0, 0.04, 1, 0.95])
     save_pdf(fig, path)
 
 
@@ -662,17 +748,33 @@ def plot_metrics_box_pdf(
     path: Path,
     *,
     title: str,
-    xtick_labels: tuple[str, str, str] | None = None,
+    xtick_labels: tuple[str, ...] | None = None,
+    ap: np.ndarray | None = None,
 ) -> None:
-    labels = xtick_labels if xtick_labels is not None else ("Acc", "AUC", "F1")
-    fig, ax = plt.subplots(figsize=(5, 4))
-    positions = [1, 2, 3]
-    auc_plot = np.asarray(auc_a, dtype=np.float64)
-    if np.isnan(auc_plot).any():
-        fill = float(np.nanmean(auc_plot))
-        auc_plot = np.where(np.isnan(auc_plot), fill, auc_plot)
+    series: list[np.ndarray] = [
+        np.asarray(acc, dtype=np.float64),
+        np.asarray(auc_a, dtype=np.float64),
+        np.asarray(f1_a, dtype=np.float64),
+    ]
+    default_labels: list[str] = ["Acc", "AUC", "F1"]
+    if ap is not None and len(ap) > 0:
+        series.append(np.asarray(ap, dtype=np.float64))
+        default_labels.append("AP")
+    if xtick_labels is not None:
+        labels = list(xtick_labels[: len(series)])
+    else:
+        labels = default_labels[: len(series)]
+    fig, ax = plt.subplots(figsize=(max(5.0, 1.1 * len(series)), 4))
+    positions = list(range(1, len(series) + 1))
+    plot_series: list[np.ndarray] = []
+    for i, arr in enumerate(series):
+        arr_s = arr.copy()
+        if i == 1 and np.isnan(arr_s).any():
+            fill = float(np.nanmean(arr_s))
+            arr_s = np.where(np.isnan(arr_s), fill, arr_s)
+        plot_series.append(arr_s)
     bp = ax.boxplot(
-        [acc, auc_plot, f1_a],
+        plot_series,
         positions=positions,
         widths=0.55,
         patch_artist=True,
@@ -680,14 +782,14 @@ def plot_metrics_box_pdf(
     for patch in bp["boxes"]:
         patch.set_facecolor("0.85")
     rng = np.random.default_rng(42)
-    for i, arr in enumerate([acc, auc_a, f1_a]):
+    for i, (arr, arr_plot) in enumerate(zip(series, plot_series)):
         arr_s = np.asarray(arr, dtype=np.float64)
         if i == 1 and np.isnan(arr_s).any():
             arr_s = np.where(np.isnan(arr_s), float(np.nanmean(arr_s)), arr_s)
         x = positions[i] + 0.08 * rng.standard_normal(len(arr_s))
-        ax.scatter(x, arr_s, color="C0", s=28, zorder=3, alpha=0.85)
+        ax.scatter(x, arr_plot, color="C0", s=28, zorder=3, alpha=0.85)
     ax.set_xticks(positions)
-    ax.set_xticklabels(list(labels))
+    ax.set_xticklabels(labels)
     ax.set_ylabel("Valor")
     ax.set_title(title)
     ax.set_ylim(-0.05, 1.05)
@@ -725,12 +827,15 @@ def exp_run_dir(
     exp_name: str,
     downsample_group_sex: bool,
     model_slug: str,
+    create_checkpoints: bool = False,
 ) -> Path:
     """colab/{exp_name}/{balanced|unbalanced}/{model_slug}/ com figures/ e tables/."""
     scenario = "balanced" if downsample_group_sex else "unbalanced"
     root = colab_dir / exp_name / scenario / model_slug
     (root / "figures").mkdir(parents=True, exist_ok=True)
     (root / "tables").mkdir(parents=True, exist_ok=True)
+    if create_checkpoints:
+        (root / "checkpoints").mkdir(parents=True, exist_ok=True)
     return root
 
 
@@ -753,7 +858,156 @@ def exp2_run_dir(
         exp_name="exp2",
         downsample_group_sex=downsample_group_sex,
         model_slug=model_slug,
+        create_checkpoints=True,
     )
+
+
+def fold_checkpoint_dir(run_dir: Path, fold_id: int) -> Path:
+    p = run_dir / "checkpoints" / f"fold_{int(fold_id)}"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def _write_checkpoint_meta(path: Path, meta: dict) -> None:
+    path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+
+
+def save_preprocess_bundle(
+    path: Path, *, scaler: StandardScaler, keep_final: np.ndarray
+) -> None:
+    import joblib
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    joblib.dump(
+        {
+            "scaler": scaler,
+            "keep_final": np.asarray(keep_final, dtype=int),
+        },
+        path,
+    )
+
+
+def load_preprocess_bundle(path: Path) -> dict:
+    import joblib
+
+    return joblib.load(path)
+
+
+def save_xgb_fold_checkpoint(
+    run_dir: Path,
+    fold_id: int,
+    model: Any,
+    *,
+    scaler: StandardScaler,
+    keep_final: np.ndarray,
+    best_val_auc: float,
+    best_params: dict,
+    extra_meta: dict | None = None,
+) -> Path:
+    ckpt = fold_checkpoint_dir(run_dir, fold_id)
+    model.get_booster().save_model(str(ckpt / "model.json"))
+    save_preprocess_bundle(ckpt / "preprocess.joblib", scaler=scaler, keep_final=keep_final)
+    meta: dict = {
+        "model_type": "xgboost",
+        "fold": int(fold_id),
+        "selection_metric": "val_auc",
+        "best_val_auc": float(best_val_auc),
+        "best_params": best_params,
+    }
+    if extra_meta:
+        meta.update(extra_meta)
+    _write_checkpoint_meta(ckpt / "meta.json", meta)
+    return ckpt
+
+
+def save_svm_fold_checkpoint(
+    run_dir: Path,
+    fold_id: int,
+    model: Any,
+    *,
+    scaler: StandardScaler,
+    keep_final: np.ndarray,
+    best_val_auc: float,
+    best_params: dict,
+    extra_meta: dict | None = None,
+) -> Path:
+    import joblib
+
+    ckpt = fold_checkpoint_dir(run_dir, fold_id)
+    joblib.dump(model, ckpt / "model.joblib")
+    save_preprocess_bundle(ckpt / "preprocess.joblib", scaler=scaler, keep_final=keep_final)
+    meta: dict = {
+        "model_type": "svm",
+        "fold": int(fold_id),
+        "selection_metric": "val_auc",
+        "best_val_auc": float(best_val_auc),
+        "best_params": best_params,
+    }
+    if extra_meta:
+        meta.update(extra_meta)
+    _write_checkpoint_meta(ckpt / "meta.json", meta)
+    return ckpt
+
+
+def save_lstm_fold_checkpoint(
+    run_dir: Path,
+    fold_id: int,
+    model: Any,
+    *,
+    scaler: StandardScaler,
+    keep_final: np.ndarray,
+    best_val_auc: float,
+    best_params: dict,
+    seq_len: int,
+    n_feat: int,
+    extra_meta: dict | None = None,
+) -> Path:
+    ckpt = fold_checkpoint_dir(run_dir, fold_id)
+    model.save(ckpt / "model.keras")
+    save_preprocess_bundle(ckpt / "preprocess.joblib", scaler=scaler, keep_final=keep_final)
+    meta: dict = {
+        "model_type": "lstm",
+        "fold": int(fold_id),
+        "selection_metric": "val_auc",
+        "best_val_auc": float(best_val_auc),
+        "best_params": best_params,
+        "seq_len": int(seq_len),
+        "n_feat": int(n_feat),
+    }
+    if extra_meta:
+        meta.update(extra_meta)
+    _write_checkpoint_meta(ckpt / "meta.json", meta)
+    return ckpt
+
+
+def save_rocket_fold_checkpoint(
+    run_dir: Path,
+    fold_id: int,
+    *,
+    rocket: Any,
+    clf: Any,
+    scaler: StandardScaler,
+    keep_final: np.ndarray,
+    best_val_auc: float,
+    best_params: dict,
+    extra_meta: dict | None = None,
+) -> Path:
+    import joblib
+
+    ckpt = fold_checkpoint_dir(run_dir, fold_id)
+    joblib.dump({"rocket": rocket, "clf": clf}, ckpt / "pipeline.joblib")
+    save_preprocess_bundle(ckpt / "preprocess.joblib", scaler=scaler, keep_final=keep_final)
+    meta: dict = {
+        "model_type": "rocket",
+        "fold": int(fold_id),
+        "selection_metric": "val_auc",
+        "best_val_auc": float(best_val_auc),
+        "best_params": best_params,
+    }
+    if extra_meta:
+        meta.update(extra_meta)
+    _write_checkpoint_meta(ckpt / "meta.json", meta)
+    return ckpt
 
 
 def write_run_meta_json(
@@ -905,12 +1159,17 @@ def load_fold_test_scores_for_plots(path: Path) -> tuple[list[np.ndarray], list[
     return y_splits, score_splits
 
 
-def load_metrics_per_fold(path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def load_metrics_per_fold(path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     df = pd.read_csv(path)
+    if "ap" in df.columns:
+        ap = df["ap"].to_numpy(dtype=np.float64)
+    else:
+        ap = np.full(len(df), np.nan, dtype=np.float64)
     return (
         df["acc"].to_numpy(dtype=np.float64),
         df["auc"].to_numpy(dtype=np.float64),
         df["f1"].to_numpy(dtype=np.float64),
+        ap,
     )
 
 

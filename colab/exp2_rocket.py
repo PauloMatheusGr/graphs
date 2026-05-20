@@ -7,6 +7,7 @@ Downsample opcional no treino externo por paciente (GROUP×SEX).
 
 from __future__ import annotations
 
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -40,7 +41,14 @@ OPTUNA_ROCKET_TRIALS = 30
 INNER_NCV_SPLITS = 5
 # Grade só para figura diagnóstica (fold 1): acurácia vs log10(C).
 C_DIAG_GRID = np.logspace(-4, 4, 17)
-DOWNSAMPLE_GROUP_SEX = True
+def _env_bool(key: str, default: bool) -> bool:
+    v = os.environ.get(key)
+    if v is None:
+        return default
+    return v.strip().lower() in ("1", "true", "yes")
+
+
+DOWNSAMPLE_GROUP_SEX = _env_bool("DOWNSAMPLE_GROUP_SEX", True)
 FPR_GRID = np.linspace(0.0, 1.0, 101)
 REC_GRID = np.linspace(0.0, 1.0, 101)
 
@@ -125,6 +133,7 @@ def main() -> None:
     acc_folds: list[float] = []
     auc_folds: list[float] = []
     f1_folds: list[float] = []
+    ap_folds: list[float] = []
 
     y_oof = np.full(n_samples, -1, dtype=np.int32)
     pred_oof = np.full(n_samples, -1, dtype=np.int32)
@@ -228,6 +237,25 @@ def main() -> None:
             f"{best_val_auc:.4f}): {best_params}"
         )
 
+        ckpt_extra = {
+            "corr_thr": CORR_THR,
+            "var_thr": VAR_THR,
+            "temporal_mode": TEMPORAL_MODE,
+            "dt_epsilon": DT_EPSILON,
+            "downsample_group_sex": DOWNSAMPLE_GROUP_SEX,
+        }
+        u.save_rocket_fold_checkpoint(
+            run_dir,
+            fold_id,
+            rocket=rocket,
+            clf=clf,
+            scaler=scaler,
+            keep_final=keep_final,
+            best_val_auc=best_val_auc,
+            best_params=best_params,
+            extra_meta=ckpt_extra,
+        )
+
         if fold_id == 0:
             fig, ax = plt.subplots()
             ax.bar(
@@ -286,26 +314,30 @@ def main() -> None:
         fold_test_y.append(np.asarray(y[test_idx], dtype=np.int32))
         fold_test_score.append(np.asarray(sc_te, dtype=np.float64))
 
-        acc, auc, f1 = u.binary_metrics_from_proba(y[test_idx], pred_te, sc_te)
+        acc, auc, f1, ap = u.binary_metrics_from_proba(y[test_idx], pred_te, sc_te)
         metrics_rows.append(
-            {"fold": int(fold_id) + 1, "acc": acc, "auc": auc, "f1": f1}
+            {"fold": int(fold_id) + 1, "acc": acc, "auc": auc, "f1": f1, "ap": ap}
         )
         acc_folds.append(acc)
         auc_folds.append(auc)
         f1_folds.append(f1)
+        ap_folds.append(ap)
         print(
-            f"Fold {fold_id + 1}/5 — teste: acc={acc:.4f}, AUC={auc:.4f}, F1={f1:.4f}"
+            f"Fold {fold_id + 1}/5 — teste: acc={acc:.4f}, AUC={auc:.4f}, "
+            f"F1={f1:.4f}, AP={ap:.4f}"
         )
 
     acc_a = np.asarray(acc_folds, dtype=np.float64)
     auc_a = np.asarray(auc_folds, dtype=np.float64)
     f1_a = np.asarray(f1_folds, dtype=np.float64)
+    ap_a = np.asarray(ap_folds, dtype=np.float64)
     suffix = " | treino com downsample GROUP×SEX." if DOWNSAMPLE_GROUP_SEX else "."
     print(
         "Resumo 5-fold SGK (média ± dp) — teste: "
         f"acc={acc_a.mean():.4f} ± {acc_a.std(ddof=0):.4f}, "
         f"AUC={np.nanmean(auc_a):.4f} ± {np.nanstd(auc_a):.4f}, "
-        f"F1={f1_a.mean():.4f} ± {f1_a.std(ddof=0):.4f}"
+        f"F1={f1_a.mean():.4f} ± {f1_a.std(ddof=0):.4f}, "
+        f"AP={np.nanmean(ap_a):.4f} ± {np.nanstd(ap_a):.4f}"
         f"{suffix}"
     )
 
@@ -351,6 +383,7 @@ def main() -> None:
         f1_a,
         fig_dir / "metrics_box_cv.pdf",
         title="ROCKET+L1 (Optuna) — distribuição das métricas no teste (5 folds)",
+        ap=ap_a,
     )
 
     elapsed = time.perf_counter() - t0
@@ -365,6 +398,9 @@ def main() -> None:
             "optuna_trials": OPTUNA_ROCKET_TRIALS,
             "temporal_mode": TEMPORAL_MODE,
             "dt_epsilon": DT_EPSILON,
+            "metrics_schema": "acc,auc,f1,ap",
+            "checkpoints": True,
+            "checkpoint_selection_metric": "val_auc",
         },
     )
 

@@ -306,6 +306,8 @@ def run_lstm_experiment(cfg: LstmExperimentConfig) -> None:
     acc_folds: list[float] = []
     auc_folds: list[float] = []
     f1_folds: list[float] = []
+    ap_folds: list[float] = []
+    is_exp2 = cfg.exp_name == "exp2"
 
     y_oof = np.full(n_samples, -1, dtype=np.int32)
     pred_oof = np.full(n_samples, -1, dtype=np.int32)
@@ -428,6 +430,27 @@ def run_lstm_experiment(cfg: LstmExperimentConfig) -> None:
             f"{best_val_auc:.4f}): {best_params}"
         )
 
+        if is_exp2:
+            ckpt_extra = {
+                "corr_thr": CORR_THR,
+                "var_thr": VAR_THR,
+                "temporal_mode": cfg.temporal_mode,
+                "dt_epsilon": cfg.dt_epsilon,
+                "downsample_group_sex": cfg.downsample_group_sex,
+            }
+            u.save_lstm_fold_checkpoint(
+                run_dir,
+                fold_id,
+                model,
+                scaler=scaler,
+                keep_final=keep_final,
+                best_val_auc=best_val_auc,
+                best_params=best_params,
+                seq_len=seq_len,
+                n_feat=n_feat_seq,
+                extra_meta=ckpt_extra,
+            )
+
         if fold_id == 0:
             h = hist.history
             epochs = np.arange(1, len(h.get("loss", [])) + 1, dtype=np.int32)
@@ -479,23 +502,31 @@ def run_lstm_experiment(cfg: LstmExperimentConfig) -> None:
             best_shap_n = len(test_idx)
             best_shap = (model, X_test_flat.copy(), keep_final.copy(), seq_len, n_feat_seq)
 
-        acc, auc, f1 = u.binary_metrics_from_proba(y[test_idx], pred_te, proba_te)
-        metrics_rows.append({"fold": int(fold_id) + 1, "acc": acc, "auc": auc, "f1": f1})
+        acc, auc, f1, ap = u.binary_metrics_from_proba(y[test_idx], pred_te, proba_te)
+        metrics_rows.append(
+            {"fold": int(fold_id) + 1, "acc": acc, "auc": auc, "f1": f1, "ap": ap}
+        )
         acc_folds.append(acc)
         auc_folds.append(auc)
         f1_folds.append(f1)
-        print(f"Fold {fold_id + 1}/5 — teste: acc={acc:.4f}, AUC={auc:.4f}, F1={f1:.4f}")
+        ap_folds.append(ap)
+        print(
+            f"Fold {fold_id + 1}/5 — teste: acc={acc:.4f}, AUC={auc:.4f}, "
+            f"F1={f1:.4f}, AP={ap:.4f}"
+        )
         keras.backend.clear_session()
 
     acc_a = np.asarray(acc_folds, dtype=np.float64)
     auc_a = np.asarray(auc_folds, dtype=np.float64)
     f1_a = np.asarray(f1_folds, dtype=np.float64)
+    ap_a = np.asarray(ap_folds, dtype=np.float64)
     suffix = " | treino com downsample GROUP×SEX." if cfg.downsample_group_sex else "."
     print(
         "Resumo 5-fold SGK (média ± dp) — teste: "
         f"acc={acc_a.mean():.4f} ± {acc_a.std(ddof=0):.4f}, "
         f"AUC={np.nanmean(auc_a):.4f} ± {np.nanstd(auc_a):.4f}, "
-        f"F1={f1_a.mean():.4f} ± {f1_a.std(ddof=0):.4f}"
+        f"F1={f1_a.mean():.4f} ± {f1_a.std(ddof=0):.4f}, "
+        f"AP={np.nanmean(ap_a):.4f} ± {np.nanstd(ap_a):.4f}"
         f"{suffix}"
     )
 
@@ -552,6 +583,7 @@ def run_lstm_experiment(cfg: LstmExperimentConfig) -> None:
         f1_a,
         fig_dir / "metrics_box_cv.pdf",
         title=f"{prefix} — distribuição das métricas no teste (5 folds)",
+        ap=ap_a,
     )
     u.plot_top_bars_pdf(
         shap_roi_m,
@@ -606,9 +638,13 @@ def run_lstm_experiment(cfg: LstmExperimentConfig) -> None:
             "temporal_mode": cfg.temporal_mode,
             "dt_epsilon": cfg.dt_epsilon,
             "lstm_seq_len": u.PANEL_SEQ_STEPS,
+            "metrics_schema": "acc,auc,f1,ap",
+            "checkpoints": is_exp2,
+            "checkpoint_selection_metric": "val_auc" if is_exp2 else None,
             "csv_schema": (
                 "metrics_per_fold, oof_predictions, fold_test_scores, "
                 "importance_shap_*, training_curves_fold0"
+                + (", checkpoints/fold_*" if is_exp2 else "")
             ),
         },
     )

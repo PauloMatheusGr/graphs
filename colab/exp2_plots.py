@@ -21,8 +21,11 @@ import pandas as pd
 # CONFIG — edite aqui
 # ---------------------------------------------------------------------------
 
+import os as _os
+
 _COLAB = Path(__file__).resolve().parent
-RUN_DIR = _COLAB / "exp2" / "unbalanced" / "lstm"
+_DEFAULT_RUN = _COLAB / "exp2" / "unbalanced" / "lstm"
+RUN_DIR = Path(_os.environ["RUN_DIR"]) if _os.environ.get("RUN_DIR") else _DEFAULT_RUN
 
 FPR_GRID = np.linspace(0.0, 1.0, 101)
 REC_GRID = np.linspace(0.0, 1.0, 101)
@@ -44,7 +47,7 @@ ROC_SCOPE_LABEL = "teste por fold"
 PR_SCOPE_LABEL = "teste por fold"
 
 TITLE_METRICS_BOX = "Exp2 LSTM — distribuição das métricas no teste (5 folds)"
-XTICK_METRICS = ("Acc", "AUC", "F1")
+XTICK_METRICS = ("Acc", "AUC", "F1", "AP")
 
 TITLE_BARS_SHAP_ROI = "Exp2 LSTM — |SHAP| agregado por ROI (média dos folds)"
 TITLE_BARS_SHAP_ATTR = "Exp2 LSTM — |SHAP| agregado por atributo"
@@ -115,14 +118,16 @@ def main() -> None:
 
     mpath = tab / "metrics_per_fold.csv"
     if mpath.is_file():
-        acc, auc_a, f1 = u.load_metrics_per_fold(mpath)
+        acc, auc_a, f1, ap_a = u.load_metrics_per_fold(mpath)
+        has_ap = "ap" in pd.read_csv(mpath, nrows=0).columns
         u.plot_metrics_box_pdf(
             acc,
             auc_a,
             f1,
             fig / "metrics_box_cv.pdf",
             title=TITLE_METRICS_BOX,
-            xtick_labels=XTICK_METRICS,
+            xtick_labels=XTICK_METRICS if has_ap else ("Acc", "AUC", "F1"),
+            ap=ap_a if has_ap else None,
         )
 
     rp_shap = tab / "importance_shap_roi_mean.csv"
