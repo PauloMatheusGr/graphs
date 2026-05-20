@@ -148,6 +148,7 @@ def main() -> None:
     fold_test_y: list[np.ndarray] = []
     fold_test_score: list[np.ndarray] = []
     metrics_rows: list[dict[str, float | int]] = []
+    fold_training_curves: list[dict[str, np.ndarray]] = []
     outer_fold_assign = np.full(n_samples, -1, dtype=np.int32)
 
     imp_roi: dict[str, float] = defaultdict(float)
@@ -262,6 +263,27 @@ def main() -> None:
             extra_meta=ckpt_extra,
         )
 
+        best_C = float(best_params["C"])
+        curves = u.collect_linear_svc_sgd_training_curves(
+            X_train_flat,
+            y[tr_fit_idx],
+            X_val_flat,
+            y[val_idx],
+            C=best_C,
+            random_state=RANDOM_STATE,
+        )
+        fold_training_curves.append(curves)
+        u.save_and_plot_training_curves_fold(
+            curves,
+            csv_path=tab_dir / f"training_curves_fold{fold_id}.csv",
+            pdf_path=fig_dir / f"training_curves_fold{fold_id}.pdf",
+            title=(
+                f"SVM linear — fold {fold_id + 1}/5 — treino vs validação "
+                "(SGD hinge, tr_fit|val)"
+            ),
+            xlabel="época SGD",
+        )
+
         df_te = model.decision_function(X_test_flat)
         proba_te = _sigmoid(df_te)
         pred_te = model.predict(X_test_flat).astype(np.int32, copy=False)
@@ -296,6 +318,16 @@ def main() -> None:
             f"Fold {fold_id + 1}/5 — teste: acc={acc:.4f}, AUC={auc:.4f}, "
             f"F1={f1:.4f}, AP={ap:.4f}"
         )
+
+    u.finalize_supervised_training_curves(
+        fold_training_curves,
+        tab_dir,
+        fig_dir,
+        title_mean=(
+            "SVM linear — média dos 5 folds externos (treino vs validação, tr_fit|val)"
+        ),
+        xlabel="época SGD",
+    )
 
     acc_a = np.asarray(acc_folds, dtype=np.float64)
     auc_a = np.asarray(auc_folds, dtype=np.float64)

@@ -20,7 +20,7 @@ import optuna
 import numpy as np
 import shap
 import xgboost as xgb
-from sklearn.metrics import accuracy_score, roc_auc_score
+from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import StratifiedGroupKFold
 from sklearn.preprocessing import StandardScaler
 from sklearn.feature_selection import VarianceThreshold
@@ -123,7 +123,7 @@ def _xgb_train_booster_early(
         full,
         dtr,
         num_boost_round=num_boost_round,
-        evals=[(dva, "val")],
+        evals=[(dtr, "train"), (dva, "val")],
         early_stopping_rounds=early_stopping_rounds,
         verbose_eval=False,
         evals_result=evals_result,
@@ -342,6 +342,7 @@ def main() -> None:
     fold_test_y: list[np.ndarray] = []
     fold_test_score: list[np.ndarray] = []
     metrics_rows: list[dict[str, float | int]] = []
+    fold_training_curves: list[dict[str, np.ndarray]] = []
     outer_fold_assign = np.full(n_samples, -1, dtype=np.int32)
 
     shap_roi: dict[str, float] = defaultdict(float)
@@ -478,36 +479,26 @@ def main() -> None:
             extra_meta=ckpt_extra,
         )
 
-        if fold_id == 0:
-            booster = model.get_booster()
-            dval = xgb.DMatrix(X_val_flat)
-            evals = evals_res["val"]["logloss"]
-            n_trees = len(evals)
-            acc_curve: list[float] = []
-            for i in range(1, n_trees + 1):
-                proba = booster.predict(dval, iteration_range=(0, i))
-                pred = (proba >= 0.5).astype(np.int32)
-                acc_curve.append(accuracy_score(y[val_idx], pred))
-
-            fig2, (ax1, ax2) = plt.subplots(2, 1, figsize=(6, 6), sharex=True)
-            ax1.plot(np.arange(1, n_trees + 1), evals)
-            ax1.set_ylabel("logloss (validação)")
-            ax2.plot(np.arange(1, n_trees + 1), acc_curve)
-            ax2.set_ylabel("acurácia (validação)")
-            ax2.set_xlabel("nº árvores (boosting)")
-            fig2.suptitle(
-                "Fold 1/5 — validação (holdout tr_fit|val após NCV interno na seleção de hiperparâmetros)."
-            )
-            fig2.tight_layout()
-            u.save_pdf(fig2, fig_dir / "training_curves.pdf")
-            u.save_training_curve_csv(
-                tab_dir / "training_curves_fold0.csv",
-                np.arange(1, n_trees + 1, dtype=np.int32),
-                {
-                    "logloss_val": np.asarray(evals, dtype=np.float64),
-                    "accuracy_val": np.asarray(acc_curve, dtype=np.float64),
-                },
-            )
+        booster = model.get_booster()
+        curves = u.collect_xgb_training_curves(
+            evals_res,
+            booster,
+            X_train_flat,
+            y[tr_fit_idx],
+            X_val_flat,
+            y[val_idx],
+        )
+        fold_training_curves.append(curves)
+        u.save_and_plot_training_curves_fold(
+            curves,
+            csv_path=tab_dir / f"training_curves_fold{fold_id}.csv",
+            pdf_path=fig_dir / f"training_curves_fold{fold_id}.pdf",
+            title=(
+                f"XGBoost — fold {fold_id + 1}/5 — treino vs validação "
+                "(holdout tr_fit|val após NCV interno)"
+            ),
+            xlabel="nº árvores (boosting)",
+        )
 
         proba_te = model.predict_proba(X_test_flat)[:, 1]
         pred_te = (proba_te >= 0.5).astype(np.int32)
@@ -546,6 +537,16 @@ def main() -> None:
             f"Fold {fold_id + 1}/5 — teste: acc={acc:.4f}, AUC={auc:.4f}, "
             f"F1={f1:.4f}, AP={ap:.4f}"
         )
+
+    u.finalize_supervised_training_curves(
+        fold_training_curves,
+        tab_dir,
+        fig_dir,
+        title_mean=(
+            "XGBoost — média dos 5 folds externos (treino vs validação, tr_fit|val)"
+        ),
+        xlabel="nº árvores (boosting)",
+    )
 
     acc_a = np.asarray(acc_folds, dtype=np.float64)
     auc_a = np.asarray(auc_folds, dtype=np.float64)
@@ -678,6 +679,7 @@ def main() -> None:
         "checkpoint_selection_metric": "val_auc",
         "csv_schema": (
             "metrics_per_fold, oof_predictions, fold_test_scores, "
+            "training_curves_fold{0..4}, training_curves_mean, "
             "importance_shap_*, checkpoints/fold_*"
         ),
     }

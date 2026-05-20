@@ -144,6 +144,7 @@ def main() -> None:
     fold_test_y: list[np.ndarray] = []
     fold_test_score: list[np.ndarray] = []
     metrics_rows: list[dict[str, float | int]] = []
+    fold_training_curves: list[dict[str, np.ndarray]] = []
     outer_fold_assign = np.full(n_samples, -1, dtype=np.int32)
 
     if DOWNSAMPLE_GROUP_SEX:
@@ -290,7 +291,7 @@ def main() -> None:
             ax2.set_xlabel("log10(C)")
             ax2.set_ylabel("acurácia (validação)")
             fig2.suptitle(
-                "Fold 1/5 — regressão logística L1 (saga) em features ROCKET (sem épocas de treino)."
+                "Fold 1/5 — diagnóstico: acurácia vs C (grade fixa, não curva de treino)."
             )
             fig2.tight_layout()
             u.save_pdf(fig2, fig_dir / "l1_C_validation_curve.pdf")
@@ -299,6 +300,28 @@ def main() -> None:
                 np.log10(C_DIAG_GRID).astype(np.float64),
                 {"accuracy_val": np.asarray(acc_c, dtype=np.float64)},
             )
+
+        best_C = float(best_params["C"])
+        curves = u.collect_logreg_saga_training_curves(
+            Z_tr,
+            y[tr_fit_idx],
+            Z_val,
+            y[val_idx],
+            C=best_C,
+            penalty="l1",
+            random_state=RANDOM_STATE,
+        )
+        fold_training_curves.append(curves)
+        u.save_and_plot_training_curves_fold(
+            curves,
+            csv_path=tab_dir / f"training_curves_fold{fold_id}.csv",
+            pdf_path=fig_dir / f"training_curves_fold{fold_id}.pdf",
+            title=(
+                f"ROCKET+L1 — fold {fold_id + 1}/5 — treino vs validação "
+                "(SAGA warm_start, tr_fit|val)"
+            ),
+            xlabel="passo SAGA",
+        )
 
         pred_te = clf.predict(Z_te)
         sc_te = clf.predict_proba(Z_te)[:, 1]
@@ -326,6 +349,16 @@ def main() -> None:
             f"Fold {fold_id + 1}/5 — teste: acc={acc:.4f}, AUC={auc:.4f}, "
             f"F1={f1:.4f}, AP={ap:.4f}"
         )
+
+    u.finalize_supervised_training_curves(
+        fold_training_curves,
+        tab_dir,
+        fig_dir,
+        title_mean=(
+            "ROCKET+L1 — média dos 5 folds externos (treino vs validação, tr_fit|val)"
+        ),
+        xlabel="passo SAGA",
+    )
 
     acc_a = np.asarray(acc_folds, dtype=np.float64)
     auc_a = np.asarray(auc_folds, dtype=np.float64)

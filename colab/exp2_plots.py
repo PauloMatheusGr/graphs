@@ -38,6 +38,13 @@ YLABEL_FEATURE_COUNTS = "Nº atributos"
 TITLE_TRAINING_CURVES = (
     "Exp2 LSTM — loss e AUC na validação (fold 1, holdout tr_fit|val)"
 )
+TITLE_TRAINING_CURVES_FOLD = (
+    "Exp2 — fold {k}/{n} — logloss e acurácia (treino vs validação, tr_fit|val)"
+)
+TITLE_TRAINING_CURVES_MEAN = (
+    "Exp2 — média dos folds externos — logloss e acurácia (treino vs validação)"
+)
+XLABEL_TRAINING_CURVES = "passo"
 
 TITLE_CONFUSION = "Exp2 LSTM — matriz de confusão (predições OOF, 5-fold)"
 CMAP_CONFUSION = "Blues"
@@ -82,12 +89,16 @@ def main() -> None:
             ylabel=YLABEL_FEATURE_COUNTS,
         )
 
-    tcurves = tab / "training_curves_fold0.csv"
-    if tcurves.is_file():
-        u.plot_training_curves_keras_pdf(
-            tcurves,
-            fig / "training_curves.pdf",
-            title=TITLE_TRAINING_CURVES,
+    has_curve = any(
+        (tab / f"training_curves_fold{i}.csv").is_file() for i in range(5)
+    ) or (tab / "training_curves_mean.csv").is_file()
+    if has_curve:
+        u.regenerate_supervised_training_curve_plots(
+            tab,
+            fig,
+            title_fold_tpl=TITLE_TRAINING_CURVES_FOLD,
+            title_mean=TITLE_TRAINING_CURVES_MEAN,
+            xlabel=XLABEL_TRAINING_CURVES,
         )
 
     oof_path = tab / "oof_predictions.csv"

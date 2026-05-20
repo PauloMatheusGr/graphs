@@ -630,8 +630,8 @@ Por run (`colab/exp2/{balanced|unbalanced}/{xgboost|svm|rocket|lstm}/`):
 
 | Pasta | Conteúdo |
 |-------|----------|
-| `tables/` | `metrics_per_fold.csv`, `oof_predictions.csv`, `fold_test_scores.csv`, importâncias, `feature_counts_fold0.csv`, `run_meta.json` |
-| `figures/` | Confusão OOF, ROC/PR, boxplot, SHAP/coef, curvas (fold 0) |
+| `tables/` | `metrics_per_fold.csv`, `oof_predictions.csv`, `fold_test_scores.csv`, importâncias, `feature_counts_fold0.csv`, `training_curves_fold{0..4}.csv`, `training_curves_mean.csv`, `run_meta.json` |
+| `figures/` | Confusão OOF, ROC/PR, boxplot, SHAP/coef; **XGB / LSTM / ROCKET / SVM:** `training_curves_fold{0..4}.pdf`, `training_curves_mean.pdf` (logloss e acurácia treino/val no holdout tr_fit\|val) |
 | `checkpoints/fold_{0..4}/` | Modelo, `preprocess.joblib`, `meta.json` (exp2) |
 | `tables/demographics/`, `figures/demographics/` | Via `analyze_oof_demographics.py` (sexo F/M) |
 

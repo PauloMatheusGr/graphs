@@ -16,6 +16,7 @@ from sklearn.metrics import (
     average_precision_score,
     confusion_matrix,
     f1_score,
+    log_loss,
     precision_recall_curve,
     roc_auc_score,
     roc_curve,
@@ -1081,6 +1082,342 @@ def save_training_curve_csv(
     for k, v in columns.items():
         d[k] = np.asarray(v)
     pd.DataFrame(d).to_csv(path, index=False)
+
+
+def collect_xgb_training_curves(
+    evals_result: dict[str, Any],
+    booster: Any,
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    X_val: np.ndarray,
+    y_val: np.ndarray,
+) -> dict[str, np.ndarray]:
+    """Logloss (treino/val) do evals_result + acurácia por árvore em treino e validação."""
+    import xgboost as xgb
+
+    logloss_train = np.asarray(evals_result["train"]["logloss"], dtype=np.float64)
+    logloss_val = np.asarray(evals_result["val"]["logloss"], dtype=np.float64)
+    n_trees = int(len(logloss_val))
+    if len(logloss_train) != n_trees:
+        n_trees = min(len(logloss_train), len(logloss_val))
+        logloss_train = logloss_train[:n_trees]
+        logloss_val = logloss_val[:n_trees]
+
+    y_tr = np.asarray(y_train).astype(int, copy=False)
+    y_va = np.asarray(y_val).astype(int, copy=False)
+    dtr = xgb.DMatrix(X_train, label=y_tr)
+    dva = xgb.DMatrix(X_val, label=y_va)
+    acc_train = np.empty(n_trees, dtype=np.float64)
+    acc_val = np.empty(n_trees, dtype=np.float64)
+    for i in range(1, n_trees + 1):
+        it = (0, i)
+        pred_tr = (booster.predict(dtr, iteration_range=it) >= 0.5).astype(np.int32)
+        pred_va = (booster.predict(dva, iteration_range=it) >= 0.5).astype(np.int32)
+        acc_train[i - 1] = accuracy_score(y_tr, pred_tr)
+        acc_val[i - 1] = accuracy_score(y_va, pred_va)
+
+    x = np.arange(1, n_trees + 1, dtype=np.int32)
+    return {
+        "x": x,
+        "logloss_train": logloss_train,
+        "logloss_val": logloss_val,
+        "accuracy_train": acc_train,
+        "accuracy_val": acc_val,
+    }
+
+
+TRAINING_CURVE_METRIC_KEYS = XGB_TRAINING_CURVE_METRIC_KEYS = (
+    "logloss_train",
+    "logloss_val",
+    "accuracy_train",
+    "accuracy_val",
+)
+
+
+def mean_training_curves_stack(
+    curves_list: list[dict[str, np.ndarray]],
+) -> dict[str, np.ndarray]:
+    """Média (e dp) das curvas alinhadas ao menor nº de árvores entre folds."""
+    if not curves_list:
+        raise ValueError("curves_list vazio")
+    n_min = min(int(len(c["logloss_val"])) for c in curves_list)
+    x = np.arange(1, n_min + 1, dtype=np.int32)
+    out: dict[str, np.ndarray] = {"x": x}
+    for key in TRAINING_CURVE_METRIC_KEYS:
+        stack = np.stack(
+            [np.asarray(c[key], dtype=np.float64)[:n_min] for c in curves_list],
+            axis=0,
+        )
+        out[key] = stack.mean(axis=0)
+        out[f"{key}_std"] = stack.std(axis=0, ddof=0)
+    return out
+
+
+def keras_history_to_training_curves(history: dict[str, list[float]]) -> dict[str, np.ndarray]:
+    """Converte History Keras para logloss/acurácia treino e validação (épocas)."""
+    h = {k: list(v) for k, v in history.items()}
+    n = len(h.get("loss", h.get("val_loss", [])))
+    if n == 0:
+        raise ValueError("History Keras vazio")
+    out: dict[str, np.ndarray] = {
+        "x": np.arange(1, n + 1, dtype=np.int32),
+    }
+    if "loss" in h:
+        out["logloss_train"] = np.asarray(h["loss"], dtype=np.float64)
+    elif "val_loss" in h:
+        out["logloss_train"] = np.full(n, np.nan, dtype=np.float64)
+    if "val_loss" in h:
+        out["logloss_val"] = np.asarray(h["val_loss"], dtype=np.float64)
+    if "accuracy" in h:
+        out["accuracy_train"] = np.asarray(h["accuracy"], dtype=np.float64)
+    elif "val_accuracy" in h:
+        out["accuracy_train"] = np.full(n, np.nan, dtype=np.float64)
+    if "val_accuracy" in h:
+        out["accuracy_val"] = np.asarray(h["val_accuracy"], dtype=np.float64)
+    missing = [k for k in TRAINING_CURVE_METRIC_KEYS if k not in out]
+    if missing:
+        raise ValueError(f"History Keras sem métricas para curvas: {missing}")
+    for key in TRAINING_CURVE_METRIC_KEYS:
+        if len(out[key]) != n:
+            raise ValueError(f"Comprimento inconsistente em {key}")
+    return out
+
+
+def collect_logreg_saga_training_curves(
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    X_val: np.ndarray,
+    y_val: np.ndarray,
+    *,
+    C: float,
+    penalty: str = "l1",
+    n_steps: int = 150,
+    iterations_per_step: int = 5,
+    random_state: int = 42,
+) -> dict[str, np.ndarray]:
+    """Curvas por passos SAGA (warm_start) — proxy alinhado a LogisticRegression L1/saga."""
+    from sklearn.linear_model import LogisticRegression
+
+    y_tr = np.asarray(y_train).astype(int, copy=False)
+    y_va = np.asarray(y_val).astype(int, copy=False)
+    clf = LogisticRegression(
+        penalty=penalty,
+        solver="saga",
+        C=float(C),
+        warm_start=True,
+        max_iter=int(iterations_per_step),
+        random_state=int(random_state),
+        n_jobs=-1,
+    )
+    ll_tr: list[float] = []
+    ll_va: list[float] = []
+    acc_tr: list[float] = []
+    acc_va: list[float] = []
+    for _ in range(int(n_steps)):
+        clf.fit(X_train, y_tr)
+        p_tr = clf.predict_proba(X_train)[:, 1]
+        p_va = clf.predict_proba(X_val)[:, 1]
+        ll_tr.append(float(log_loss(y_tr, p_tr)))
+        ll_va.append(float(log_loss(y_va, p_va)))
+        acc_tr.append(float(accuracy_score(y_tr, (p_tr >= 0.5).astype(np.int32))))
+        acc_va.append(float(accuracy_score(y_va, (p_va >= 0.5).astype(np.int32))))
+    return {
+        "x": np.arange(1, n_steps + 1, dtype=np.int32),
+        "logloss_train": np.asarray(ll_tr, dtype=np.float64),
+        "logloss_val": np.asarray(ll_va, dtype=np.float64),
+        "accuracy_train": np.asarray(acc_tr, dtype=np.float64),
+        "accuracy_val": np.asarray(acc_va, dtype=np.float64),
+    }
+
+
+def collect_linear_svc_sgd_training_curves(
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    X_val: np.ndarray,
+    y_val: np.ndarray,
+    *,
+    C: float,
+    n_epochs: int = 200,
+    random_state: int = 42,
+) -> dict[str, np.ndarray]:
+    """Curvas SGD (hinge) com logloss via sigmoid(decision_function) — proxy de LinearSVC."""
+    from sklearn.linear_model import SGDClassifier
+
+    y_tr = np.asarray(y_train).astype(int, copy=False)
+    y_va = np.asarray(y_val).astype(int, copy=False)
+    n_tr = max(len(y_tr), 1)
+    alpha = 1.0 / (float(C) * n_tr)
+    clf = SGDClassifier(
+        loss="hinge",
+        alpha=alpha,
+        max_iter=1,
+        tol=None,
+        random_state=int(random_state),
+        learning_rate="optimal",
+        early_stopping=False,
+    )
+    classes = np.array([0, 1], dtype=int)
+    ll_tr: list[float] = []
+    ll_va: list[float] = []
+    acc_tr: list[float] = []
+    acc_va: list[float] = []
+    for _ in range(int(n_epochs)):
+        clf.partial_fit(X_train, y_tr, classes=classes)
+        sc_tr = clf.decision_function(X_train)
+        sc_va = clf.decision_function(X_val)
+        p_tr = 1.0 / (1.0 + np.exp(-np.clip(sc_tr.astype(np.float64), -50.0, 50.0)))
+        p_va = 1.0 / (1.0 + np.exp(-np.clip(sc_va.astype(np.float64), -50.0, 50.0)))
+        ll_tr.append(float(log_loss(y_tr, p_tr)))
+        ll_va.append(float(log_loss(y_va, p_va)))
+        acc_tr.append(float(accuracy_score(y_tr, clf.predict(X_train))))
+        acc_va.append(float(accuracy_score(y_va, clf.predict(X_val))))
+    return {
+        "x": np.arange(1, n_epochs + 1, dtype=np.int32),
+        "logloss_train": np.asarray(ll_tr, dtype=np.float64),
+        "logloss_val": np.asarray(ll_va, dtype=np.float64),
+        "accuracy_train": np.asarray(acc_tr, dtype=np.float64),
+        "accuracy_val": np.asarray(acc_va, dtype=np.float64),
+    }
+
+
+def plot_xgb_training_curves_pdf(
+    curves: dict[str, np.ndarray],
+    out_pdf: Path,
+    *,
+    title: str,
+    show_std: bool = False,
+    xlabel: str = "passo",
+) -> None:
+    """Painéis: logloss (treino/val) e acurácia (treino/val)."""
+    x = np.asarray(curves["x"], dtype=np.int32)
+    fig, axes = plt.subplots(2, 1, figsize=(7, 6), sharex=True)
+
+    for key, color, label in (
+        ("logloss_train", "C0", "treino"),
+        ("logloss_val", "C1", "validação"),
+    ):
+        y = np.asarray(curves[key], dtype=np.float64)
+        axes[0].plot(x, y, color=color, label=label)
+        if show_std and f"{key}_std" in curves:
+            s = np.asarray(curves[f"{key}_std"], dtype=np.float64)
+            axes[0].fill_between(x, y - s, y + s, color=color, alpha=0.2, linewidth=0)
+
+    axes[0].set_ylabel("logloss")
+    axes[0].legend(loc="best", fontsize=8)
+    axes[0].grid(True, alpha=0.3)
+
+    for key, color, label in (
+        ("accuracy_train", "C0", "treino"),
+        ("accuracy_val", "C1", "validação"),
+    ):
+        y = np.asarray(curves[key], dtype=np.float64)
+        axes[1].plot(x, y, color=color, label=label)
+        if show_std and f"{key}_std" in curves:
+            s = np.asarray(curves[f"{key}_std"], dtype=np.float64)
+            axes[1].fill_between(x, y - s, y + s, color=color, alpha=0.2, linewidth=0)
+
+    axes[1].set_ylabel("acurácia")
+    axes[1].set_xlabel(xlabel)
+    axes[1].legend(loc="best", fontsize=8)
+    axes[1].grid(True, alpha=0.3)
+    fig.suptitle(title)
+    fig.tight_layout()
+    save_pdf(fig, out_pdf)
+
+
+def save_and_plot_training_curves_fold(
+    curves: dict[str, np.ndarray],
+    *,
+    csv_path: Path,
+    pdf_path: Path,
+    title: str,
+    xlabel: str = "passo",
+) -> None:
+    cols = {k: curves[k] for k in TRAINING_CURVE_METRIC_KEYS}
+    save_training_curve_csv(csv_path, curves["x"], cols)
+    plot_xgb_training_curves_pdf(curves, pdf_path, title=title, xlabel=xlabel)
+
+
+save_and_plot_xgb_training_curves_fold = save_and_plot_training_curves_fold
+
+
+def finalize_supervised_training_curves(
+    fold_training_curves: list[dict[str, np.ndarray]],
+    tab_dir: Path,
+    fig_dir: Path,
+    *,
+    title_mean: str,
+    xlabel: str = "passo",
+) -> None:
+    """Grava CSV/PDF médios (± dp) a partir das curvas já coletadas por fold."""
+    if not fold_training_curves:
+        return
+    mean_c = mean_training_curves_stack(fold_training_curves)
+    mean_cols = {k: mean_c[k] for k in TRAINING_CURVE_METRIC_KEYS}
+    for k in TRAINING_CURVE_METRIC_KEYS:
+        mean_cols[f"{k}_std"] = mean_c[f"{k}_std"]
+    save_training_curve_csv(tab_dir / "training_curves_mean.csv", mean_c["x"], mean_cols)
+    plot_xgb_training_curves_pdf(
+        mean_c,
+        fig_dir / "training_curves_mean.pdf",
+        title=title_mean,
+        show_std=True,
+        xlabel=xlabel,
+    )
+    plot_xgb_training_curves_pdf(
+        mean_c,
+        fig_dir / "training_curves.pdf",
+        title=title_mean,
+        show_std=True,
+        xlabel=xlabel,
+    )
+
+
+def regenerate_supervised_training_curve_plots(
+    tab_dir: Path,
+    fig_dir: Path,
+    *,
+    n_folds: int = 5,
+    title_fold_tpl: str = "Fold {k}/{n} — treino vs validação (holdout tr_fit|val)",
+    title_mean: str = "Média dos folds externos — treino vs validação",
+    xlabel: str = "passo",
+) -> None:
+    """Regenera PDFs por fold e média a partir de training_curves_fold*.csv."""
+    fig_dir.mkdir(parents=True, exist_ok=True)
+    loaded: list[dict[str, np.ndarray]] = []
+    for fold_id in range(n_folds):
+        p = tab_dir / f"training_curves_fold{fold_id}.csv"
+        if not p.is_file():
+            continue
+        df = pd.read_csv(p)
+        if not all(k in df.columns for k in TRAINING_CURVE_METRIC_KEYS):
+            continue
+        curves = {
+            "x": df["x"].to_numpy(dtype=np.int32),
+            **{
+                k: df[k].to_numpy(dtype=np.float64)
+                for k in TRAINING_CURVE_METRIC_KEYS
+            },
+        }
+        plot_xgb_training_curves_pdf(
+            curves,
+            fig_dir / f"training_curves_fold{fold_id}.pdf",
+            title=title_fold_tpl.format(k=fold_id + 1, n=n_folds),
+            xlabel=xlabel,
+        )
+        loaded.append(curves)
+    if not loaded:
+        return
+    finalize_supervised_training_curves(
+        loaded,
+        tab_dir,
+        fig_dir,
+        title_mean=title_mean,
+        xlabel=xlabel,
+    )
+
+
+regenerate_xgb_training_curve_plots = regenerate_supervised_training_curve_plots
 
 
 def save_feature_counts_fold0_csv(

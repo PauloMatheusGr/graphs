@@ -318,6 +318,7 @@ def run_lstm_experiment(cfg: LstmExperimentConfig) -> None:
     fold_test_y: list[np.ndarray] = []
     fold_test_score: list[np.ndarray] = []
     metrics_rows: list[dict[str, float | int]] = []
+    fold_training_curves: list[dict[str, np.ndarray]] = []
     outer_fold_assign = np.full(n_samples, -1, dtype=np.int32)
 
     shap_roi: dict[str, float] = defaultdict(float)
@@ -451,29 +452,18 @@ def run_lstm_experiment(cfg: LstmExperimentConfig) -> None:
                 extra_meta=ckpt_extra,
             )
 
-        if fold_id == 0:
-            h = hist.history
-            epochs = np.arange(1, len(h.get("loss", [])) + 1, dtype=np.int32)
-            cols: dict[str, np.ndarray] = {}
-            if "loss" in h:
-                cols["loss"] = np.asarray(h["loss"], dtype=np.float64)
-            if "val_loss" in h:
-                cols["val_loss"] = np.asarray(h["val_loss"], dtype=np.float64)
-            if "val_auc" in h:
-                cols["val_auc"] = np.asarray(h["val_auc"], dtype=np.float64)
-            if "accuracy" in h:
-                cols["accuracy"] = np.asarray(h["accuracy"], dtype=np.float64)
-            if "val_accuracy" in h:
-                cols["val_accuracy"] = np.asarray(h["val_accuracy"], dtype=np.float64)
-            u.save_training_curve_csv(tab_dir / "training_curves_fold0.csv", epochs, cols)
-            u.plot_training_curves_keras_pdf(
-                tab_dir / "training_curves_fold0.csv",
-                fig_dir / "training_curves.pdf",
-                title=(
-                    f"{prefix} — fold 1/5 (holdout tr_fit|val após NCV interno na seleção de "
-                    "hiperparâmetros)"
-                ),
-            )
+        curves = u.keras_history_to_training_curves(hist.history)
+        fold_training_curves.append(curves)
+        u.save_and_plot_training_curves_fold(
+            curves,
+            csv_path=tab_dir / f"training_curves_fold{fold_id}.csv",
+            pdf_path=fig_dir / f"training_curves_fold{fold_id}.pdf",
+            title=(
+                f"{prefix} — fold {fold_id + 1}/5 — treino vs validação "
+                "(holdout tr_fit|val após NCV interno)"
+            ),
+            xlabel="época",
+        )
 
         proba_te = _predict_proba_pos(model, X_test_seq.astype(np.float32))
         pred_te = (proba_te >= 0.5).astype(np.int32)
@@ -515,6 +505,14 @@ def run_lstm_experiment(cfg: LstmExperimentConfig) -> None:
             f"F1={f1:.4f}, AP={ap:.4f}"
         )
         keras.backend.clear_session()
+
+    u.finalize_supervised_training_curves(
+        fold_training_curves,
+        tab_dir,
+        fig_dir,
+        title_mean=f"{prefix} — média dos 5 folds externos (treino vs validação, tr_fit|val)",
+        xlabel="época",
+    )
 
     acc_a = np.asarray(acc_folds, dtype=np.float64)
     auc_a = np.asarray(auc_folds, dtype=np.float64)
@@ -643,7 +641,7 @@ def run_lstm_experiment(cfg: LstmExperimentConfig) -> None:
             "checkpoint_selection_metric": "val_auc" if is_exp2 else None,
             "csv_schema": (
                 "metrics_per_fold, oof_predictions, fold_test_scores, "
-                "importance_shap_*, training_curves_fold0"
+                "importance_shap_*, training_curves_fold{0..4}, training_curves_mean"
                 + (", checkpoints/fold_*" if is_exp2 else "")
             ),
         },
