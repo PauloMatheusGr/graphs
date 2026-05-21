@@ -1,6 +1,6 @@
 cd /mnt/study-data/pgirardi/graphs
 
-# 1) Baseline (só balanced: 4 modelos)
+# 1) Baseline
 .venv/bin/python colab/run_exp2_all.py
 
 # (opcional) smoke checkpoint XGB fold 0 vs OOF
