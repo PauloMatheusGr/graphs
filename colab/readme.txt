@@ -21,7 +21,7 @@ ABLATION_ROIS=inf_lateral_ventricle,hippocampus,amygdala,accumbens_area,insula \
 # 3c) Ablação LSTM — requer fold_best_params ou checkpoints no baseline
 #     Se o treino LSTM antigo não tem checkpoints:
 #       RUN_DIR=colab/exp2/balanced/lstm .venv/bin/python colab/export_fold_best_params.py
-#     (falha sem checkpoints; nesse caso re-treine lstm ou use ABLATION_FORCE_OPTUNA=1)
+
 ABLATION_MODEL=lstm \
 ABLATION_ROIS=inf_lateral_ventricle,hippocampus,amygdala,accumbens_area,insula \
   .venv/bin/python colab/run_roi_ablation_exp2.py
@@ -33,3 +33,5 @@ ABLATION_ROIS=inf_lateral_ventricle,hippocampus,amygdala,accumbens_area,insula \
 
 # 4) Re-postprocess ablação (se ABLATION_SKIP_POSTPROCESS=1 no passo 3)
 .venv/bin/python colab/postprocess_exp2_ablation.py
+
+

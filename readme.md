@@ -295,6 +295,48 @@ Para comparar com o pipeline sem ComBat, apontar `CSV_PATH` nos scripts `colab/e
 
 ### Formação dos conjuntos com 3 imagens
 
+```bibtex
+@article{smith-2002,
+  title     = {{Accurate, Robust, and Automated Longitudinal and Cross-Sectional Brain Change Analysis}},
+  author    = {Smith, Stephen M and Zhang, Yongyue and Jenkinson, Mark and Chen, Jue and Matthews, Paul M and Federico, Antonio and De Stefano, Nicola},
+  journal   = {Neuroimage},
+  publisher = {},
+  volume    = {17},
+  number    = {},
+  pages     = {479--489},
+  note      = {},
+  doi       = {10.1006/nimg.2002.1040},
+  issn      = {},
+  year      = {2002}
+}
+@article{freeborough-1997,
+  title     = {{The Boundary Shift Integral: An Accurate and Robust Measure of Cerebral Volume Changes from Registered Repeat MRI}},
+  author    = {Freeborough, Peter A and Fox, Nick C},
+  journal   = {IEEE Transactions on Medical Imaging},
+  publisher = {},
+  volume    = {16},
+  number    = {5},
+  pages     = {623--629},
+  note      = {},
+  doi       = {10.1109/42.640753},
+  issn      = {},
+  year      = {1997}
+}
+@article{reuter-2012,
+  title     = {{Within-subject template estimation for unbiased longitudinal image analysis}},
+  author    = {Reuter, Martin_and Schmansky, Nicholas J and Rosas, H Diana and Fischl, Bruce},
+  journal   = {Neuroimage},
+  publisher = {},
+  volume    = {61},
+  number    = {},
+  pages     = {1402--1418},
+  note      = {},
+  doi       = {10.1016/j.neuroimage.2012.02.084},
+  issn      = {},
+  year      = {2012}
+}
+```
+
 Definição do porquê utilizar a abordagem baseline em vez da abordagem sequencial nos conjuntos com 3 imagens.
 
 1. Mitigação do Acúmulo de Erros (Estabilidade Estatística): Na análise longitudinal com três ou mais pontos no tempo (ex: t0​,t1​,t2​), a comparação sequencial (t0​→t1​ somado a t1​→t2​) está frequentemente sujeita à propagação de erros de registro e interpolação. Smith et al. (2002) apontam que, na verdade, a comparação entre a soma das medidas sequenciais e a medida direta (t0​→t2​) é um método sensível justamente para evidenciar fontes de erro nos procedimentos de estimativa de atrofia. Ao adotar a comparação direta sempre com o baseline (i1​→i2​ e i1​→i3​), você elimina o acúmulo de variância e o ruído que ocorreriam ao usar a imagem i2​ (que já sofreu transformações ou representa um estado intermediário) como referência para i3​, garantindo maior estabilidade estatística à sua medida direta.
@@ -495,6 +537,23 @@ No **Optuna (NCV interna)**, correlação + variância + scaler são **recalcula
 Hiperparâmetros são escolhidos **por fold externo** (5 estudos Optuna independentes); valores finais em `checkpoints/fold_k/meta.json` → `best_params`.
 
 #### XGBoost (`colab/exp2_xgboost.py`)
+```bibtex
+@inproceedings{chen-2016,
+  title     = {{XGBoost: A Scalable Tree Boosting System}},
+  author    = {Chen, Tianqi and Guestrin, Carlos},
+  booktitle = {Proceedings of the 22nd ACM SIGKDD International Conference on Knowledge Discovery and Data Mining},
+  publisher = {},
+  volume    = {},
+  number    = {},
+  address   = {New York, NY, USA},
+  pages     = {785--794},
+  note      = {},
+  doi       = {10.1145/2939672.2939785},
+  issn      = {},
+  isbn      = {},
+  year      = {2016}
+}
+```
 
 | Item | Valor |
 |------|--------|
