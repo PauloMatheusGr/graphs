@@ -95,6 +95,20 @@ SHAP_BACKGROUND = 40
 SHAP_SAMPLES = 60
 
 
+def _env_bool(key: str, default: bool) -> bool:
+    v = os.environ.get(key)
+    if v is None:
+        return default
+    return v.strip().lower() in ("1", "true", "yes")
+
+
+def _parse_drop_rois_env() -> list[str]:
+    raw = os.environ.get("ABLATION_DROP_ROIS", "").strip()
+    if not raw:
+        return []
+    return [p.strip() for p in raw.split(",") if p.strip()]
+
+
 @dataclass(frozen=True)
 class LstmExperimentConfig:
     exp_name: str  # "exp1" | "exp2"
@@ -244,6 +258,35 @@ def _fit_lstm_optuna(
     return model, best_hp, float(study.best_value), hist
 
 
+def _fit_lstm_with_params(
+    best_hp: dict[str, Any],
+    X_refit_tr_seq: np.ndarray,
+    y: np.ndarray,
+    X_refit_val_seq: np.ndarray,
+    refit_tr_idx: np.ndarray,
+    refit_val_idx: np.ndarray,
+) -> tuple[keras.Model, dict[str, Any], float, keras.callbacks.History]:
+    """Refit com hiperparâmetros fixos (ablacao sem Optuna)."""
+    hp = dict(best_hp)
+    model, hist = _fit_lstm(
+        X_refit_tr_seq.astype(np.float32),
+        y[refit_tr_idx],
+        X_refit_val_seq.astype(np.float32),
+        y[refit_val_idx],
+        hp,
+        epochs=EPOCHS_MAX,
+        patience=EARLY_STOPPING_PATIENCE,
+        verbose=0,
+    )
+    proba_val = _predict_proba_pos(model, X_refit_val_seq.astype(np.float32))
+    y_va = y[refit_val_idx]
+    if len(np.unique(y_va)) < 2:
+        best_val_auc = float("nan")
+    else:
+        best_val_auc = float(roc_auc_score(y_va, proba_val))
+    return model, hp, best_val_auc, hist
+
+
 def _shap_abs_mean_lstm(
     model: keras.Model,
     X_te_flat: np.ndarray,
@@ -277,14 +320,36 @@ def _shap_abs_mean_lstm(
 def run_lstm_experiment(cfg: LstmExperimentConfig) -> None:
     t0 = time.perf_counter()
     colab_dir = Path(__file__).resolve().parent
-    run_dir_fn: Callable[..., Path] = (
-        u.exp1_run_dir if cfg.exp_name == "exp1" else u.exp2_run_dir
-    )
-    run_dir = run_dir_fn(
-        colab_dir,
-        downsample_group_sex=cfg.downsample_group_sex,
-        model_slug=cfg.model_slug,
-    )
+    ablation_drop_rois = _parse_drop_rois_env()
+    ablation_skip_optuna = _env_bool("ABLATION_SKIP_OPTUNA", False)
+
+    run_dir_env = os.environ.get("RUN_DIR", "").strip()
+    run_dir_override = Path(run_dir_env) if run_dir_env else None
+    if run_dir_override is not None and not run_dir_override.is_absolute():
+        run_dir_override = cfg.csv_path.resolve().parents[1] / run_dir_override
+
+    baseline_env = os.environ.get("ABLATION_BASELINE_RUN_DIR", "").strip()
+    baseline_run_dir: Path | None = None
+    if baseline_env:
+        baseline_run_dir = Path(baseline_env)
+        if not baseline_run_dir.is_absolute():
+            baseline_run_dir = cfg.csv_path.resolve().parents[1] / baseline_run_dir
+
+    if cfg.exp_name == "exp2":
+        run_dir = u.resolve_exp2_run_dir(
+            colab_dir,
+            downsample_group_sex=cfg.downsample_group_sex,
+            model_slug=cfg.model_slug,
+            run_dir_override=run_dir_override,
+            create_checkpoints=True,
+        )
+    else:
+        run_dir_fn: Callable[..., Path] = u.exp1_run_dir
+        run_dir = run_dir_fn(
+            colab_dir,
+            downsample_group_sex=cfg.downsample_group_sex,
+            model_slug=cfg.model_slug,
+        )
     fig_dir = run_dir / "figures"
     tab_dir = run_dir / "tables"
 
@@ -297,6 +362,25 @@ def run_lstm_experiment(cfg: LstmExperimentConfig) -> None:
         temporal_mode=cfg.temporal_mode,
         dt_epsilon=cfg.dt_epsilon,
     )
+    if ablation_drop_rois:
+        X_3d = u.mask_rois_in_X_3d(X_3d, slot_labels, ablation_drop_rois)
+        print(
+            f"Ablação — ROIs zeradas ({len(ablation_drop_rois)}): {ablation_drop_rois}"
+        )
+
+    use_fixed_params = (
+        cfg.exp_name == "exp2"
+        and ablation_skip_optuna
+        and baseline_run_dir is not None
+    )
+    if ablation_skip_optuna and baseline_run_dir is None and cfg.exp_name == "exp2":
+        print(
+            "Aviso: ABLATION_SKIP_OPTUNA=1 sem ABLATION_BASELINE_RUN_DIR; "
+            "usando Optuna."
+        )
+    elif use_fixed_params:
+        print(f"Ablação — hiperparâmetros do baseline: {baseline_run_dir}")
+
     n_raw = X_3d.shape[2]
     n_samples = len(y)
 
@@ -325,6 +409,7 @@ def run_lstm_experiment(cfg: LstmExperimentConfig) -> None:
     shap_attr: dict[str, float] = defaultdict(float)
     best_shap_n = -1
     best_shap: tuple[keras.Model, np.ndarray, np.ndarray, int, int] | None = None
+    fold_best_params_log: list[dict] = []
 
     prefix = cfg.title_prefix
     print(
@@ -416,20 +501,38 @@ def run_lstm_experiment(cfg: LstmExperimentConfig) -> None:
                 n_after_variance=n_after_var,
             )
 
-        model, best_params, best_val_auc, hist = _fit_lstm_optuna(
-            X_3d,
-            y,
-            inner_splits,
-            X_train_seq,
-            X_val_seq,
-            tr_fit_idx,
-            val_idx,
-            fold_id=fold_id,
-        )
-        print(
-            f"Fold {fold_id + 1}/5 — Optuna (AUC val interna média em {len(inner_splits)} folds NCV="
-            f"{best_val_auc:.4f}): {best_params}"
-        )
+        if use_fixed_params:
+            assert baseline_run_dir is not None
+            bp_fixed = u.load_baseline_fold_params(baseline_run_dir, fold_id)
+            model, best_params, best_val_auc, hist = _fit_lstm_with_params(
+                bp_fixed,
+                X_train_seq,
+                y,
+                X_val_seq,
+                tr_fit_idx,
+                val_idx,
+            )
+            print(
+                f"Fold {fold_id + 1}/5 — params baseline (AUC val refit={best_val_auc:.4f}): "
+                f"{best_params}"
+            )
+        else:
+            model, best_params, best_val_auc, hist = _fit_lstm_optuna(
+                X_3d,
+                y,
+                inner_splits,
+                X_train_seq,
+                X_val_seq,
+                tr_fit_idx,
+                val_idx,
+                fold_id=fold_id,
+            )
+            print(
+                f"Fold {fold_id + 1}/5 — Optuna (AUC val interna média em "
+                f"{len(inner_splits)} folds NCV={best_val_auc:.4f}): {best_params}"
+            )
+
+        fold_best_params_log.append({"fold": int(fold_id), "best_params": best_params})
 
         if is_exp2:
             ckpt_extra = {
@@ -438,6 +541,7 @@ def run_lstm_experiment(cfg: LstmExperimentConfig) -> None:
                 "temporal_mode": cfg.temporal_mode,
                 "dt_epsilon": cfg.dt_epsilon,
                 "downsample_group_sex": cfg.downsample_group_sex,
+                "ablation_drop_rois": ablation_drop_rois,
             }
             u.save_lstm_fold_checkpoint(
                 run_dir,
@@ -623,26 +727,34 @@ def run_lstm_experiment(cfg: LstmExperimentConfig) -> None:
         fig_sh.tight_layout()
         u.save_pdf(fig_sh, fig_dir / "shap_summary.pdf")
 
+    if is_exp2:
+        u.save_fold_best_params_json(tab_dir / "fold_best_params.json", fold_best_params_log)
+
     elapsed = time.perf_counter() - t0
     print(f"Tempo total: {elapsed:.1f} s — artefactos em {run_dir}")
+    meta_extra: dict[str, object] = {
+        "inner_ncv_splits": INNER_NCV_SPLITS,
+        "optuna_trials": OPTUNA_LSTM_TRIALS,
+        "temporal_mode": cfg.temporal_mode,
+        "dt_epsilon": cfg.dt_epsilon,
+        "lstm_seq_len": u.PANEL_SEQ_STEPS,
+        "metrics_schema": "acc,auc,f1,ap",
+        "checkpoints": is_exp2,
+        "checkpoint_selection_metric": "val_auc" if is_exp2 else None,
+        "csv_schema": (
+            "metrics_per_fold, oof_predictions, fold_test_scores, "
+            "importance_shap_*, training_curves_fold{0..4}, training_curves_mean"
+            + (", checkpoints/fold_*" if is_exp2 else "")
+        ),
+    }
+    if ablation_drop_rois:
+        meta_extra["ablation_drop_rois"] = ablation_drop_rois
+    if baseline_run_dir is not None:
+        meta_extra["ablation_baseline_run_dir"] = str(baseline_run_dir)
     u.write_run_meta_json(
         run_dir,
         model_slug=cfg.model_slug,
         downsample_group_sex=cfg.downsample_group_sex,
         duration_seconds=elapsed,
-        extra={
-            "inner_ncv_splits": INNER_NCV_SPLITS,
-            "optuna_trials": OPTUNA_LSTM_TRIALS,
-            "temporal_mode": cfg.temporal_mode,
-            "dt_epsilon": cfg.dt_epsilon,
-            "lstm_seq_len": u.PANEL_SEQ_STEPS,
-            "metrics_schema": "acc,auc,f1,ap",
-            "checkpoints": is_exp2,
-            "checkpoint_selection_metric": "val_auc" if is_exp2 else None,
-            "csv_schema": (
-                "metrics_per_fold, oof_predictions, fold_test_scores, "
-                "importance_shap_*, training_curves_fold{0..4}, training_curves_mean"
-                + (", checkpoints/fold_*" if is_exp2 else "")
-            ),
-        },
+        extra=meta_extra,
     )

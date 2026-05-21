@@ -350,6 +350,7 @@ def main() -> None:
 
     best_shap_n = -1
     best_shap: tuple[XGBClassifier, np.ndarray, np.ndarray] | None = None
+    fold_best_params_log: list[dict] = []
 
     if DOWNSAMPLE_GROUP_SEX:
         print("Downsample ativo: treino externo por paciente (estratos y×SEX).")
@@ -459,6 +460,8 @@ def main() -> None:
                 f"Fold {fold_id + 1}/5 — Optuna (AUC val interna média em {len(inner_splits)} folds NCV="
                 f"{best_val_auc:.4f}): {best_params}"
             )
+
+        fold_best_params_log.append({"fold": int(fold_id), "best_params": best_params})
 
         ckpt_extra = {
             "corr_thr": CORR_THR,
@@ -683,6 +686,8 @@ def main() -> None:
             "importance_shap_*, checkpoints/fold_*"
         ),
     }
+    u.save_fold_best_params_json(tab_dir / "fold_best_params.json", fold_best_params_log)
+
     if ABLATION_DROP_ROIS:
         meta_extra["ablation_drop_rois"] = ABLATION_DROP_ROIS
     if baseline_run_dir is not None:

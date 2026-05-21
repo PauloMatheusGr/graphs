@@ -894,6 +894,44 @@ def load_preprocess_bundle(path: Path) -> dict:
     return joblib.load(path)
 
 
+def save_fold_best_params_json(path: Path, fold_params: list[dict]) -> None:
+    """Persiste best_params por fold (fallback quando checkpoints LSTM ausentes)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "folds": [
+            {"fold": int(item["fold"]), "best_params": dict(item["best_params"])}
+            for item in fold_params
+        ]
+    }
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def load_baseline_fold_params(baseline_run_dir: Path, fold_id: int) -> dict:
+    """best_params do baseline: checkpoints/fold_k/meta.json ou tables/fold_best_params.json."""
+    meta_path = baseline_run_dir / "checkpoints" / f"fold_{int(fold_id)}" / "meta.json"
+    if meta_path.is_file():
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        bp = meta.get("best_params")
+        if isinstance(bp, dict) and bp:
+            return dict(bp)
+        raise ValueError(f"best_params inválido em {meta_path}")
+
+    table_path = baseline_run_dir / "tables" / "fold_best_params.json"
+    if table_path.is_file():
+        data = json.loads(table_path.read_text(encoding="utf-8"))
+        for item in data.get("folds", []):
+            if int(item.get("fold", -1)) == int(fold_id):
+                bp = item.get("best_params")
+                if isinstance(bp, dict) and bp:
+                    return dict(bp)
+        raise ValueError(f"fold {fold_id} ausente em {table_path}")
+
+    raise FileNotFoundError(
+        f"Sem hiperparâmetros para fold {fold_id} em {baseline_run_dir} "
+        "(checkpoints/meta.json ou tables/fold_best_params.json)."
+    )
+
+
 def save_xgb_fold_checkpoint(
     run_dir: Path,
     fold_id: int,

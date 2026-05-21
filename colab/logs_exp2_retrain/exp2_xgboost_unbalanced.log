@@ -1,0 +1,15 @@
+/mnt/study-data/pgirardi/graphs/colab/exp2_xgboost.py:666: UserWarning: Tight layout not applied. The left and right margins cannot be made large enough to accommodate all Axes decorations.
+  fig_sh.tight_layout()
+Fold 1 — treino externo: 1035 -> 1035 amostras.
+Fold 1/5 — Optuna (AUC val interna média em 5 folds NCV=0.7798): {'spw_mul': 1.193180594287722, 'max_depth': 6, 'learning_rate': 0.05348010032574183, 'subsample': 0.8438249248586437, 'colsample_bytree': 0.7847998851418791, 'reg_lambda': 20.627805587128453, 'min_child_weight': 12.301425037835003, 'gamma': 2.2512176589429336}
+Fold 1/5 — teste: acc=0.7303, AUC=0.7709, F1=0.4444, AP=0.4134
+Fold 2/5 — Optuna (AUC val interna média em 5 folds NCV=0.8091): {'spw_mul': 0.3036064119614688, 'max_depth': 7, 'learning_rate': 0.019941892914728414, 'subsample': 0.5077898152166416, 'colsample_bytree': 0.5062406822103528, 'reg_lambda': 0.03279840353593789, 'min_child_weight': 4.5970599445785805, 'gamma': 1.4879019370523843}
+Fold 2/5 — teste: acc=0.7625, AUC=0.6762, F1=0.1389, AP=0.3241
+Fold 3/5 — Optuna (AUC val interna média em 5 folds NCV=0.8094): {'spw_mul': 0.614906141018481, 'max_depth': 4, 'learning_rate': 0.02281756528595804, 'subsample': 0.811063432263186, 'colsample_bytree': 0.7798536261887156, 'reg_lambda': 0.022648785043788547, 'min_child_weight': 13.602806624901408, 'gamma': 1.5177217545244388}
+Fold 3/5 — teste: acc=0.7539, AUC=0.7580, F1=0.4615, AP=0.5369
+Fold 4/5 — Optuna (AUC val interna média em 5 folds NCV=0.7869): {'spw_mul': 0.2563714059539872, 'max_depth': 6, 'learning_rate': 0.0329373207543367, 'subsample': 0.831200543314768, 'colsample_bytree': 0.6932726121785545, 'reg_lambda': 0.04305949219398088, 'min_child_weight': 16.071183429825386, 'gamma': 3.2935438404572004}
+Fold 4/5 — teste: acc=0.8488, AUC=0.7826, F1=0.0930, AP=0.4115
+Fold 5/5 — Optuna (AUC val interna média em 5 folds NCV=0.7514): {'spw_mul': 0.3191589702966806, 'max_depth': 3, 'learning_rate': 0.09173229700533846, 'subsample': 0.5500897410356009, 'colsample_bytree': 0.7259699686363745, 'reg_lambda': 14.906566277756971, 'min_child_weight': 4.757880711527184, 'gamma': 4.511002745760743}
+Fold 5/5 — teste: acc=0.8577, AUC=0.8727, F1=0.3509, AP=0.5627
+Resumo 5-fold SGK (média ± dp) — teste: acc=0.7906 ± 0.0523, AUC=0.7721 ± 0.0626, F1=0.2978 ± 0.1538, AP=0.4497 ± 0.0882.
+Tempo total: 7719.2 s — artefactos em /mnt/study-data/pgirardi/graphs/colab/exp2/unbalanced/xgboost

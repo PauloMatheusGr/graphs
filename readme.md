@@ -293,6 +293,17 @@ Para comparar com o pipeline sem ComBat, apontar `CSV_PATH` nos scripts `colab/e
 }
 ```
 
+### Formação dos conjuntos com 3 imagens
+
+Definição do porquê utilizar a abordagem baseline em vez da abordagem sequencial nos conjuntos com 3 imagens.
+
+1. Mitigação do Acúmulo de Erros (Estabilidade Estatística): Na análise longitudinal com três ou mais pontos no tempo (ex: t0​,t1​,t2​), a comparação sequencial (t0​→t1​ somado a t1​→t2​) está frequentemente sujeita à propagação de erros de registro e interpolação. Smith et al. (2002) apontam que, na verdade, a comparação entre a soma das medidas sequenciais e a medida direta (t0​→t2​) é um método sensível justamente para evidenciar fontes de erro nos procedimentos de estimativa de atrofia. Ao adotar a comparação direta sempre com o baseline (i1​→i2​ e i1​→i3​), você elimina o acúmulo de variância e o ruído que ocorreriam ao usar a imagem i2​ (que já sofreu transformações ou representa um estado intermediário) como referência para i3​, garantindo maior estabilidade estatística à sua medida direta.
+
+2. Consistência do Referencial Anatômico (Precisão Biológica): Para garantir a precisão biológica, as alterações estruturais sutis (como atrofia tecidual, mudanças de volume e deformações locais) devem ser mapeadas contra a anatomia original do paciente. A literatura tradicional de processamento longitudinal frequentemente emprega métodos de registro que alinham os exames de acompanhamento (follow-up) diretamente ao exame baseline para computar os campos de deformação e analisar as alterações. Freeborough & Fox (1997) também validam essa abordagem ao descrever que a imagem repetida deve ser registrada com a imagem baseline determinando rotações e translações que minimizem o desvio padrão entre os voxels correspondentes. Usar o baseline garante que a métrica de progressão reflita a verdadeira alteração desde o início do estudo, ancorando os biomarcadores extraídos a um estado biológico inicial constante.
+
+A escolha da abordagem baseada em baseline (i1​→i2​,i1​→i3​), em detrimento de uma abordagem puramente sequencial (i1​→i2​,i2​→i3​), fundamenta-se na necessidade de garantir a estabilidade estatística e a precisão biológica na extração de biomarcadores longitudinais. Do ponto de vista estatístico, o uso da imagem i1​ como referencial único mitiga a propagação e o acúmulo de erros de registro e de interpolação geométrica que frequentemente afetam cadeias de comparações sucessivas. A literatura demonstra que a soma de medidas sequenciais pode introduzir variâncias adicionais que são evitadas ao se realizar a medição direta entre o ponto inicial e os tempos subsequentes \cite{smith-2002}. Sob a ótica da precisão biológica, o processamento longitudinal classicamente estabelece o baseline como o sistema de coordenadas absoluto para computar os campos de deformação e as perdas volumétricas ao longo do tempo \cite{reuter-2012,freeborough-1997}. Dessa forma, garante-se que todas as alterações estruturais extraídas reflitam o desvio morfológico real em relação ao estado anatômico nativo do indivíduo no momento de inclusão no estudo, otimizando a confiabilidade das trajetórias dos biomarcadores.
+
+
 ### 3.2. Campo de deslocamento longitudinal (`displacement_field.py`)
 
 As deformações em RM refletem envelhecimento saudável e neurodegeneração. O pipeline isola alterações estruturais via **campos de deformação (DF)**.
@@ -640,17 +651,21 @@ Por run (`colab/exp2/{balanced|unbalanced}/{xgboost|svm|rocket|lstm}/`):
 Raiz do repositório; Python: `.venv/bin/python` ou `python`.
 
 ```bash
-# Experimento 2 — 8 runs (4 modelos × balanced/unbalanced)
+# Experimento 2 — 4 runs balanced (4 modelos)
 .venv/bin/python colab/run_exp2_all.py
 
 # Regenerar CSV harmonizado (após alterar features_selection.ipynb §3.1)
 #   → executar células NeuroComBat (delta + unitário) no notebook
 
-# Regenerar figuras + demografia (8 runs com OOF)
+# Regenerar figuras + demografia (4 runs balanced com OOF)
 .venv/bin/python colab/postprocess_exp2_runs.py
 
-# Ablação LOO por ROI — XGB balanced (~10 ROIs no CSV atual)
-.venv/bin/python colab/run_roi_ablation_exp2.py
+# Ablação LOO por ROI — XGB / SVM / LSTM balanced (ABLATION_ROIS, ABLATION_MODEL)
+ABLATION_ROIS=inf_lateral_ventricle,hippocampus,amygdala,accumbens_area,insula \
+  .venv/bin/python colab/run_roi_ablation_exp2.py
+
+# Demografia por sexo nas pastas de ablação (se necessário re-gerar)
+.venv/bin/python colab/postprocess_exp2_ablation.py
 
 # Opcional: verificar checkpoint XGB fold 0 vs OOF
 .venv/bin/python colab/verify_xgb_checkpoint.py
@@ -665,13 +680,13 @@ Raiz do repositório; Python: `.venv/bin/python` ou `python`.
 
 **Dependências:** `numpy`, `pandas`, `scikit-learn`, `matplotlib`, `optuna`, `xgboost`, `shap`, `sktime`, `tensorflow` (LSTM).
 
-### 4.7. Ablação por ROI (exp2, XGBoost)
+### 4.7. Ablação por ROI (exp2, balanced)
 
-- Script: `colab/run_roi_ablation_exp2.py`.
+- Script: `colab/run_roi_ablation_exp2.py` (`ABLATION_MODEL=xgboost|svm|lstm`, `ABLATION_ROIS=...`).
 - Remove uma **`roi`** de cada vez (máscara a zero nos 3 pares temporais).
-- Saída: `colab/exp2/balanced/xgboost_ablation/drop_<roi>/`.
-- Resumo: `ablation_summary.csv`, `ablation_delta_auc_oof.pdf`.
-- Por defeito reutiliza `best_params` do baseline (`ABLATION_SKIP_OPTUNA=1`); `ABLATION_FORCE_OPTUNA=1` para Optuna em cada ROI.
+- Saída: `colab/exp2/balanced/{xgboost,svm,lstm}_ablation/drop_<roi>/` (figuras, OOF, `tables/demographics/` por sexo).
+- Resumo: `ablation_summary.csv`, `ablation_delta_auc_oof.pdf`, `ablation_demographics_by_sex.csv`.
+- Por defeito reutiliza `best_params` do baseline; LSTM antigo sem checkpoints: `export_fold_best_params.py` ou re-treino / `ABLATION_FORCE_OPTUNA=1`.
 
 ### 4.8. Comparação exp1 vs exp2
 

@@ -42,7 +42,16 @@ def _env_bool(key: str, default: bool) -> bool:
     return v.strip().lower() in ("1", "true", "yes")
 
 
+def _parse_drop_rois_env() -> list[str]:
+    raw = os.environ.get("ABLATION_DROP_ROIS", "").strip()
+    if not raw:
+        return []
+    return [p.strip() for p in raw.split(",") if p.strip()]
+
+
 DOWNSAMPLE_GROUP_SEX = _env_bool("DOWNSAMPLE_GROUP_SEX", True)
+ABLATION_DROP_ROIS = _parse_drop_rois_env()
+ABLATION_SKIP_OPTUNA = _env_bool("ABLATION_SKIP_OPTUNA", False)
 FPR_GRID = np.linspace(0.0, 1.0, 101)
 REC_GRID = np.linspace(0.0, 1.0, 101)
 TOP_K_ROI = 10
@@ -109,12 +118,52 @@ def _fit_linear_svc_optuna(
     return model, dict(study.best_trial.params), float(study.best_value)
 
 
+def _fit_linear_svc_fixed(
+    C: float,
+    X_refit_tr_flat: np.ndarray,
+    y: np.ndarray,
+    X_refit_val_flat: np.ndarray,
+    refit_val_idx: np.ndarray,
+    refit_tr_idx: np.ndarray,
+) -> tuple[LinearSVC, dict[str, Any], float]:
+    """Refit com C fixo (ablacao sem Optuna)."""
+    model = LinearSVC(
+        C=float(C),
+        dual="auto",
+        max_iter=50_000,
+        random_state=RANDOM_STATE,
+    )
+    model.fit(X_refit_tr_flat, y[refit_tr_idx])
+    scores = model.decision_function(X_refit_val_flat)
+    y_va = y[refit_val_idx]
+    if len(np.unique(y_va)) < 2:
+        best_val_auc = float("nan")
+    else:
+        best_val_auc = float(roc_auc_score(y_va, scores))
+    return model, {"C": float(C)}, best_val_auc
+
+
 def main() -> None:
     t0 = time.perf_counter()
-    run_dir = u.exp2_run_dir(
+    model_slug = os.environ.get("MODEL_SLUG", MODEL_SLUG).strip() or MODEL_SLUG
+    run_dir_env = os.environ.get("RUN_DIR", "").strip()
+    run_dir_override = Path(run_dir_env) if run_dir_env else None
+    if run_dir_override is not None and not run_dir_override.is_absolute():
+        run_dir_override = ROOT / run_dir_override
+
+    baseline_env = os.environ.get("ABLATION_BASELINE_RUN_DIR", "").strip()
+    baseline_run_dir: Path | None = None
+    if baseline_env:
+        baseline_run_dir = Path(baseline_env)
+        if not baseline_run_dir.is_absolute():
+            baseline_run_dir = ROOT / baseline_run_dir
+
+    run_dir = u.resolve_exp2_run_dir(
         COLAB_DIR,
         downsample_group_sex=DOWNSAMPLE_GROUP_SEX,
-        model_slug=MODEL_SLUG,
+        model_slug=model_slug,
+        run_dir_override=run_dir_override,
+        create_checkpoints=True,
     )
     fig_dir = run_dir / "figures"
     tab_dir = run_dir / "tables"
@@ -128,6 +177,19 @@ def main() -> None:
         temporal_mode=TEMPORAL_MODE,
         dt_epsilon=DT_EPSILON,
     )
+    if ABLATION_DROP_ROIS:
+        X_3d = u.mask_rois_in_X_3d(X_3d, slot_labels, ABLATION_DROP_ROIS)
+        print(f"Ablação — ROIs zeradas ({len(ABLATION_DROP_ROIS)}): {ABLATION_DROP_ROIS}")
+
+    use_fixed_params = ABLATION_SKIP_OPTUNA and baseline_run_dir is not None
+    if ABLATION_SKIP_OPTUNA and baseline_run_dir is None:
+        print(
+            "Aviso: ABLATION_SKIP_OPTUNA=1 sem ABLATION_BASELINE_RUN_DIR; "
+            "usando Optuna."
+        )
+    elif use_fixed_params:
+        print(f"Ablação — hiperparâmetros do baseline: {baseline_run_dir}")
+
     n_raw = X_3d.shape[2]
     n_samples = len(y)
 
@@ -153,6 +215,7 @@ def main() -> None:
 
     imp_roi: dict[str, float] = defaultdict(float)
     imp_attr: dict[str, float] = defaultdict(float)
+    fold_best_params_log: list[dict] = []
 
     if DOWNSAMPLE_GROUP_SEX:
         print("Downsample ativo: treino externo por paciente (estratos y×SEX).")
@@ -230,20 +293,38 @@ def main() -> None:
                 n_after_variance=n_after_var,
             )
 
-        model, best_params, best_val_auc = _fit_linear_svc_optuna(
-            X_3d,
-            y,
-            inner_splits,
-            X_train_flat,
-            X_val_flat,
-            tr_fit_idx,
-            val_idx,
-            fold_id=fold_id,
-        )
-        print(
-            f"Fold {fold_id + 1}/5 — Optuna SVM linear (AUC val interna média em {len(inner_splits)} folds NCV="
-            f"{best_val_auc:.4f}): {best_params}"
-        )
+        if use_fixed_params:
+            assert baseline_run_dir is not None
+            bp_fixed = u.load_baseline_fold_params(baseline_run_dir, fold_id)
+            model, best_params, best_val_auc = _fit_linear_svc_fixed(
+                float(bp_fixed["C"]),
+                X_train_flat,
+                y,
+                X_val_flat,
+                val_idx,
+                tr_fit_idx,
+            )
+            print(
+                f"Fold {fold_id + 1}/5 — params baseline (AUC val refit={best_val_auc:.4f}): "
+                f"{best_params}"
+            )
+        else:
+            model, best_params, best_val_auc = _fit_linear_svc_optuna(
+                X_3d,
+                y,
+                inner_splits,
+                X_train_flat,
+                X_val_flat,
+                tr_fit_idx,
+                val_idx,
+                fold_id=fold_id,
+            )
+            print(
+                f"Fold {fold_id + 1}/5 — Optuna SVM linear (AUC val interna média em "
+                f"{len(inner_splits)} folds NCV={best_val_auc:.4f}): {best_params}"
+            )
+
+        fold_best_params_log.append({"fold": int(fold_id), "best_params": best_params})
 
         ckpt_extra = {
             "corr_thr": CORR_THR,
@@ -251,6 +332,7 @@ def main() -> None:
             "temporal_mode": TEMPORAL_MODE,
             "dt_epsilon": DT_EPSILON,
             "downsample_group_sex": DOWNSAMPLE_GROUP_SEX,
+            "ablation_drop_rois": ABLATION_DROP_ROIS,
         }
         u.save_svm_fold_checkpoint(
             run_dir,
@@ -413,22 +495,29 @@ def main() -> None:
         xlabel="Média do |coef| por coluna (por fold)",
     )
 
+    u.save_fold_best_params_json(tab_dir / "fold_best_params.json", fold_best_params_log)
+
     elapsed = time.perf_counter() - t0
     print(f"Tempo total: {elapsed:.1f} s — artefactos em {run_dir}")
+    meta_extra: dict[str, object] = {
+        "inner_ncv_splits": INNER_NCV_SPLITS,
+        "optuna_trials": OPTUNA_SVM_TRIALS,
+        "temporal_mode": TEMPORAL_MODE,
+        "dt_epsilon": DT_EPSILON,
+        "metrics_schema": "acc,auc,f1,ap",
+        "checkpoints": True,
+        "checkpoint_selection_metric": "val_auc",
+    }
+    if ABLATION_DROP_ROIS:
+        meta_extra["ablation_drop_rois"] = ABLATION_DROP_ROIS
+    if baseline_run_dir is not None:
+        meta_extra["ablation_baseline_run_dir"] = str(baseline_run_dir)
     u.write_run_meta_json(
         run_dir,
-        model_slug=MODEL_SLUG,
+        model_slug=model_slug,
         downsample_group_sex=DOWNSAMPLE_GROUP_SEX,
         duration_seconds=elapsed,
-        extra={
-            "inner_ncv_splits": INNER_NCV_SPLITS,
-            "optuna_trials": OPTUNA_SVM_TRIALS,
-            "temporal_mode": TEMPORAL_MODE,
-            "dt_epsilon": DT_EPSILON,
-            "metrics_schema": "acc,auc,f1,ap",
-            "checkpoints": True,
-            "checkpoint_selection_metric": "val_auc",
-        },
+        extra=meta_extra,
     )
 
 

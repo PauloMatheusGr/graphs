@@ -1,4 +1,4 @@
-"""Re-treina todos os modelos exp2 (balanced + unbalanced).
+"""Re-treina todos os modelos exp2 (balanced).
 
 Uso (a partir da raiz do repo):
 
@@ -70,10 +70,9 @@ def main() -> None:
     os.chdir(ROOT)
 
     for script in TRAIN_SCRIPTS:
-        for balanced in (True, False):
-            code = _run_one(script, balanced=balanced, python=python)
-            if code != 0:
-                sys.exit(code)
+        code = _run_one(script, balanced=True, python=python)
+        if code != 0:
+            sys.exit(code)
 
     print(f"Treinos concluídos. Logs em {LOG_DIR}")
 

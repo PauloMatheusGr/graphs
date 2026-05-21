@@ -6,3 +6,5 @@ graphs/
 images/
 zold/
 .venv/
+colab/logs_exp2_ablation/
+colab/logs_exp2_retrain/

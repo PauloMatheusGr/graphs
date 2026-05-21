@@ -15,7 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 COLAB = Path(__file__).resolve().parent
 
-SCENARIOS = ("balanced", "unbalanced")
+SCENARIOS = ("balanced",)
 MODELS = ("xgboost", "svm", "rocket", "lstm")
 
 

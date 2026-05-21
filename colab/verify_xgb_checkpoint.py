@@ -41,7 +41,9 @@ def main() -> None:
     )
 
     X = X_3d[row_idx : row_idx + 1][:, :, keep_final]
-    flat = bundle["scaler"].transform(X.reshape(1, -1))
+    s = X.shape
+    X_scaled = bundle["scaler"].transform(X.reshape(-1, s[-1])).reshape(s)
+    flat = X_scaled.reshape(1, -1)
 
     clf = XGBClassifier()
     clf.load_model(str(ckpt / "model.json"))
