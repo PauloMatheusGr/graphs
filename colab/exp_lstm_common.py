@@ -40,6 +40,8 @@ def _apply_lstm_device_env() -> None:
 
 _apply_lstm_device_env()
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
@@ -326,14 +328,14 @@ def run_lstm_experiment(cfg: LstmExperimentConfig) -> None:
     run_dir_env = os.environ.get("RUN_DIR", "").strip()
     run_dir_override = Path(run_dir_env) if run_dir_env else None
     if run_dir_override is not None and not run_dir_override.is_absolute():
-        run_dir_override = cfg.csv_path.resolve().parents[1] / run_dir_override
+        run_dir_override = REPO_ROOT / run_dir_override
 
     baseline_env = os.environ.get("ABLATION_BASELINE_RUN_DIR", "").strip()
     baseline_run_dir: Path | None = None
     if baseline_env:
         baseline_run_dir = Path(baseline_env)
         if not baseline_run_dir.is_absolute():
-            baseline_run_dir = cfg.csv_path.resolve().parents[1] / baseline_run_dir
+            baseline_run_dir = REPO_ROOT / baseline_run_dir
 
     if cfg.exp_name == "exp2":
         run_dir = u.resolve_exp2_run_dir(

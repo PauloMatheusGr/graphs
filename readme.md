@@ -11,7 +11,7 @@ Este documento descreve o fluxo **do volume T1 ao classificador**, com ênfase n
 1. [Visão geral](#1-visão-geral)
 2. [Pré-processamento de imagens](#2-pré-processamento-de-imagens)
 3. [Extração de atributos e harmonização](#3-extração-de-atributos-e-harmonização)
-4. [Modelagem supervisionada (exp1 / exp2)](#4-modelagem-supervisionada-exp1--exp2--pipeline-implementado)
+4. [Modelagem supervisionada (exp1 / exp2)](#4-modelagem-supervisionada-exp1--exp2--pipeline-implementado) (§4.3: divisão dos dados e CV aninhada)
 5. [Trabalho futuro e legado](#5-trabalho-futuro-e-legado)
 
 ---
@@ -498,37 +498,144 @@ Controlado por **`DOWNSAMPLE_GROUP_SEX`** (env ou constante no script; default *
 
 `run_exp2_all.py` define `DOWNSAMPLE_GROUP_SEX=1` (balanced) e `=0` (unbalanced) automaticamente.
 
-### 4.3. Validação cruzada e anti-vazamento
+### 4.3. Etapas de divisão dos dados (validação cruzada aninhada)
 
-**Não há** `train_test_split` fixo. Métricas principais = **OOF** (5 folds externos).
+**Não há** `train_test_split` fixo único. As métricas reportadas no artigo vêm das previsões **out-of-fold (OOF)**: em cada um dos 5 folds externos, o modelo prevê o conjunto de **teste** desse fold (dados que não entraram no treino daquela repetição). A junção das cinco partições de teste cobre os **1276** conjuntos uma vez.
+
+Implementação: `StratifiedGroupKFold` com `groups=ID_PT` em `colab/exp1_utils.py` (`inner_train_val`, `inner_cv_splits`, `downsample_train_indices`).
+
+Constantes globais: `RANDOM_STATE=42`, `CORR_THR=0.9`, `VAR_THR=0.0`, `DT_EPSILON=0.5`, `INNER_NCV_SPLITS=5`.
+
+#### Coorte, conjuntos e pacientes
+
+| Conceito | Significado | Exp2 (exemplo auditado) |
+|----------|-------------|-------------------------|
+| **Linha do CSV** | 1 ROI × 1 `pair` (i1, i2 ou i3) | 76 560 linhas no CSV harmonizado |
+| **Conjunto / amostra do modelo** | Chave `(ID_PT, COMBINATION_NUMBER, TRIPLET_IDX)` com bloco **60×atributos** (20 ROIs × 3 pares) | **1276** conjuntos válidos |
+| **Paciente** | `ID_PT` — unidade do split de CV | **525** pacientes |
+| **Rótulo `y`** | `GROUP`: sMCI=0, pMCI=1 | 1011 conjuntos sMCI, 265 pMCI (~79% / 21%) |
+
+O classificador recebe tensores `(n, 60, n_feat)` (ou variantes sequenciais / ROCKET), **não** as 76 560 linhas do CSV. Vários conjuntos podem pertencer ao mesmo paciente.
+
+**Auditoria reprodutível:** script em `experimentos.ipynb` (ou funções em `exp1_utils`) com o mesmo CSV e `exp2.md`; export opcional para `colab/paper_split_audit/`.
+
+#### Cinco folds externos: uma coorte, cinco repetições
+
+Não são cinco coortes independentes. É o **mesmo** conjunto de 525 pacientes / 1276 amostras, com **papéis** diferentes em cada fold:
+
+- Em **um** fold, cada paciente está no **teste** ou no **pool de treino** (~80%).
+- Ao longo dos **5** folds, cada paciente é testado **exatamente uma vez** → 5 × 105 = **525** atribuições de teste (não 525×5 pacientes distintos).
+- Cada paciente entra no pool de treino em **quatro** folds → 5 × 420 = **2100** atribuições de treino (não 2100 pacientes).
 
 ```text
-                    ┌─────────────────────────────────────┐
-  train_idx (80%)   │  NCV interna (5 folds) → Optuna   │
-  (opc. downsample) │  tr_fit (~64%) │ val (~16%)       │
-                    └─────────────────────────────────────┘
-  test_idx (20%)  →  predição OOF (nunca usada no fit)
+COORTE: 1276 conjuntos · 525 pacientes · 1011 sMCI / 265 pMCI (conjuntos)
+
+     FOLD 0      FOLD 1      FOLD 2      FOLD 3      FOLD 4
+        │           │           │           │           │
+ TESTE  241/105    261/105    256/105    258/105    260/105   Σ conjuntos = 1276 (OOF)
+        │           │           │           │           │
+ POOL   1035/420   1015/420   1020/420   1018/420   1016/420   420 pac. = 525−105 (fixo)
+        │           │           │           │           │
+        ▼ downsample GROUP×SEX (só no pool; ver §4.2)
+        │
+ TREINO 435/184    374/164    362/164    380/168    427/184   (média ~396 conj. / 173 pac.)
+ bal.
+        │
+   ┌────┴────┐
+   ▼         ▼
+ NCV×5    tr_fit | val  (~80% / ~20% do treino bal.; holdout fixo)
+ Optuna
+   │
+   └──► previsão no TESTE deste fold → OOF
 ```
 
-| Nível | Método | Folds | Papel |
-|-------|--------|-------|--------|
-| Externo | `StratifiedGroupKFold(groups=ID_PT)` | 5 | Teste OOF |
-| Interno (Optuna) | `StratifiedGroupKFold` no `train_idx` | 5 (`INNER_NCV_SPLITS`) | Média da AUC → hiperparâmetros |
-| Holdout | `inner_train_val()` (1.º split SGK) | — | Refit final + early stopping (XGB/LSTM) |
+Por fold externo, **teste + treino balanceado** usam tipicamente **676–687** conjuntos; o restante do pool de treino (~600 conjuntos) fica **fora** do treino **desse** fold (pacientes não sorteados no downsample), sem passar ao teste desse fold.
 
-Constantes globais: `RANDOM_STATE=42`, `CORR_THR=0.9`, `VAR_THR=0.0`, `DT_EPSILON=0.5`.
+#### Passo a passo (um fold externo)
 
-#### Pré-processamento por fold (fit só em treino)
+1. **Split externo** (`StratifiedGroupKFold`, 5 folds, `random_state=42`): ~**20%** dos conjuntos → **teste externo**; ~**80%** → **pool de treino**. Por paciente: **105** no teste, **420** no pool (valores exatos no exp2 auditado; constantes em todos os folds).
+2. **Downsample** (se `DOWNSAMPLE_GROUP_SEX=True`, §4.2): aplicado **só** ao pool de treino. Equilibra **pacientes** nos quatro estratos **GROUP × SEX** (`min_n` pacientes por estrato); mantém **todos os conjuntos** dos pacientes selecionados. **Não** iguala o número de conjuntos sMCI vs pMCI; **não** altera o teste externo.
+3. **NCV interna** (5 folds no treino balanceado): em cada trial do Optuna, treina nos splits internos de treino e avalia AUC nos splits internos de **validação**; o score do trial é a **média das 5 AUC**. **Sem** novo downsample. Pré-processamento (correlação, variância, scaler) **recalculado por split interno**.
+4. **Holdout `tr_fit` | `val`** (primeiro split do mesmo tipo de SGK no treino balanceado): divisão **fixa** ~80% / ~20% por paciente para o **modelo final** desse fold externo (não confundir com os 5 splits da NCV).
+5. **Treino final** com os melhores hiperparâmetros do passo 3, usando `tr_fit` (e `val` conforme o modelo — ver tabela abaixo).
+6. **Avaliação**: previsão apenas no **teste externo** do fold → agregação OOF.
 
-| Ordem | Passo | Anti-leakage |
-|-------|--------|----------------|
-| (pré) | NeuroComBat no CSV (§3.1) | Ajuste na **coorte inteira** antes do CV — não por fold |
-| 0 | Ponderação temporal em `load_tensor` | Determinística por linha do CSV |
-| 1 | Correlação \|ρ\| > 0,9 (greedy) | `fit` em linhas de **`tr_fit`** achatadas |
-| 2 | `VarianceThreshold(0.0)` | Colunas constantes no treino |
-| 3 | `StandardScaler` (z-score) | `fit` em `tr_fit`; `transform` em val/test |
+#### Tabelas de contingência — exp2 balanced (auditoria)
 
-No **Optuna (NCV interna)**, correlação + variância + scaler são **recalculados em cada split interno** (`flat_scaled_tabular_train_val`, `seq_scaled_train_val`, `prepare_scaled_rocket_inputs`).
+Valores **conjuntos / pacientes** por fold (treino antes do downsample: **420** pacientes em todos os folds).
+
+| Fold | Teste | Pool treino (antes DS) | Treino bal. (após DS) | tr_fit | val |
+|:----:|:-----:|:----------------------:|:---------------------:|:------:|:---:|
+| 0 | 241 / 105 | 1035 / 420 | 435 / 184 | 351 / 148 | 84 / 36 |
+| 1 | 261 / 105 | 1015 / 420 | 374 / 164 | 302 / 132 | 72 / 32 |
+| 2 | 256 / 105 | 1020 / 420 | 362 / 164 | 285 / 130 | 77 / 34 |
+| 3 | 258 / 105 | 1018 / 420 | 380 / 168 | 306 / 135 | 74 / 33 |
+| 4 | 260 / 105 | 1016 / 420 | 427 / 184 | 341 / 147 | 86 / 37 |
+| **Média** | **255** / **105** | **~1021** / **420** | **~396** / **~173** | **~317** / **~138** | **~79** / **~34** |
+
+Exemplo **fold 0** — rótulo em conjuntos: teste 184 sMCI / 57 pMCI; treino bal. 240 / 195; `val` 38 / 46 (prevalência em `val` pode desviar da coorte por ser holdout pequeno e haver vários conjuntos por paciente).
+
+NCV interna (ordem de grandeza no fold 0, treino bal. 435 conj.): ~**348** conjuntos no treino interno e ~**87** na validação interna **por split** (~147 / ~37 pacientes).
+
+#### O que cada nível faz (resumo)
+
+| Nível | Método | Folds | Treino | Avaliação | Objetivo |
+|-------|--------|:-----:|--------|-----------|----------|
+| **Externo** | `StratifiedGroupKFold(ID_PT)` | 5 | Pool → (opc.) downsample → bal. | **Teste externo** | Métricas **OOF** (artigo) |
+| **Interno (Optuna)** | SGK no treino bal. | 5 | `in_tr` (~80% do bal.) | `in_va` (~20% do bal.) | Média AUC → **hiperparâmetros** |
+| **Holdout** | `inner_train_val()` (1.º split SGK) | 1 | `tr_fit` | `val` | **Modelo final** + curvas / early stop |
+
+A NCV interna e o holdout `tr_fit`|`val` atuam sobre o **mesmo** treino balanceado, em **paralelo** (não em série): o Optuna **não** usa `val` holdout; o refit final **não** substitui a média dos cinco modelos internos por um único modelo da NCV.
+
+#### Papel do holdout `val` (por modelo)
+
+| Modelo | Optuna (NCV interna) | Holdout `tr_fit` \| `val` |
+|--------|----------------------|---------------------------|
+| **XGBoost** | Média AUC; early stopping em cada `in_va` | Refit em `tr_fit`; **early stopping** em `val`; curvas logloss/acc |
+| **LSTM** | Idem (épocas / `val_auc` nos splits internos) | Refit em `tr_fit`; **early stopping** em `val`; curvas |
+| **SVM** | Média AUC em `in_va` | `LinearSVC.fit(tr_fit)`; `val` para **curvas** (SGD), sem early stop no SVC |
+| **ROCKET+L1** | Média AUC; ROCKET refit por split interno no Optuna | ROCKET+LR em `tr_fit`; `val` para **curvas** e diagnóstico (fold 0) |
+
+O `best_val_auc` registado após Optuna no log refere-se à **média da NCV interna**, não à AUC do `val` holdout (salvo caminhos de ablação com parâmetros fixos).
+
+#### Diagrama — fold externo 0 (com NCV interna)
+
+```text
+                    COORTE 1276 conj. · 525 pac.
+                              │
+            ┌─────────────────┴─────────────────┐
+            ▼                                   ▼
+     TESTE EXTERNO                      POOL TREINO
+     241 conj. · 105 pac.               1035 conj. · 420 pac.
+     (sem downsample)                         │
+                                             ▼ DOWNsample GROUP×SEX
+                                        TREINO BALANCEADO
+                                        435 conj. · 184 pac.
+                                             │
+                        ┌────────────────────┴────────────────────┐
+                        ▼                                         ▼
+                 NCV INTERNA ×5                           HOLDOUT tr_fit | val
+                 (Optuna: média AUC)                        351/148  |  84/36
+                 treino int. ~348 | val int. ~87              │
+                 por split; sem novo DS                       ▼
+                        │                              MODELO FINAL
+                        └──────── hiperparâmetros ──────────┘
+                                             │
+                                             ▼
+                                   PREVISÃO OOF (241 teste)
+```
+
+#### Pré-processamento por fold (fit só em treino relevante)
+
+| Ordem | Passo | Onde `fit` | Anti-vazamento |
+|-------|--------|------------|----------------|
+| (pré) | NeuroComBat no CSV (§3.1) | Coorte inteira (antes do CV) | Não por fold — ver limitação em §3.1 |
+| 0 | Ponderação temporal em `load_tensor` | Determinística por linha | Sem vazamento por fold |
+| 1 | Correlação \|ρ\| > 0,9 (greedy) | Treino do split em uso (`tr_fit` ou `in_tr`) | Sem `fit` em val/teste do mesmo passo |
+| 2 | `VarianceThreshold(0.0)` | Idem | Remove só colunas constantes no treino |
+| 3 | `StandardScaler` (z-score) | Idem | `transform` em val/teste |
+
+No **Optuna**, os passos 1–3 são **recalculados em cada split interno** (`flat_scaled_tabular_train_val`, `seq_scaled_train_val`, `prepare_scaled_rocket_inputs`). No **refit final**, o pipeline de atributos é ajustado em `tr_fit` e aplicado a `val` e teste externo.
 
 **Classificação:** limiar **0,5** em probabilidade (XGB, ROCKET, LSTM). SVM: `predict()` para rótulo; **sigmoid(decision_function)** para score/AUC/OOF.
 
