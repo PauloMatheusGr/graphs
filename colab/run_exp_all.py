@@ -1,10 +1,13 @@
-"""Re-treina todos os modelos exp2 (balanced).
+"""Re-treina em série os quatro modelos de um experimento.
+
+Editar LOG_DIR, TRAIN_SCRIPTS, BALANCED e RUN_NEUROCOMBAT antes de correr.
 
 Uso (a partir da raiz do repo):
 
-  python colab/run_exp2_all.py
+  python colab/run_exp_all.py
 
-Logs em colab/logs_exp2_retrain/.
+Saídas: colab/exp{1,2}/{balanced|unbalanced}/{modelo}/ ou .../{modelo}_neurocombat/.
+Logs em LOG_DIR (ex.: logs_exp1_retrain/).
 """
 
 from __future__ import annotations
@@ -16,14 +19,26 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 COLAB = Path(__file__).resolve().parent
-LOG_DIR = COLAB / "logs_exp2_retrain"
 
+# --- CONFIG — editar antes de correr ---
+LOG_DIR = COLAB / "logs_exp1_no_combat"
 TRAIN_SCRIPTS = (
-    "exp2_xgboost.py",
-    "exp2_svm.py",
-    "exp2_rocket.py",
-    "exp2_lstm.py",
+    "exp1_xgboost.py",
+    "exp1_svm.py",
+    "exp1_rocket.py",
+    "exp1_lstm.py",
 )
+
+# LOG_DIR = COLAB / "logs_exp2_no_combat"
+# TRAIN_SCRIPTS = (
+#     "exp2_xgboost.py",
+#     "exp2_svm.py",
+#     "exp2_rocket.py",
+#     "exp2_lstm.py",
+# )
+
+BALANCED = False
+RUN_NEUROCOMBAT = False
 
 
 def _resolve_python() -> str:
@@ -33,12 +48,22 @@ def _resolve_python() -> str:
     return sys.executable
 
 
-def _run_one(script: str, *, balanced: bool, python: str) -> int:
-    tag = "balanced" if balanced else "unbalanced"
-    name = f"{Path(script).stem}_{tag}"
+def _run_one(
+    script: str,
+    *,
+    balanced: bool,
+    neurocombat: bool,
+    python: str,
+) -> int:
+    stem = Path(script).stem
+    tag_parts = [stem, "balanced" if balanced else "unbalanced"]
+    if neurocombat:
+        tag_parts.append("neurocombat")
+    name = "_".join(tag_parts)
     log_path = LOG_DIR / f"{name}.log"
     env = os.environ.copy()
     env["DOWNSAMPLE_GROUP_SEX"] = "1" if balanced else "0"
+    env["RUN_NEUROCOMBAT"] = "1" if neurocombat else "0"
     cmd = [python, str(COLAB / script)]
 
     print(f"=== {name} ===", flush=True)
@@ -69,8 +94,19 @@ def main() -> None:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     os.chdir(ROOT)
 
+    print(
+        f"Config: balanced={BALANCED}, neurocombat={RUN_NEUROCOMBAT}, "
+        f"scripts={len(TRAIN_SCRIPTS)}",
+        flush=True,
+    )
+
     for script in TRAIN_SCRIPTS:
-        code = _run_one(script, balanced=True, python=python)
+        code = _run_one(
+            script,
+            balanced=BALANCED,
+            neurocombat=RUN_NEUROCOMBAT,
+            python=python,
+        )
         if code != 0:
             sys.exit(code)
 

@@ -63,6 +63,7 @@ namex==0.1.0
 nest-asyncio==1.6.0
 networkx==3.6.1
 neuroCombat==0.2.12
+neurocombat-sklearn>=0.1.2
 nibabel==5.4.2
 ninja==1.13.0
 numba==0.65.1

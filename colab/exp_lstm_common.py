@@ -7,9 +7,10 @@ import time
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
-import exp1_utils as u
+import exp_utils as u
+import exp_harmonize as h
 import matplotlib.pyplot as plt
 import numpy as np
 import optuna
@@ -122,6 +123,7 @@ class LstmExperimentConfig:
     model_slug: str = "lstm"
     downsample_group_sex: bool = True
     title_prefix: str = "LSTM"
+    run_neurocombat: bool = False
 
 
 def _class_weight_dict(y_tr: np.ndarray) -> dict[int, float] | None:
@@ -344,31 +346,60 @@ def run_lstm_experiment(cfg: LstmExperimentConfig) -> None:
             model_slug=cfg.model_slug,
             run_dir_override=run_dir_override,
             create_checkpoints=True,
+            run_neurocombat=cfg.run_neurocombat,
         )
     else:
-        run_dir_fn: Callable[..., Path] = u.exp1_run_dir
-        run_dir = run_dir_fn(
+        run_dir = u.resolve_exp1_run_dir(
             colab_dir,
             downsample_group_sex=cfg.downsample_group_sex,
             model_slug=cfg.model_slug,
+            run_dir_override=run_dir_override,
+            create_checkpoints=True,
+            run_neurocombat=cfg.run_neurocombat,
         )
     fig_dir = run_dir / "figures"
     tab_dir = run_dir / "tables"
 
-    X_3d, y, groups, sex, feat_names, slot_labels = u.load_tensor(
-        cfg.csv_path,
-        cfg.exp_md_path,
-        cfg.pair_order,
-        ["ID_PT", "COMBINATION_NUMBER", "TRIPLET_IDX"],
-        require_sex=cfg.downsample_group_sex,
-        temporal_mode=cfg.temporal_mode,
-        dt_epsilon=cfg.dt_epsilon,
-    )
-    if ablation_drop_rois:
-        X_3d = u.mask_rois_in_X_3d(X_3d, slot_labels, ablation_drop_rois)
+    group_key = ["ID_PT", "COMBINATION_NUMBER", "TRIPLET_IDX"]
+    assets: dict[str, Any] | None = None
+    if cfg.run_neurocombat:
+        mode_label = cfg.temporal_mode.replace("_", " ")
         print(
-            f"Ablação — ROIs zeradas ({len(ablation_drop_rois)}): {ablation_drop_rois}"
+            "NeuroComBat por fold (neurocombat-sklearn): fit nas imagens do "
+            f"treino externo; transform antes de {mode_label} e z-score."
         )
+        assets = h.load_cv_assets(
+            cfg.csv_path,
+            cfg.exp_md_path,
+            cfg.pair_order,
+            group_key,
+            run_neurocombat=True,
+            require_sex=cfg.downsample_group_sex,
+            temporal_mode=cfg.temporal_mode,
+            dt_epsilon=cfg.dt_epsilon,
+        )
+        y = assets["y"]
+        groups = assets["groups"]
+        sex = assets["sex"]
+        feat_names = assets["feat_names"]
+        slot_labels = assets["slot_labels"]
+        X_3d = assets["X_3d"]
+    else:
+        X_3d, y, groups, sex, feat_names, slot_labels = u.load_tensor(
+            cfg.csv_path,
+            cfg.exp_md_path,
+            cfg.pair_order,
+            group_key,
+            require_sex=cfg.downsample_group_sex,
+            temporal_mode=cfg.temporal_mode,
+            dt_epsilon=cfg.dt_epsilon,
+        )
+        if ablation_drop_rois:
+            X_3d = u.mask_rois_in_X_3d(X_3d, slot_labels, ablation_drop_rois)
+            print(
+                f"Ablação — ROIs zeradas ({len(ablation_drop_rois)}): "
+                f"{ablation_drop_rois}"
+            )
 
     use_fixed_params = (
         cfg.exp_name == "exp2"
@@ -383,8 +414,8 @@ def run_lstm_experiment(cfg: LstmExperimentConfig) -> None:
     elif use_fixed_params:
         print(f"Ablação — hiperparâmetros do baseline: {baseline_run_dir}")
 
-    n_raw = X_3d.shape[2]
     n_samples = len(y)
+    n_raw: int | None = int(X_3d.shape[2]) if X_3d is not None else None
 
     sgk = StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
     dummy = np.zeros(len(y), dtype=np.int8)
@@ -393,7 +424,6 @@ def run_lstm_experiment(cfg: LstmExperimentConfig) -> None:
     auc_folds: list[float] = []
     f1_folds: list[float] = []
     ap_folds: list[float] = []
-    is_exp2 = cfg.exp_name == "exp2"
 
     y_oof = np.full(n_samples, -1, dtype=np.int32)
     pred_oof = np.full(n_samples, -1, dtype=np.int32)
@@ -436,6 +466,15 @@ def run_lstm_experiment(cfg: LstmExperimentConfig) -> None:
                 f"Fold 1 — treino externo: {n_tr0} -> {len(train_idx)} amostras"
                 + (" (após downsample)." if cfg.downsample_group_sex else ".")
             )
+
+        if assets is not None:
+            X_3d, feat_names, slot_labels = h.fold_tensor_from_assets(
+                assets, train_idx, test_idx, run_neurocombat=True
+            )
+            if ablation_drop_rois:
+                X_3d = u.mask_rois_in_X_3d(X_3d, slot_labels, ablation_drop_rois)
+            if n_raw is None:
+                n_raw = int(X_3d.shape[2])
 
         inner_splits = u.inner_cv_splits(
             train_idx,
@@ -536,27 +575,28 @@ def run_lstm_experiment(cfg: LstmExperimentConfig) -> None:
 
         fold_best_params_log.append({"fold": int(fold_id), "best_params": best_params})
 
-        if is_exp2:
-            ckpt_extra = {
-                "corr_thr": CORR_THR,
-                "var_thr": VAR_THR,
-                "temporal_mode": cfg.temporal_mode,
-                "dt_epsilon": cfg.dt_epsilon,
-                "downsample_group_sex": cfg.downsample_group_sex,
-                "ablation_drop_rois": ablation_drop_rois,
-            }
-            u.save_lstm_fold_checkpoint(
-                run_dir,
-                fold_id,
-                model,
-                scaler=scaler,
-                keep_final=keep_final,
-                best_val_auc=best_val_auc,
-                best_params=best_params,
-                seq_len=seq_len,
-                n_feat=n_feat_seq,
-                extra_meta=ckpt_extra,
-            )
+        ckpt_extra: dict[str, object] = {
+            "corr_thr": CORR_THR,
+            "var_thr": VAR_THR,
+            "temporal_mode": cfg.temporal_mode,
+            "dt_epsilon": cfg.dt_epsilon,
+            "downsample_group_sex": cfg.downsample_group_sex,
+            "run_neurocombat": cfg.run_neurocombat,
+        }
+        if ablation_drop_rois:
+            ckpt_extra["ablation_drop_rois"] = ablation_drop_rois
+        u.save_lstm_fold_checkpoint(
+            run_dir,
+            fold_id,
+            model,
+            scaler=scaler,
+            keep_final=keep_final,
+            best_val_auc=best_val_auc,
+            best_params=best_params,
+            seq_len=seq_len,
+            n_feat=n_feat_seq,
+            extra_meta=ckpt_extra,
+        )
 
         curves = u.keras_history_to_training_curves(hist.history)
         fold_training_curves.append(curves)
@@ -729,8 +769,7 @@ def run_lstm_experiment(cfg: LstmExperimentConfig) -> None:
         fig_sh.tight_layout()
         u.save_pdf(fig_sh, fig_dir / "shap_summary.pdf")
 
-    if is_exp2:
-        u.save_fold_best_params_json(tab_dir / "fold_best_params.json", fold_best_params_log)
+    u.save_fold_best_params_json(tab_dir / "fold_best_params.json", fold_best_params_log)
 
     elapsed = time.perf_counter() - t0
     print(f"Tempo total: {elapsed:.1f} s — artefactos em {run_dir}")
@@ -741,12 +780,12 @@ def run_lstm_experiment(cfg: LstmExperimentConfig) -> None:
         "dt_epsilon": cfg.dt_epsilon,
         "lstm_seq_len": u.PANEL_SEQ_STEPS,
         "metrics_schema": "acc,auc,f1,ap",
-        "checkpoints": is_exp2,
-        "checkpoint_selection_metric": "val_auc" if is_exp2 else None,
+        "checkpoints": True,
+        "checkpoint_selection_metric": "val_auc",
         "csv_schema": (
             "metrics_per_fold, oof_predictions, fold_test_scores, "
-            "importance_shap_*, training_curves_fold{0..4}, training_curves_mean"
-            + (", checkpoints/fold_*" if is_exp2 else "")
+            "importance_shap_*, training_curves_fold{0..4}, training_curves_mean, "
+            "checkpoints/fold_*, fold_best_params.json"
         ),
     }
     if ablation_drop_rois:

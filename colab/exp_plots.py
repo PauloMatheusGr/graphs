@@ -1,27 +1,19 @@
-"""Regenera PDFs a partir dos CSVs em tables/ (exp2_xgboost / exp2_rocket / exp2_svm / exp2_lstm).
+"""Regenera PDFs a partir dos CSVs em tables/ (runs exp1 ou exp2).
 
-Edite apenas a secção CONFIG abaixo (pasta do run e textos dos gráficos), depois execute:
+  python colab/exp_plots.py
 
-  python colab/exp2_plots.py
-
-Se correr a partir da pasta colab/:
-
-  python exp2_plots.py
+Variável de ambiente RUN_DIR (pasta do run com tables/). Títulos inferem Exp1/Exp2
+a partir do caminho (…/exp1/… ou …/exp2/…).
 """
 
 from __future__ import annotations
 
+import os as _os
 from pathlib import Path
 
-import exp1_utils as u
+import exp_utils as u
 import numpy as np
 import pandas as pd
-
-# ---------------------------------------------------------------------------
-# CONFIG — edite aqui
-# ---------------------------------------------------------------------------
-
-import os as _os
 
 _COLAB = Path(__file__).resolve().parent
 _DEFAULT_RUN = _COLAB / "exp2" / "unbalanced" / "lstm"
@@ -29,44 +21,46 @@ RUN_DIR = Path(_os.environ["RUN_DIR"]) if _os.environ.get("RUN_DIR") else _DEFAU
 
 FPR_GRID = np.linspace(0.0, 1.0, 101)
 REC_GRID = np.linspace(0.0, 1.0, 101)
-
-TITLE_FEATURE_COUNTS = (
-    "Exp2 LSTM — Nº de atributos — Raw vs correlação vs variância (fold 1, tr_fit)"
-)
-YLABEL_FEATURE_COUNTS = "Nº atributos"
-
-TITLE_TRAINING_CURVES = (
-    "Exp2 LSTM — loss e AUC na validação (fold 1, holdout tr_fit|val)"
-)
-TITLE_TRAINING_CURVES_FOLD = (
-    "Exp2 — fold {k}/{n} — logloss e acurácia (treino vs validação, tr_fit|val)"
-)
-TITLE_TRAINING_CURVES_MEAN = (
-    "Exp2 — média dos folds externos — logloss e acurácia (treino vs validação)"
-)
-XLABEL_TRAINING_CURVES = "passo"
-
-TITLE_CONFUSION = "Exp2 LSTM — matriz de confusão (predições OOF, 5-fold)"
 CMAP_CONFUSION = "Blues"
-
-TITLE_PREFIX_ROC_PR = "Exp2 LSTM"
 ROC_SCOPE_LABEL = "teste por fold"
 PR_SCOPE_LABEL = "teste por fold"
-
-TITLE_METRICS_BOX = "Exp2 LSTM — distribuição das métricas no teste (5 folds)"
-XTICK_METRICS = ("Acc", "AUC", "F1", "AP")
-
-TITLE_BARS_SHAP_ROI = "Exp2 LSTM — |SHAP| agregado por ROI (média dos folds)"
-TITLE_BARS_SHAP_ATTR = "Exp2 LSTM — |SHAP| agregado por atributo"
-XLABEL_BARS_SHAP = "Valor agregado"
+XLABEL_BARS = "Valor agregado"
 TOP_K_SHAP = 20
-
-TITLE_BARS_COEF_ROI = "Exp2 SVM linear — |coef.| agregado por ROI"
-TITLE_BARS_COEF_ATTR = "Exp2 SVM linear — |coef.| agregado por atributo"
-XLABEL_BARS_COEF = "Valor agregado"
 TOP_K_COEF = 20
 
-# ---------------------------------------------------------------------------
+
+def _exp_label(run_dir: Path) -> str:
+    parts = run_dir.parts
+    if "exp1" in parts:
+        return "Exp1"
+    if "exp2" in parts:
+        return "Exp2"
+    return "Exp"
+
+
+def _titles(run_dir: Path) -> dict[str, str]:
+    e = _exp_label(run_dir)
+    return {
+        "feature_counts": (
+            f"{e} LSTM — Nº de atributos — Raw vs correlação vs variância (fold 1, tr_fit)"
+        ),
+        "ylabel_feature_counts": "Nº atributos",
+        "training_curves": f"{e} LSTM — loss e AUC na validação (fold 1, holdout tr_fit|val)",
+        "training_curves_fold": (
+            f"{e} — fold {{k}}/{{n}} — logloss e acurácia (treino vs validação, tr_fit|val)"
+        ),
+        "training_curves_mean": (
+            f"{e} — média dos folds externos — logloss e acurácia (treino vs validação)"
+        ),
+        "xlabel_training": "passo",
+        "confusion": f"{e} LSTM — matriz de confusão (predições OOF, 5-fold)",
+        "roc_pr_prefix": f"{e} LSTM",
+        "metrics_box": f"{e} LSTM — distribuição das métricas no teste (5 folds)",
+        "shap_roi": f"{e} LSTM — |SHAP| agregado por ROI (média dos folds)",
+        "shap_attr": f"{e} LSTM — |SHAP| agregado por atributo",
+        "coef_roi": f"{e} SVM linear — |coef.| agregado por ROI",
+        "coef_attr": f"{e} SVM linear — |coef.| agregado por atributo",
+    }
 
 
 def _importance_csv_to_dict(path: Path) -> dict[str, float]:
@@ -76,6 +70,7 @@ def _importance_csv_to_dict(path: Path) -> dict[str, float]:
 
 def main() -> None:
     run_dir = RUN_DIR.resolve()
+    t = _titles(run_dir)
     tab = run_dir / "tables"
     fig = run_dir / "figures"
     fig.mkdir(parents=True, exist_ok=True)
@@ -85,8 +80,8 @@ def main() -> None:
         u.plot_feature_counts_bar_pdf(
             fcounts,
             fig / "feature_counts.pdf",
-            title=TITLE_FEATURE_COUNTS,
-            ylabel=YLABEL_FEATURE_COUNTS,
+            title=t["feature_counts"],
+            ylabel=t["ylabel_feature_counts"],
         )
 
     has_curve = any(
@@ -96,9 +91,9 @@ def main() -> None:
         u.regenerate_supervised_training_curve_plots(
             tab,
             fig,
-            title_fold_tpl=TITLE_TRAINING_CURVES_FOLD,
-            title_mean=TITLE_TRAINING_CURVES_MEAN,
-            xlabel=XLABEL_TRAINING_CURVES,
+            title_fold_tpl=t["training_curves_fold"],
+            title_mean=t["training_curves_mean"],
+            xlabel=t["xlabel_training"],
         )
 
     oof_path = tab / "oof_predictions.csv"
@@ -108,7 +103,7 @@ def main() -> None:
             yt,
             yp,
             fig / "confusion_oof.pdf",
-            title=TITLE_CONFUSION,
+            title=t["confusion"],
             cmap=CMAP_CONFUSION,
         )
 
@@ -120,7 +115,7 @@ def main() -> None:
             score_splits,
             fig / "roc_cv.pdf",
             fig / "pr_cv.pdf",
-            title_prefix=TITLE_PREFIX_ROC_PR,
+            title_prefix=t["roc_pr_prefix"],
             fpr_grid=FPR_GRID,
             rec_grid=REC_GRID,
             roc_scope_label=ROC_SCOPE_LABEL,
@@ -136,8 +131,8 @@ def main() -> None:
             auc_a,
             f1,
             fig / "metrics_box_cv.pdf",
-            title=TITLE_METRICS_BOX,
-            xtick_labels=XTICK_METRICS if has_ap else ("Acc", "AUC", "F1"),
+            title=t["metrics_box"],
+            xtick_labels=("Acc", "AUC", "F1", "AP") if has_ap else ("Acc", "AUC", "F1"),
             ap=ap_a if has_ap else None,
         )
 
@@ -148,18 +143,18 @@ def main() -> None:
         u.plot_top_bars_pdf(
             d,
             fig / "shap_top_roi.pdf",
-            title=TITLE_BARS_SHAP_ROI,
+            title=t["shap_roi"],
             top_k=min(TOP_K_SHAP, max(len(d), 1)),
-            xlabel=XLABEL_BARS_SHAP,
+            xlabel=XLABEL_BARS,
         )
     if ap_shap.is_file():
         d = _importance_csv_to_dict(ap_shap)
         u.plot_top_bars_pdf(
             d,
             fig / "shap_top_attr.pdf",
-            title=TITLE_BARS_SHAP_ATTR,
+            title=t["shap_attr"],
             top_k=min(TOP_K_SHAP, max(len(d), 1)),
-            xlabel=XLABEL_BARS_SHAP,
+            xlabel=XLABEL_BARS,
         )
 
     rp_coef = tab / "importance_coef_roi_mean.csv"
@@ -169,18 +164,18 @@ def main() -> None:
         u.plot_top_bars_pdf(
             d,
             fig / "coef_top_roi.pdf",
-            title=TITLE_BARS_COEF_ROI,
+            title=t["coef_roi"],
             top_k=min(TOP_K_COEF, max(len(d), 1)),
-            xlabel=XLABEL_BARS_COEF,
+            xlabel=XLABEL_BARS,
         )
     if ap_coef.is_file():
         d = _importance_csv_to_dict(ap_coef)
         u.plot_top_bars_pdf(
             d,
             fig / "coef_top_attr.pdf",
-            title=TITLE_BARS_COEF_ATTR,
+            title=t["coef_attr"],
             top_k=min(TOP_K_COEF, max(len(d), 1)),
-            xlabel=XLABEL_BARS_COEF,
+            xlabel=XLABEL_BARS,
         )
 
     print(f"Figuras gravadas em {fig}")

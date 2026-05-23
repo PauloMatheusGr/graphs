@@ -1,8 +1,9 @@
-"""Funções partilhadas entre exp1/exp2 (xgboost, rocket, svm): dados, CV, plots."""
+"""Funções partilhadas entre exp1 e exp2 (xgboost, rocket, svm, lstm): dados, CV, plots."""
 
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,14 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import StratifiedGroupKFold
 from sklearn.preprocessing import StandardScaler
+
+
+def env_bool(key: str, default: bool) -> bool:
+    """Lê variável de ambiente booleana (1/true/yes). Usado por run_exp2_all.py e scripts exp1/exp2."""
+    v = os.environ.get(key)
+    if v is None:
+        return default
+    return v.strip().lower() in ("1", "true", "yes")
 
 
 def parse_feature_columns(exp_md_path: Path) -> list[str]:
@@ -163,6 +172,31 @@ def load_tensor(
     dt_epsilon: float = 0.5,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list[str], list[str]]:
     """temporal_mode: none | delta_rate (exp1) | baseline_rate (exp2)."""
+    df = pd.read_csv(csv_path)
+    return load_tensor_from_dataframe(
+        df,
+        exp_md_path,
+        pair_order,
+        group_key,
+        require_sex=require_sex,
+        temporal_mode=temporal_mode,
+        temporal_rate_norm=temporal_rate_norm,
+        dt_epsilon=dt_epsilon,
+    )
+
+
+def load_tensor_from_dataframe(
+    df: pd.DataFrame,
+    exp_md_path: Path,
+    pair_order: list[str],
+    group_key: list[str],
+    *,
+    require_sex: bool = False,
+    temporal_mode: str = "none",
+    temporal_rate_norm: bool | None = None,
+    dt_epsilon: float = 0.5,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list[str], list[str]]:
+    """Como load_tensor, mas a partir de um DataFrame já em memória."""
     if temporal_rate_norm is not None:
         temporal_mode = "delta_rate" if temporal_rate_norm else "none"
     if temporal_mode not in ("none", "delta_rate", "baseline_rate"):
@@ -172,7 +206,7 @@ def load_tensor(
         )
 
     feat_names = parse_feature_columns(exp_md_path)
-    df = pd.read_csv(csv_path)
+    df = df.copy()
     df["ID_PT"] = df["ID_PT"].astype(str)
     df["pair"] = df["pair"].astype(str).str.strip()
     y_map = {"sMCI": 0, "pMCI": 1}
@@ -515,6 +549,34 @@ def mask_rois_in_X_3d(
     return X
 
 
+def resolve_exp1_run_dir(
+    colab_dir: Path,
+    *,
+    downsample_group_sex: bool,
+    model_slug: str,
+    run_dir_override: Path | str | None = None,
+    create_checkpoints: bool = True,
+    run_neurocombat: bool = False,
+) -> Path:
+    """RUN_DIR explícito ou colab/exp1/{scenario}/{model_slug}/."""
+    if run_neurocombat:
+        model_slug = f"{model_slug}_neurocombat"
+    if run_dir_override is not None:
+        root = Path(run_dir_override)
+        (root / "figures").mkdir(parents=True, exist_ok=True)
+        (root / "tables").mkdir(parents=True, exist_ok=True)
+        if create_checkpoints:
+            (root / "checkpoints").mkdir(parents=True, exist_ok=True)
+        return root
+    return exp_run_dir(
+        colab_dir,
+        exp_name="exp1",
+        downsample_group_sex=downsample_group_sex,
+        model_slug=model_slug,
+        create_checkpoints=create_checkpoints,
+    )
+
+
 def resolve_exp2_run_dir(
     colab_dir: Path,
     *,
@@ -522,8 +584,11 @@ def resolve_exp2_run_dir(
     model_slug: str,
     run_dir_override: Path | str | None = None,
     create_checkpoints: bool = True,
+    run_neurocombat: bool = False,
 ) -> Path:
     """RUN_DIR explícito ou colab/exp2/{scenario}/{model_slug}/."""
+    if run_neurocombat:
+        model_slug = f"{model_slug}_neurocombat"
     if run_dir_override is not None:
         root = Path(run_dir_override)
         (root / "figures").mkdir(parents=True, exist_ok=True)

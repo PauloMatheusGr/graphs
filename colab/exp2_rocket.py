@@ -12,7 +12,8 @@ import time
 from pathlib import Path
 from typing import Any
 
-import exp1_utils as u
+import exp_utils as u
+import exp_harmonize as h
 import matplotlib.pyplot as plt
 import numpy as np
 import optuna
@@ -25,7 +26,7 @@ from sktime.transformations.panel.rocket import Rocket
 
 ROOT = Path(__file__).resolve().parents[1]
 COLAB_DIR = Path(__file__).resolve().parent
-CSV_PATH = ROOT / "csvs/abordagem_4_sMCI_pMCI/all_unitary_features_neurocombat.csv"
+CSV_PATH = ROOT / "csvs/abordagem_4_sMCI_pMCI/all_unitary_features.csv"
 EXP2_PATH = ROOT / "exp2.md"
 MODEL_SLUG = "rocket"
 PAIR_ORDER = ["1", "2", "3"]
@@ -49,6 +50,7 @@ def _env_bool(key: str, default: bool) -> bool:
 
 
 DOWNSAMPLE_GROUP_SEX = _env_bool("DOWNSAMPLE_GROUP_SEX", True)
+RUN_NEUROCOMBAT = _env_bool("RUN_NEUROCOMBAT", False)
 FPR_GRID = np.linspace(0.0, 1.0, 101)
 REC_GRID = np.linspace(0.0, 1.0, 101)
 
@@ -107,25 +109,36 @@ def _fit_l1_logreg_optuna(
 
 def main() -> None:
     t0 = time.perf_counter()
-    run_dir = u.exp2_run_dir(
+    run_dir = u.resolve_exp2_run_dir(
         COLAB_DIR,
         downsample_group_sex=DOWNSAMPLE_GROUP_SEX,
         model_slug=MODEL_SLUG,
+        run_neurocombat=RUN_NEUROCOMBAT,
     )
     fig_dir = run_dir / "figures"
     tab_dir = run_dir / "tables"
 
-    X_3d, y, groups, sex, _feat_names, _slot_labels = u.load_tensor(
+    if RUN_NEUROCOMBAT:
+        print(
+            "NeuroComBat por fold (neurocombat-sklearn): fit nas imagens do "
+            "treino externo; transform antes de baseline_rate e z-score."
+        )
+    assets = h.load_cv_assets(
         CSV_PATH,
         EXP2_PATH,
         PAIR_ORDER,
         GROUP_KEY,
+        run_neurocombat=RUN_NEUROCOMBAT,
         require_sex=DOWNSAMPLE_GROUP_SEX,
         temporal_mode=TEMPORAL_MODE,
         dt_epsilon=DT_EPSILON,
     )
-    n_raw = X_3d.shape[2]
+    y = assets["y"]
+    groups = assets["groups"]
+    sex = assets["sex"]
+    X_3d = assets["X_3d"]
     n_samples = len(y)
+    n_raw: int | None = int(X_3d.shape[2]) if X_3d is not None else None
 
     sgk = StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
     dummy = np.zeros(len(y), dtype=np.int8)
@@ -162,6 +175,12 @@ def main() -> None:
                 f"Fold 1 — treino externo: {n_tr0} -> {len(train_idx)} amostras"
                 + (" (após downsample)." if DOWNSAMPLE_GROUP_SEX else ".")
             )
+
+        X_3d, _feat_names, _slot_labels = h.fold_tensor_from_assets(
+            assets, train_idx, test_idx, run_neurocombat=RUN_NEUROCOMBAT
+        )
+        if n_raw is None:
+            n_raw = int(X_3d.shape[2])
 
         inner_splits = u.inner_cv_splits(
             train_idx,

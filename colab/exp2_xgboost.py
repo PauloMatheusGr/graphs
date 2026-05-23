@@ -14,7 +14,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-import exp1_utils as u
+import exp_utils as u
+import exp_harmonize as h
 import matplotlib.pyplot as plt
 import optuna
 import numpy as np
@@ -28,12 +29,12 @@ from xgboost import XGBClassifier
 
 ROOT = Path(__file__).resolve().parents[1]
 COLAB_DIR = Path(__file__).resolve().parent
-CSV_PATH = ROOT / "csvs/abordagem_4_sMCI_pMCI/all_unitary_features_neurocombat.csv"
+CSV_PATH = ROOT / "csvs/abordagem_4_sMCI_pMCI/all_unitary_features.csv"
 EXP2_PATH = ROOT / "exp2.md"
 MODEL_SLUG = "xgboost"
 PAIR_ORDER = ["1", "2", "3"]
 GROUP_KEY = ["ID_PT", "COMBINATION_NUMBER", "TRIPLET_IDX"]
-# Absolutos: img1 baseline; img2/3 taxa desde baseline (ver exp2.md e exp1_utils).
+# Absolutos: img1 baseline; img2/3 taxa desde baseline (ver exp2.md e exp_utils).
 TEMPORAL_MODE = "baseline_rate"
 DT_EPSILON = 0.5
 CORR_THR = 0.9
@@ -64,6 +65,7 @@ def _parse_drop_rois_env() -> list[str]:
 
 
 DOWNSAMPLE_GROUP_SEX = _env_bool("DOWNSAMPLE_GROUP_SEX", True)
+RUN_NEUROCOMBAT = _env_bool("RUN_NEUROCOMBAT", False)
 ABLATION_DROP_ROIS = _parse_drop_rois_env()
 ABLATION_SKIP_OPTUNA = _env_bool("ABLATION_SKIP_OPTUNA", False)
 FPR_GRID = np.linspace(0.0, 1.0, 101)
@@ -296,20 +298,33 @@ def main() -> None:
         model_slug=model_slug,
         run_dir_override=run_dir_override,
         create_checkpoints=True,
+        run_neurocombat=RUN_NEUROCOMBAT,
     )
     fig_dir = run_dir / "figures"
     tab_dir = run_dir / "tables"
 
-    X_3d, y, groups, sex, feat_names, slot_labels = u.load_tensor(
+    if RUN_NEUROCOMBAT:
+        print(
+            "NeuroComBat por fold (neurocombat-sklearn): fit nas imagens do "
+            "treino externo; transform antes de baseline_rate e z-score."
+        )
+    assets = h.load_cv_assets(
         CSV_PATH,
         EXP2_PATH,
         PAIR_ORDER,
         GROUP_KEY,
+        run_neurocombat=RUN_NEUROCOMBAT,
         require_sex=DOWNSAMPLE_GROUP_SEX,
         temporal_mode=TEMPORAL_MODE,
         dt_epsilon=DT_EPSILON,
     )
-    if ABLATION_DROP_ROIS:
+    y = assets["y"]
+    groups = assets["groups"]
+    sex = assets["sex"]
+    feat_names = assets["feat_names"]
+    slot_labels = assets["slot_labels"]
+    X_3d = assets["X_3d"]
+    if not RUN_NEUROCOMBAT and ABLATION_DROP_ROIS:
         X_3d = u.mask_rois_in_X_3d(X_3d, slot_labels, ABLATION_DROP_ROIS)
         print(f"Ablação — ROIs zeradas ({len(ABLATION_DROP_ROIS)}): {ABLATION_DROP_ROIS}")
 
@@ -322,8 +337,8 @@ def main() -> None:
     elif use_fixed_params:
         print(f"Ablação — hiperparâmetros do baseline: {baseline_run_dir}")
 
-    n_raw = X_3d.shape[2]
     n_samples = len(y)
+    n_raw: int | None = int(X_3d.shape[2]) if X_3d is not None else None
 
     sgk = StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
     dummy = np.zeros(len(y), dtype=np.int8)
@@ -367,6 +382,14 @@ def main() -> None:
                 f"Fold 1 — treino externo: {n_tr0} -> {len(train_idx)} amostras"
                 + (" (após downsample)." if DOWNSAMPLE_GROUP_SEX else ".")
             )
+
+        X_3d, feat_names, slot_labels = h.fold_tensor_from_assets(
+            assets, train_idx, test_idx, run_neurocombat=RUN_NEUROCOMBAT
+        )
+        if RUN_NEUROCOMBAT and ABLATION_DROP_ROIS:
+            X_3d = u.mask_rois_in_X_3d(X_3d, slot_labels, ABLATION_DROP_ROIS)
+        if n_raw is None:
+            n_raw = int(X_3d.shape[2])
 
         inner_splits = u.inner_cv_splits(
             train_idx,

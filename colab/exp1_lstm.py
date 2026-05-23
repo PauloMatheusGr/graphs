@@ -1,8 +1,8 @@
 """exp1: LSTM em sequências (3 passos × 20 ROIs) com deltas taxados (espelho exp1_xgboost.py).
 
 Entrada: tensor (n, 60, p) → (n, 3, 20·p); Optuna + nested CV; SHAP Kernel agregado por ROI/atributo.
-Downsample opcional no treino externo (GROUP×SEX). Correr com DOWNSAMPLE_GROUP_SEX True/False
-para balanced vs unbalanced (pastas colab/exp1/balanced|unbalanced/lstm/).
+Downsample opcional no treino externo (GROUP×SEX). Variável de ambiente DOWNSAMPLE_GROUP_SEX
+(1/0) ou run_exp2_all.py → pastas colab/exp1/balanced|unbalanced/lstm/.
 """
 
 from __future__ import annotations
@@ -15,15 +15,17 @@ from pathlib import Path
 os.environ.setdefault("LSTM_DEVICE", "gpu")
 os.environ.setdefault("LSTM_GPU_INDEX", "0")
 
+import exp_utils as u
 from exp_lstm_common import LstmExperimentConfig, run_lstm_experiment
 
 ROOT = Path(__file__).resolve().parents[1]
 COLAB_DIR = Path(__file__).resolve().parent
-CSV_PATH = ROOT / "csvs/abordagem_4_sMCI_pMCI/all_delta_features_neurocombat.csv"
+CSV_PATH = ROOT / "csvs/abordagem_4_sMCI_pMCI/all_delta_features.csv"
 EXP1_PATH = ROOT / "exp1.md"
 PAIR_ORDER = ["12", "13", "23"]
 DT_EPSILON = 0.5
-DOWNSAMPLE_GROUP_SEX = True
+DOWNSAMPLE_GROUP_SEX = u.env_bool("DOWNSAMPLE_GROUP_SEX", True)
+RUN_NEUROCOMBAT = u.env_bool("RUN_NEUROCOMBAT", False)
 
 
 def main() -> None:
@@ -37,6 +39,7 @@ def main() -> None:
             dt_epsilon=DT_EPSILON,
             downsample_group_sex=DOWNSAMPLE_GROUP_SEX,
             title_prefix="Exp1 LSTM",
+            run_neurocombat=RUN_NEUROCOMBAT,
         )
     )
 

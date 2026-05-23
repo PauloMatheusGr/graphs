@@ -27,7 +27,7 @@ RM T1  →  ANTs (skull, denoise, N4, MNI)  →  QC (MRQy)  →  parcelação/se
 | Fase | Onde está documentado / implementado |
 |------|--------------------------------------|
 | Imagem → CSV | Secções 2–3 deste README; scripts em `images/`, `csvs/`, notebooks |
-| CSV → modelo | Secção 4; `colab/exp{1,2}_*.py`, `colab/exp1_utils.py` |
+| CSV → modelo | Secção 4; `colab/exp{1,2}_*.py`, `colab/exp_utils.py` |
 | **Segmento ativo** | **Experimento 2** (`exp2.md`): melhorias (AP, checkpoints, demografia, ablação ROI) |
 | Referência histórica | Experimento 1 (`exp1.md`): deltas; não re-treinado no ciclo atual |
 
@@ -212,7 +212,14 @@ A verificação de outliers foi realizada com **MRQy** sobre imagens RAW (IQMs s
 
 ### 3.1. Harmonização entre scanners (NeuroComBat)
 
-Implementação em **`features_selection.ipynb`** (pacote [`neuroCombat`](https://pypi.org/project/neuroCombat/) ≥ 0.2.10, ver `requirements-neurocombat.txt`). Ajuste **cross-sectional** (Fortin et al.), **não** Longitudinal ComBat (Beer et al.) — ver nota no fim desta secção.
+Duas vias no repositório (ajuste **cross-sectional**, Fortin et al.; **não** Longitudinal ComBat — ver nota no fim):
+
+| Via | Onde | Pacote | Uso |
+|-----|------|--------|-----|
+| **Coorte inteira** | `features_selection.ipynb` | [`neuroCombat`](https://pypi.org/project/neuroCombat/) ≥ 0.2.10 | Exploração / CSV `*_neurocombat.csv` |
+| **Por fold (exp1/exp2)** | `colab/exp_harmonize.py` + scripts `exp{1,2}_*.py` | [`neurocombat-sklearn`](https://pypi.org/project/neurocombat-sklearn/) ≥ 0.1.2 | CV sem vazamento de harmonização |
+
+Dependências: `requirements-neurocombat.txt` (notebook + exp2 com `RUN_NEUROCOMBAT=1`).
 
 ```bibtex
 @article{fortin-2018,
@@ -235,9 +242,9 @@ Implementação em **`features_selection.ipynb`** (pacote [`neuroCombat`](https:
 | Experimento | Entrada | Saída (usada em `colab/exp{1,2}_*.py`) |
 |-------------|---------|----------------------------------------|
 | **Exp1** (deltas) | `csvs/{ab}/all_delta_features.csv` | `all_delta_features_neurocombat.csv` |
-| **Exp2** (unitários, long) | `csvs/{ab}/all_unitary_features.csv` | `all_unitary_features_neurocombat.csv` |
+| **Exp2** (unitários, long) | `csvs/{ab}/all_unitary_features.csv` | `all_unitary_features_neurocombat.csv` (só notebook) |
 
-`{ab}` habitual: `abordagem_4_sMCI_pMCI`. No unitário harmonizado, a coluna **`MRI_DATE`** é removida da saída.
+`{ab}` habitual: `abordagem_4_sMCI_pMCI`. Nos scripts **exp2**, `CSV_PATH` aponta sempre para **`all_unitary_features.csv`** (sem harmonização prévia). No unitário harmonizado do notebook, a coluna **`MRI_DATE`** é removida da saída.
 
 #### Coluna `batch` (efeito de scanner)
 
@@ -269,13 +276,43 @@ Linhas são excluídas se faltar `batch`, `AGE`, `SEX` ou se alguma feature for 
 
 #### Baseline sem harmonização (sensibilidade)
 
-Para comparar com o pipeline sem ComBat, apontar `CSV_PATH` nos scripts `colab/exp2_*.py` (e exp1) para `all_unitary_features.csv` / `all_delta_features.csv` em vez dos ficheiros `*_neurocombat.csv`.
+Nos scripts exp2, manter `RUN_NEUROCOMBAT=False` (predefinição). No exp1, usar `all_delta_features.csv` em vez de `*_neurocombat.csv` se quiser o mesmo tipo de comparação.
 
-#### Limitações metodológicas (documentadas no notebook)
+#### Exp2: ComBat por fold (`RUN_NEUROCOMBAT`)
 
-1. **Coorte inteira:** o ComBat é ajustado em **todas** as linhas do CSV antes do CV. O z-score e a seleção de features em `colab/` são por fold (§4.3); o ComBat **não** é refitado por fold externo (melhoria futura).
-2. **Formato long:** cada linha ROI×`side`×`label`×`pair` conta como uma amostra independente no ComBat (correlação intra-paciente não modelada).
-3. **Longitudinal ComBat** (Beer et al., 2020) — referência para harmonização temporal explícita; **não implementado** neste repositório:
+Implementação em **`colab/exp_harmonize.py`** (`CombatModel` de neurocombat-sklearn, com compatibilidade sklearn ≥ 1.2).
+
+| Parâmetro | Valor |
+|-----------|--------|
+| Flag no script | `RUN_NEUROCOMBAT = False` ou env `RUN_NEUROCOMBAT=1` |
+| Entrada | `csvs/abordagem_4_sMCI_pMCI/all_unitary_features.csv` |
+| Unidade estatística | **Uma linha wide por `ID_IMG_ref`** (colunas = `roi\|side\|label` × feature radiomics) |
+| Fit ComBat | Imagens dos triplets do **treino externo** do fold (após downsample, se ativo) |
+| Transform | Imagens dos triplets **treino ∪ teste** desse fold |
+| Covariáveis | `batch`, `AGE`, `SEX` (sem `GROUP`, `TIME_PROG`, `DIAG`) |
+| Ordem no pipeline | ComBat → `baseline_rate` (`load_tensor`) → correlação/variância → `StandardScaler` (§4.3) |
+| Saídas | `colab/exp2/{balanced\|unbalanced}/{modelo}_neurocombat/` quando a flag está ativa |
+
+**Requisitos:** ≥ 2 níveis de `batch` no treino do fold. Batches com &lt; 3 imagens no treino: aviso. Batches que aparecem **só no teste** do fold: aviso e imagens mantêm features **não harmonizadas** (ComBat não pode aplicar parâmetros de scanner não vistos no fit).
+
+**Modelos:** `exp2_xgboost.py`, `exp2_svm.py`, `exp2_rocket.py`, `exp2_lstm.py` (via `exp_lstm_common.py`).
+
+```bash
+# Exemplo (venv do projeto)
+cd colab
+RUN_NEUROCOMBAT=1 ../.venv/bin/python exp2_svm.py
+```
+
+#### Limitações metodológicas
+
+**Notebook (coorte inteira):**
+
+1. ComBat em **todas** as linhas do CSV antes de qualquer CV.
+2. Formato **long** no notebook: cada linha ROI×`pair` conta como amostra independente (correlação intra-imagem não modelada; semântica de coluna misturada por ROI).
+
+**Exp2 com `RUN_NEUROCOMBAT=1`:** formato **wide por imagem** no ComBat; ainda assim `baseline_rate` é calculado na coorte inteira antes do split (ver §3.4). ComBat no **treino externo** inclui imagens do holdout interno (Optuna) — vazamento leve dentro do bloco de treino; não inclui triplets do teste externo.
+
+**Longitudinal ComBat** (Beer et al., 2020) — referência; **não implementado**:
 
 ```bibtex
 @article{beer-2020,
@@ -457,7 +494,7 @@ Script `features_radiomic.py` → `csvs/features_radiomic.csv`. Listas via `Radi
 
 | | **Exp1** (`delta_rate`) | **Exp2** (`baseline_rate`) |
 |---|-------------------------|----------------------------|
-| CSV | `all_delta_features_neurocombat.csv` | `all_unitary_features_neurocombat.csv` |
+| CSV | `all_delta_features.csv` ou `*_neurocombat.csv` (exp1) | `all_unitary_features.csv` (`RUN_NEUROCOMBAT` no pipeline) |
 | `PAIR_ORDER` | `["12","13","23"]` | `["1","2","3"]` |
 | Transformação | \(x' = x / \max(dt, \varepsilon)\) por par | `pair=1`: absoluto; `pair=2,3`: \((x-x_{\mathrm{baseline}})/\max(t_{12\|13},\varepsilon)\) |
 | `SEX` | Não dividido pelo tempo | Idem |
@@ -467,7 +504,7 @@ Script `features_radiomic.py` → `csvs/features_radiomic.csv`. Listas via `Radi
 
 **`TIME_PROG`:** não usar como feature na classificação sMCI/pMCI (vazamento de rótulo). Também **não** entra no design do NeuroComBat (§3.1).
 
-Implementação: `colab/exp1_utils.py` — `apply_temporal_rate_norm`, `apply_temporal_baseline_rate`, chamados em `load_tensor()`.
+Implementação: `colab/exp_utils.py` — `apply_temporal_rate_norm`, `apply_temporal_baseline_rate`, chamados em `load_tensor()`.
 
 ---
 
@@ -502,7 +539,7 @@ Controlado por **`DOWNSAMPLE_GROUP_SEX`** (env ou constante no script; default *
 
 **Não há** `train_test_split` fixo único. As métricas reportadas no artigo vêm das previsões **out-of-fold (OOF)**: em cada um dos 5 folds externos, o modelo prevê o conjunto de **teste** desse fold (dados que não entraram no treino daquela repetição). A junção das cinco partições de teste cobre os **1276** conjuntos uma vez.
 
-Implementação: `StratifiedGroupKFold` com `groups=ID_PT` em `colab/exp1_utils.py` (`inner_train_val`, `inner_cv_splits`, `downsample_train_indices`).
+Implementação: `StratifiedGroupKFold` com `groups=ID_PT` em `colab/exp_utils.py` (`inner_train_val`, `inner_cv_splits`, `downsample_train_indices`).
 
 Constantes globais: `RANDOM_STATE=42`, `CORR_THR=0.9`, `VAR_THR=0.0`, `DT_EPSILON=0.5`, `INNER_NCV_SPLITS=5`.
 
@@ -517,7 +554,7 @@ Constantes globais: `RANDOM_STATE=42`, `CORR_THR=0.9`, `VAR_THR=0.0`, `DT_EPSILO
 
 O classificador recebe tensores `(n, 60, n_feat)` (ou variantes sequenciais / ROCKET), **não** as 76 560 linhas do CSV. Vários conjuntos podem pertencer ao mesmo paciente.
 
-**Auditoria reprodutível:** script em `experimentos.ipynb` (ou funções em `exp1_utils`) com o mesmo CSV e `exp2.md`; export opcional para `colab/paper_split_audit/`.
+**Auditoria reprodutível:** script em `experimentos.ipynb` (ou funções em `exp_utils`) com o mesmo CSV e `exp2.md`; export opcional para `colab/paper_split_audit/`.
 
 #### Cinco folds externos: uma coorte, cinco repetições
 
@@ -841,7 +878,7 @@ ABLATION_ROIS=inf_lateral_ventricle,hippocampus,amygdala,accumbens_area,insula \
 
 ```bash
 .venv/bin/python colab/exp1_xgboost.py   # idem rocket, svm, lstm
-.venv/bin/python colab/exp1_plots.py
+.venv/bin/python colab/exp_plots.py
 ```
 
 **Dependências:** `numpy`, `pandas`, `scikit-learn`, `matplotlib`, `optuna`, `xgboost`, `shap`, `sktime`, `tensorflow` (LSTM).
@@ -862,7 +899,7 @@ ABLATION_ROIS=inf_lateral_ventricle,hippocampus,amygdala,accumbens_area,insula \
 | Scripts | `exp1_*.py` | `exp2_*.py` |
 | Pasta resultados | `colab/exp1/...` | `colab/exp2/...` |
 
-Mesma arquitetura de CV, filtros, Optuna e utilitários (`exp1_utils.py`, `exp_lstm_common.py`).
+Mesma arquitetura de CV, filtros, Optuna e utilitários (`exp_utils.py`, `exp_lstm_common.py`).
 
 ---
 

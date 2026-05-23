@@ -15,7 +15,7 @@ os.environ.setdefault("LSTM_GPU_INDEX", "0")
 from exp_lstm_common import LstmExperimentConfig, run_lstm_experiment
 
 ROOT = Path(__file__).resolve().parents[1]
-CSV_PATH = ROOT / "csvs/abordagem_4_sMCI_pMCI/all_unitary_features_neurocombat.csv"
+CSV_PATH = ROOT / "csvs/abordagem_4_sMCI_pMCI/all_unitary_features.csv"
 EXP2_PATH = ROOT / "exp2.md"
 PAIR_ORDER = ["1", "2", "3"]
 DT_EPSILON = 0.5
@@ -29,6 +29,7 @@ def _env_bool(key: str, default: bool) -> bool:
 
 
 DOWNSAMPLE_GROUP_SEX = _env_bool("DOWNSAMPLE_GROUP_SEX", True)
+RUN_NEUROCOMBAT = _env_bool("RUN_NEUROCOMBAT", False)
 
 
 def main() -> None:
@@ -42,6 +43,7 @@ def main() -> None:
             dt_epsilon=DT_EPSILON,
             downsample_group_sex=DOWNSAMPLE_GROUP_SEX,
             title_prefix="Exp2 LSTM",
+            run_neurocombat=RUN_NEUROCOMBAT,
         )
     )
 

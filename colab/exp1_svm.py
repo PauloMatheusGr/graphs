@@ -12,7 +12,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-import exp1_utils as u
+import exp_utils as u
+import exp_harmonize as h
 import matplotlib.pyplot as plt
 import numpy as np
 import optuna
@@ -24,7 +25,7 @@ from sklearn.svm import LinearSVC
 
 ROOT = Path(__file__).resolve().parents[1]
 COLAB_DIR = Path(__file__).resolve().parent
-CSV_PATH = ROOT / "csvs/abordagem_4_sMCI_pMCI/all_delta_features_neurocombat.csv"
+CSV_PATH = ROOT / "csvs/abordagem_4_sMCI_pMCI/all_delta_features.csv"
 EXP1_PATH = ROOT / "exp1.md"
 MODEL_SLUG = "svm"
 PAIR_ORDER = ["12", "13", "23"]
@@ -34,7 +35,9 @@ DT_EPSILON = 0.5
 CORR_THR = 0.9
 VAR_THR = 0.0
 RANDOM_STATE = 42
-DOWNSAMPLE_GROUP_SEX = True
+DOWNSAMPLE_GROUP_SEX = u.env_bool("DOWNSAMPLE_GROUP_SEX", True)
+RUN_NEUROCOMBAT = u.env_bool("RUN_NEUROCOMBAT", False)
+TEMPORAL_MODE = "delta_rate" if TEMPORAL_RATE_NORM else "none"
 FPR_GRID = np.linspace(0.0, 1.0, 101)
 REC_GRID = np.linspace(0.0, 1.0, 101)
 TOP_K_ROI = 10
@@ -103,25 +106,39 @@ def _fit_linear_svc_optuna(
 
 def main() -> None:
     t0 = time.perf_counter()
-    run_dir = u.exp1_run_dir(
+    run_dir = u.resolve_exp1_run_dir(
         COLAB_DIR,
         downsample_group_sex=DOWNSAMPLE_GROUP_SEX,
         model_slug=MODEL_SLUG,
+        run_neurocombat=RUN_NEUROCOMBAT,
+        create_checkpoints=True,
     )
     fig_dir = run_dir / "figures"
     tab_dir = run_dir / "tables"
 
-    X_3d, y, groups, sex, feat_names, slot_labels = u.load_tensor(
+    if RUN_NEUROCOMBAT:
+        print(
+            "NeuroComBat por fold (neurocombat-sklearn): fit nas imagens do "
+            "treino externo; transform antes de delta_rate e z-score."
+        )
+    assets = h.load_cv_assets(
         CSV_PATH,
         EXP1_PATH,
         PAIR_ORDER,
         GROUP_KEY,
+        run_neurocombat=RUN_NEUROCOMBAT,
         require_sex=DOWNSAMPLE_GROUP_SEX,
-        temporal_mode="delta_rate" if TEMPORAL_RATE_NORM else "none",
+        temporal_mode=TEMPORAL_MODE,
         dt_epsilon=DT_EPSILON,
     )
-    n_raw = X_3d.shape[2]
+    y = assets["y"]
+    groups = assets["groups"]
+    sex = assets["sex"]
+    feat_names = assets["feat_names"]
+    slot_labels = assets["slot_labels"]
+    X_3d = assets["X_3d"]
     n_samples = len(y)
+    n_raw: int | None = int(X_3d.shape[2]) if X_3d is not None else None
 
     sgk = StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
     dummy = np.zeros(len(y), dtype=np.int8)
@@ -143,6 +160,7 @@ def main() -> None:
 
     imp_roi: dict[str, float] = defaultdict(float)
     imp_attr: dict[str, float] = defaultdict(float)
+    fold_best_params_log: list[dict] = []
 
     if DOWNSAMPLE_GROUP_SEX:
         print("Downsample ativo: treino externo por paciente (estratos y×SEX).")
@@ -159,6 +177,12 @@ def main() -> None:
                 f"Fold 1 — treino externo: {n_tr0} -> {len(train_idx)} amostras"
                 + (" (após downsample)." if DOWNSAMPLE_GROUP_SEX else ".")
             )
+
+        X_3d, feat_names, slot_labels = h.fold_tensor_from_assets(
+            assets, train_idx, test_idx, run_neurocombat=RUN_NEUROCOMBAT
+        )
+        if n_raw is None:
+            n_raw = int(X_3d.shape[2])
 
         inner_splits = u.inner_cv_splits(
             train_idx,
@@ -233,6 +257,25 @@ def main() -> None:
         print(
             f"Fold {fold_id + 1}/5 — Optuna SVM linear (AUC val interna média em {len(inner_splits)} folds NCV="
             f"{best_val_auc:.4f}): {best_params}"
+        )
+
+        fold_best_params_log.append({"fold": int(fold_id), "best_params": best_params})
+        u.save_svm_fold_checkpoint(
+            run_dir,
+            fold_id,
+            model,
+            scaler=scaler,
+            keep_final=keep_final,
+            best_val_auc=best_val_auc,
+            best_params=best_params,
+            extra_meta={
+                "corr_thr": CORR_THR,
+                "var_thr": VAR_THR,
+                "temporal_mode": TEMPORAL_MODE,
+                "dt_epsilon": DT_EPSILON,
+                "downsample_group_sex": DOWNSAMPLE_GROUP_SEX,
+                "run_neurocombat": RUN_NEUROCOMBAT,
+            },
         )
 
         df_te = model.decision_function(X_test_flat)
@@ -349,6 +392,8 @@ def main() -> None:
         xlabel="Média do |coef| por coluna (por fold)",
     )
 
+    u.save_fold_best_params_json(tab_dir / "fold_best_params.json", fold_best_params_log)
+
     elapsed = time.perf_counter() - t0
     print(f"Tempo total: {elapsed:.1f} s — artefactos em {run_dir}")
     u.write_run_meta_json(
@@ -359,8 +404,14 @@ def main() -> None:
         extra={
             "inner_ncv_splits": INNER_NCV_SPLITS,
             "optuna_trials": OPTUNA_SVM_TRIALS,
-            "temporal_mode": "delta_rate" if TEMPORAL_RATE_NORM else "none",
+            "temporal_mode": TEMPORAL_MODE,
             "dt_epsilon": DT_EPSILON,
+            "checkpoints": True,
+            "checkpoint_selection_metric": "val_auc",
+            "csv_schema": (
+                "metrics_per_fold, oof_predictions, fold_test_scores, "
+                "importance_coef_*, checkpoints/fold_*, fold_best_params.json"
+            ),
         },
     )
 

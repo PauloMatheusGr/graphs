@@ -181,8 +181,8 @@ Esta secção descreve o que está **efetivamente implementado** nos scripts Col
 | Raiz do projeto | `ROOT = parents[1]` relativamente a `colab/` |
 | CSV lido | `csvs/abordagem_4_sMCI_pMCI/all_unitary_features_neurocombat.csv` |
 | Lista de atributos | Lida de `exp2.md`, linha que começa por `As colunas de atributos são` |
-| Utilitários | `colab/exp1_utils.py` (`load_tensor`, CV, plots) |
-| Figuras e tabelas | `colab/exp2/{balanced\|unbalanced}/{xgboost\|rocket\|svm\|lstm}/` — `figures/`, `tables/`, `checkpoints/`, `run_meta.json`; PDFs: `colab/exp2_plots.py`; demografia: `colab/analyze_oof_demographics.py` |
+| Utilitários | `colab/exp_utils.py` (`load_tensor`, CV, plots) |
+| Figuras e tabelas | `colab/exp2/{balanced\|unbalanced}/{xgboost\|rocket\|svm\|lstm}/` — `figures/`, `tables/`, `checkpoints/`, `run_meta.json`; PDFs: `colab/exp_plots.py`; demografia: `colab/analyze_oof_demographics.py` |
 
 ### Tensor e alvo
 
@@ -208,7 +208,7 @@ Esta secção descreve o que está **efetivamente implementado** nos scripts Col
 
 \(x_{\mathrm{baseline}}\) é o valor na **mesma ROI** (`roi`, `side`, `label`) na linha com `pair=1` do mesmo datapoint. \(\varepsilon =\) `DT_EPSILON` (por defeito **0,5** meses).
 
-**Implementação:** `colab/exp1_utils.py`, função `apply_temporal_baseline_rate`, activada por `load_tensor(..., temporal_mode="baseline_rate")`.
+**Implementação:** `colab/exp_utils.py`, função `apply_temporal_baseline_rate`, activada por `load_tensor(..., temporal_mode="baseline_rate")`.
 
 **Nota:** não se usa `t23` nesta variante (mudança img2→img3); usa-se sempre o referencial desde a **imagem 1** (`t13` para `pair=3`).
 
@@ -226,7 +226,7 @@ Metadados: `tables/run_meta.json` inclui `temporal_mode`, `dt_epsilon`.
 
 ### Validação cruzada (externa e interna)
 
-**Igual ao experimento 1** nos scripts `exp2_xgboost.py`, `exp2_svm.py`, `exp2_rocket.py`, `exp2_lstm.py` (mesma lógica em `colab/exp1_utils.py` e `colab/exp_lstm_common.py`). **Não há** split fixo 70/15/15 nem `train_test_split`; métricas = **OOF** em 5 folds por `ID_PT`.
+**Igual ao experimento 1** nos scripts `exp2_xgboost.py`, `exp2_svm.py`, `exp2_rocket.py`, `exp2_lstm.py` (mesma lógica em `colab/exp_utils.py` e `colab/exp_lstm_common.py`). **Não há** split fixo 70/15/15 nem `train_test_split`; métricas = **OOF** em 5 folds por `ID_PT`.
 
 | Nível | Método | `n_splits` | Papel |
 |--------|--------|------------|--------|
@@ -275,7 +275,7 @@ python colab/exp2_xgboost.py
 python colab/exp2_rocket.py
 python colab/exp2_svm.py
 python colab/exp2_lstm.py
-python colab/exp2_plots.py
+python colab/exp_plots.py
 ```
 
 Com `DOWNSAMPLE_GROUP_SEX = False` em `exp2_lstm.py` (e nos outros scripts), os resultados vão para `colab/exp2/unbalanced/lstm/`. Requer `tensorflow` além das dependências do exp1.
