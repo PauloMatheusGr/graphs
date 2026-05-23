@@ -855,20 +855,10 @@ Raiz do repositório; Python: `.venv/bin/python` ou `python`.
 
 ```bash
 # Experimento 2 — 4 runs balanced (4 modelos)
-.venv/bin/python colab/run_exp2_all.py
+.venv/bin/python colab/run_exp_all.py
 
 # Regenerar CSV harmonizado (após alterar features_selection.ipynb §3.1)
 #   → executar células NeuroComBat (delta + unitário) no notebook
-
-# Regenerar figuras + demografia (4 runs balanced com OOF)
-.venv/bin/python colab/postprocess_exp2_runs.py
-
-# Ablação LOO por ROI — XGB / SVM / LSTM balanced (ABLATION_ROIS, ABLATION_MODEL)
-ABLATION_ROIS=inf_lateral_ventricle,hippocampus,amygdala,accumbens_area,insula \
-  .venv/bin/python colab/run_roi_ablation_exp2.py
-
-# Demografia por sexo nas pastas de ablação (se necessário re-gerar)
-.venv/bin/python colab/postprocess_exp2_ablation.py
 
 # Opcional: verificar checkpoint XGB fold 0 vs OOF
 .venv/bin/python colab/verify_xgb_checkpoint.py
@@ -883,15 +873,7 @@ ABLATION_ROIS=inf_lateral_ventricle,hippocampus,amygdala,accumbens_area,insula \
 
 **Dependências:** `numpy`, `pandas`, `scikit-learn`, `matplotlib`, `optuna`, `xgboost`, `shap`, `sktime`, `tensorflow` (LSTM).
 
-### 4.7. Ablação por ROI (exp2, balanced)
-
-- Script: `colab/run_roi_ablation_exp2.py` (`ABLATION_MODEL=xgboost|svm|lstm`, `ABLATION_ROIS=...`).
-- Remove uma **`roi`** de cada vez (máscara a zero nos 3 pares temporais).
-- Saída: `colab/exp2/balanced/{xgboost,svm,lstm}_ablation/drop_<roi>/` (figuras, OOF, `tables/demographics/` por sexo).
-- Resumo: `ablation_summary.csv`, `ablation_delta_auc_oof.pdf`, `ablation_demographics_by_sex.csv`.
-- Por defeito reutiliza `best_params` do baseline; LSTM antigo sem checkpoints: `export_fold_best_params.py` ou re-treino / `ABLATION_FORCE_OPTUNA=1`.
-
-### 4.8. Comparação exp1 vs exp2
+### 4.7. Comparação exp1 vs exp2
 
 | | Exp1 | Exp2 (ativo) |
 |---|------|----------------|

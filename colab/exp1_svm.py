@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Any
 
 import exp_utils as u
-import exp_harmonize as h
 import matplotlib.pyplot as plt
 import numpy as np
 import optuna
@@ -36,7 +35,6 @@ CORR_THR = 0.9
 VAR_THR = 0.0
 RANDOM_STATE = 42
 DOWNSAMPLE_GROUP_SEX = u.env_bool("DOWNSAMPLE_GROUP_SEX", True)
-RUN_NEUROCOMBAT = u.env_bool("RUN_NEUROCOMBAT", False)
 TEMPORAL_MODE = "delta_rate" if TEMPORAL_RATE_NORM else "none"
 FPR_GRID = np.linspace(0.0, 1.0, 101)
 REC_GRID = np.linspace(0.0, 1.0, 101)
@@ -110,35 +108,22 @@ def main() -> None:
         COLAB_DIR,
         downsample_group_sex=DOWNSAMPLE_GROUP_SEX,
         model_slug=MODEL_SLUG,
-        run_neurocombat=RUN_NEUROCOMBAT,
         create_checkpoints=True,
     )
     fig_dir = run_dir / "figures"
     tab_dir = run_dir / "tables"
 
-    if RUN_NEUROCOMBAT:
-        print(
-            "NeuroComBat por fold (neurocombat-sklearn): fit nas imagens do "
-            "treino externo; transform antes de delta_rate e z-score."
-        )
-    assets = h.load_cv_assets(
+    X_3d, y, groups, sex, feat_names, slot_labels = u.load_tensor(
         CSV_PATH,
         EXP1_PATH,
         PAIR_ORDER,
         GROUP_KEY,
-        run_neurocombat=RUN_NEUROCOMBAT,
         require_sex=DOWNSAMPLE_GROUP_SEX,
         temporal_mode=TEMPORAL_MODE,
         dt_epsilon=DT_EPSILON,
     )
-    y = assets["y"]
-    groups = assets["groups"]
-    sex = assets["sex"]
-    feat_names = assets["feat_names"]
-    slot_labels = assets["slot_labels"]
-    X_3d = assets["X_3d"]
+    n_raw = X_3d.shape[2]
     n_samples = len(y)
-    n_raw: int | None = int(X_3d.shape[2]) if X_3d is not None else None
 
     sgk = StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
     dummy = np.zeros(len(y), dtype=np.int8)
@@ -177,12 +162,6 @@ def main() -> None:
                 f"Fold 1 — treino externo: {n_tr0} -> {len(train_idx)} amostras"
                 + (" (após downsample)." if DOWNSAMPLE_GROUP_SEX else ".")
             )
-
-        X_3d, feat_names, slot_labels = h.fold_tensor_from_assets(
-            assets, train_idx, test_idx, run_neurocombat=RUN_NEUROCOMBAT
-        )
-        if n_raw is None:
-            n_raw = int(X_3d.shape[2])
 
         inner_splits = u.inner_cv_splits(
             train_idx,
@@ -274,7 +253,6 @@ def main() -> None:
                 "temporal_mode": TEMPORAL_MODE,
                 "dt_epsilon": DT_EPSILON,
                 "downsample_group_sex": DOWNSAMPLE_GROUP_SEX,
-                "run_neurocombat": RUN_NEUROCOMBAT,
             },
         )
 

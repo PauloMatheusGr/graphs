@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Any
 
 import exp_utils as u
-import exp_harmonize as h
 import matplotlib.pyplot as plt
 import numpy as np
 import optuna
@@ -98,20 +97,6 @@ SHAP_BACKGROUND = 40
 SHAP_SAMPLES = 60
 
 
-def _env_bool(key: str, default: bool) -> bool:
-    v = os.environ.get(key)
-    if v is None:
-        return default
-    return v.strip().lower() in ("1", "true", "yes")
-
-
-def _parse_drop_rois_env() -> list[str]:
-    raw = os.environ.get("ABLATION_DROP_ROIS", "").strip()
-    if not raw:
-        return []
-    return [p.strip() for p in raw.split(",") if p.strip()]
-
-
 @dataclass(frozen=True)
 class LstmExperimentConfig:
     exp_name: str  # "exp1" | "exp2"
@@ -123,7 +108,6 @@ class LstmExperimentConfig:
     model_slug: str = "lstm"
     downsample_group_sex: bool = True
     title_prefix: str = "LSTM"
-    run_neurocombat: bool = False
 
 
 def _class_weight_dict(y_tr: np.ndarray) -> dict[int, float] | None:
@@ -262,35 +246,6 @@ def _fit_lstm_optuna(
     return model, best_hp, float(study.best_value), hist
 
 
-def _fit_lstm_with_params(
-    best_hp: dict[str, Any],
-    X_refit_tr_seq: np.ndarray,
-    y: np.ndarray,
-    X_refit_val_seq: np.ndarray,
-    refit_tr_idx: np.ndarray,
-    refit_val_idx: np.ndarray,
-) -> tuple[keras.Model, dict[str, Any], float, keras.callbacks.History]:
-    """Refit com hiperparâmetros fixos (ablacao sem Optuna)."""
-    hp = dict(best_hp)
-    model, hist = _fit_lstm(
-        X_refit_tr_seq.astype(np.float32),
-        y[refit_tr_idx],
-        X_refit_val_seq.astype(np.float32),
-        y[refit_val_idx],
-        hp,
-        epochs=EPOCHS_MAX,
-        patience=EARLY_STOPPING_PATIENCE,
-        verbose=0,
-    )
-    proba_val = _predict_proba_pos(model, X_refit_val_seq.astype(np.float32))
-    y_va = y[refit_val_idx]
-    if len(np.unique(y_va)) < 2:
-        best_val_auc = float("nan")
-    else:
-        best_val_auc = float(roc_auc_score(y_va, proba_val))
-    return model, hp, best_val_auc, hist
-
-
 def _shap_abs_mean_lstm(
     model: keras.Model,
     X_te_flat: np.ndarray,
@@ -324,20 +279,11 @@ def _shap_abs_mean_lstm(
 def run_lstm_experiment(cfg: LstmExperimentConfig) -> None:
     t0 = time.perf_counter()
     colab_dir = Path(__file__).resolve().parent
-    ablation_drop_rois = _parse_drop_rois_env()
-    ablation_skip_optuna = _env_bool("ABLATION_SKIP_OPTUNA", False)
 
     run_dir_env = os.environ.get("RUN_DIR", "").strip()
     run_dir_override = Path(run_dir_env) if run_dir_env else None
     if run_dir_override is not None and not run_dir_override.is_absolute():
         run_dir_override = REPO_ROOT / run_dir_override
-
-    baseline_env = os.environ.get("ABLATION_BASELINE_RUN_DIR", "").strip()
-    baseline_run_dir: Path | None = None
-    if baseline_env:
-        baseline_run_dir = Path(baseline_env)
-        if not baseline_run_dir.is_absolute():
-            baseline_run_dir = REPO_ROOT / baseline_run_dir
 
     if cfg.exp_name == "exp2":
         run_dir = u.resolve_exp2_run_dir(
@@ -346,7 +292,6 @@ def run_lstm_experiment(cfg: LstmExperimentConfig) -> None:
             model_slug=cfg.model_slug,
             run_dir_override=run_dir_override,
             create_checkpoints=True,
-            run_neurocombat=cfg.run_neurocombat,
         )
     else:
         run_dir = u.resolve_exp1_run_dir(
@@ -355,67 +300,22 @@ def run_lstm_experiment(cfg: LstmExperimentConfig) -> None:
             model_slug=cfg.model_slug,
             run_dir_override=run_dir_override,
             create_checkpoints=True,
-            run_neurocombat=cfg.run_neurocombat,
         )
     fig_dir = run_dir / "figures"
     tab_dir = run_dir / "tables"
 
     group_key = ["ID_PT", "COMBINATION_NUMBER", "TRIPLET_IDX"]
-    assets: dict[str, Any] | None = None
-    if cfg.run_neurocombat:
-        mode_label = cfg.temporal_mode.replace("_", " ")
-        print(
-            "NeuroComBat por fold (neurocombat-sklearn): fit nas imagens do "
-            f"treino externo; transform antes de {mode_label} e z-score."
-        )
-        assets = h.load_cv_assets(
-            cfg.csv_path,
-            cfg.exp_md_path,
-            cfg.pair_order,
-            group_key,
-            run_neurocombat=True,
-            require_sex=cfg.downsample_group_sex,
-            temporal_mode=cfg.temporal_mode,
-            dt_epsilon=cfg.dt_epsilon,
-        )
-        y = assets["y"]
-        groups = assets["groups"]
-        sex = assets["sex"]
-        feat_names = assets["feat_names"]
-        slot_labels = assets["slot_labels"]
-        X_3d = assets["X_3d"]
-    else:
-        X_3d, y, groups, sex, feat_names, slot_labels = u.load_tensor(
-            cfg.csv_path,
-            cfg.exp_md_path,
-            cfg.pair_order,
-            group_key,
-            require_sex=cfg.downsample_group_sex,
-            temporal_mode=cfg.temporal_mode,
-            dt_epsilon=cfg.dt_epsilon,
-        )
-        if ablation_drop_rois:
-            X_3d = u.mask_rois_in_X_3d(X_3d, slot_labels, ablation_drop_rois)
-            print(
-                f"Ablação — ROIs zeradas ({len(ablation_drop_rois)}): "
-                f"{ablation_drop_rois}"
-            )
-
-    use_fixed_params = (
-        cfg.exp_name == "exp2"
-        and ablation_skip_optuna
-        and baseline_run_dir is not None
+    X_3d, y, groups, sex, feat_names, slot_labels = u.load_tensor(
+        cfg.csv_path,
+        cfg.exp_md_path,
+        cfg.pair_order,
+        group_key,
+        require_sex=cfg.downsample_group_sex,
+        temporal_mode=cfg.temporal_mode,
+        dt_epsilon=cfg.dt_epsilon,
     )
-    if ablation_skip_optuna and baseline_run_dir is None and cfg.exp_name == "exp2":
-        print(
-            "Aviso: ABLATION_SKIP_OPTUNA=1 sem ABLATION_BASELINE_RUN_DIR; "
-            "usando Optuna."
-        )
-    elif use_fixed_params:
-        print(f"Ablação — hiperparâmetros do baseline: {baseline_run_dir}")
-
     n_samples = len(y)
-    n_raw: int | None = int(X_3d.shape[2]) if X_3d is not None else None
+    n_raw = X_3d.shape[2]
 
     sgk = StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
     dummy = np.zeros(len(y), dtype=np.int8)
@@ -466,15 +366,6 @@ def run_lstm_experiment(cfg: LstmExperimentConfig) -> None:
                 f"Fold 1 — treino externo: {n_tr0} -> {len(train_idx)} amostras"
                 + (" (após downsample)." if cfg.downsample_group_sex else ".")
             )
-
-        if assets is not None:
-            X_3d, feat_names, slot_labels = h.fold_tensor_from_assets(
-                assets, train_idx, test_idx, run_neurocombat=True
-            )
-            if ablation_drop_rois:
-                X_3d = u.mask_rois_in_X_3d(X_3d, slot_labels, ablation_drop_rois)
-            if n_raw is None:
-                n_raw = int(X_3d.shape[2])
 
         inner_splits = u.inner_cv_splits(
             train_idx,
@@ -542,36 +433,20 @@ def run_lstm_experiment(cfg: LstmExperimentConfig) -> None:
                 n_after_variance=n_after_var,
             )
 
-        if use_fixed_params:
-            assert baseline_run_dir is not None
-            bp_fixed = u.load_baseline_fold_params(baseline_run_dir, fold_id)
-            model, best_params, best_val_auc, hist = _fit_lstm_with_params(
-                bp_fixed,
-                X_train_seq,
-                y,
-                X_val_seq,
-                tr_fit_idx,
-                val_idx,
-            )
-            print(
-                f"Fold {fold_id + 1}/5 — params baseline (AUC val refit={best_val_auc:.4f}): "
-                f"{best_params}"
-            )
-        else:
-            model, best_params, best_val_auc, hist = _fit_lstm_optuna(
-                X_3d,
-                y,
-                inner_splits,
-                X_train_seq,
-                X_val_seq,
-                tr_fit_idx,
-                val_idx,
-                fold_id=fold_id,
-            )
-            print(
-                f"Fold {fold_id + 1}/5 — Optuna (AUC val interna média em "
-                f"{len(inner_splits)} folds NCV={best_val_auc:.4f}): {best_params}"
-            )
+        model, best_params, best_val_auc, hist = _fit_lstm_optuna(
+            X_3d,
+            y,
+            inner_splits,
+            X_train_seq,
+            X_val_seq,
+            tr_fit_idx,
+            val_idx,
+            fold_id=fold_id,
+        )
+        print(
+            f"Fold {fold_id + 1}/5 — Optuna (AUC val interna média em "
+            f"{len(inner_splits)} folds NCV={best_val_auc:.4f}): {best_params}"
+        )
 
         fold_best_params_log.append({"fold": int(fold_id), "best_params": best_params})
 
@@ -581,10 +456,7 @@ def run_lstm_experiment(cfg: LstmExperimentConfig) -> None:
             "temporal_mode": cfg.temporal_mode,
             "dt_epsilon": cfg.dt_epsilon,
             "downsample_group_sex": cfg.downsample_group_sex,
-            "run_neurocombat": cfg.run_neurocombat,
         }
-        if ablation_drop_rois:
-            ckpt_extra["ablation_drop_rois"] = ablation_drop_rois
         u.save_lstm_fold_checkpoint(
             run_dir,
             fold_id,
@@ -788,10 +660,6 @@ def run_lstm_experiment(cfg: LstmExperimentConfig) -> None:
             "checkpoints/fold_*, fold_best_params.json"
         ),
     }
-    if ablation_drop_rois:
-        meta_extra["ablation_drop_rois"] = ablation_drop_rois
-    if baseline_run_dir is not None:
-        meta_extra["ablation_baseline_run_dir"] = str(baseline_run_dir)
     u.write_run_meta_json(
         run_dir,
         model_slug=cfg.model_slug,

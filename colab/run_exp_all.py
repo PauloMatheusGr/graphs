@@ -1,12 +1,12 @@
 """Re-treina em série os quatro modelos de um experimento.
 
-Editar LOG_DIR, TRAIN_SCRIPTS, BALANCED e RUN_NEUROCOMBAT antes de correr.
+Editar LOG_DIR, TRAIN_SCRIPTS e BALANCED antes de correr.
 
 Uso (a partir da raiz do repo):
 
   python colab/run_exp_all.py
 
-Saídas: colab/exp{1,2}/{balanced|unbalanced}/{modelo}/ ou .../{modelo}_neurocombat/.
+Saídas: colab/exp{1,2}/{balanced|unbalanced}/{modelo}/.
 Logs em LOG_DIR (ex.: logs_exp1_retrain/).
 """
 
@@ -21,24 +21,24 @@ ROOT = Path(__file__).resolve().parent.parent
 COLAB = Path(__file__).resolve().parent
 
 # --- CONFIG — editar antes de correr ---
-LOG_DIR = COLAB / "logs_exp1_no_combat"
-TRAIN_SCRIPTS = (
-    "exp1_xgboost.py",
-    "exp1_svm.py",
-    "exp1_rocket.py",
-    "exp1_lstm.py",
-)
 
-# LOG_DIR = COLAB / "logs_exp2_no_combat"
+# LOG_DIR = COLAB / "logs_exp1_no_combat_unbalanced"
 # TRAIN_SCRIPTS = (
-#     "exp2_xgboost.py",
-#     "exp2_svm.py",
-#     "exp2_rocket.py",
-#     "exp2_lstm.py",
+#     "exp1_xgboost.py",
+#     "exp1_svm.py",
+#     "exp1_rocket.py",
+#     "exp1_lstm.py",
 # )
 
+LOG_DIR = COLAB / "logs_exp2_no_combat_unbalanced"
+TRAIN_SCRIPTS = (
+    "exp2_xgboost.py",
+    "exp2_svm.py",
+    "exp2_rocket.py",
+    "exp2_lstm.py",
+)
+
 BALANCED = False
-RUN_NEUROCOMBAT = False
 
 
 def _resolve_python() -> str:
@@ -48,22 +48,12 @@ def _resolve_python() -> str:
     return sys.executable
 
 
-def _run_one(
-    script: str,
-    *,
-    balanced: bool,
-    neurocombat: bool,
-    python: str,
-) -> int:
+def _run_one(script: str, *, balanced: bool, python: str) -> int:
     stem = Path(script).stem
-    tag_parts = [stem, "balanced" if balanced else "unbalanced"]
-    if neurocombat:
-        tag_parts.append("neurocombat")
-    name = "_".join(tag_parts)
+    name = f"{stem}_{'balanced' if balanced else 'unbalanced'}"
     log_path = LOG_DIR / f"{name}.log"
     env = os.environ.copy()
     env["DOWNSAMPLE_GROUP_SEX"] = "1" if balanced else "0"
-    env["RUN_NEUROCOMBAT"] = "1" if neurocombat else "0"
     cmd = [python, str(COLAB / script)]
 
     print(f"=== {name} ===", flush=True)
@@ -95,18 +85,12 @@ def main() -> None:
     os.chdir(ROOT)
 
     print(
-        f"Config: balanced={BALANCED}, neurocombat={RUN_NEUROCOMBAT}, "
-        f"scripts={len(TRAIN_SCRIPTS)}",
+        f"Config: balanced={BALANCED}, scripts={len(TRAIN_SCRIPTS)}",
         flush=True,
     )
 
     for script in TRAIN_SCRIPTS:
-        code = _run_one(
-            script,
-            balanced=BALANCED,
-            neurocombat=RUN_NEUROCOMBAT,
-            python=python,
-        )
+        code = _run_one(script, balanced=BALANCED, python=python)
         if code != 0:
             sys.exit(code)
 

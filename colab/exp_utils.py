@@ -522,33 +522,6 @@ def roi_from_slot_label(slot_lab: str) -> str:
     return parts[1] if len(parts) > 1 else slot_lab
 
 
-def unique_rois_from_slot_labels(slot_labels: list[str]) -> list[str]:
-    return sorted({roi_from_slot_label(s) for s in slot_labels})
-
-
-def slot_indices_for_rois(
-    slot_labels: list[str], rois_to_drop: set[str] | frozenset[str]
-) -> list[int]:
-    return [i for i, s in enumerate(slot_labels) if roi_from_slot_label(s) in rois_to_drop]
-
-
-def mask_rois_in_X_3d(
-    X_3d: np.ndarray,
-    slot_labels: list[str],
-    rois_to_drop: list[str] | set[str] | frozenset[str],
-) -> np.ndarray:
-    """Zera slots cujo roi está em rois_to_drop (3 pares × lados/labels dessa roi)."""
-    drop = {str(r).strip() for r in rois_to_drop if str(r).strip()}
-    if not drop:
-        return X_3d
-    idx = slot_indices_for_rois(slot_labels, drop)
-    if not idx:
-        return X_3d
-    X = np.array(X_3d, copy=True)
-    X[:, idx, :] = 0.0
-    return X
-
-
 def resolve_exp1_run_dir(
     colab_dir: Path,
     *,
@@ -556,11 +529,8 @@ def resolve_exp1_run_dir(
     model_slug: str,
     run_dir_override: Path | str | None = None,
     create_checkpoints: bool = True,
-    run_neurocombat: bool = False,
 ) -> Path:
     """RUN_DIR explícito ou colab/exp1/{scenario}/{model_slug}/."""
-    if run_neurocombat:
-        model_slug = f"{model_slug}_neurocombat"
     if run_dir_override is not None:
         root = Path(run_dir_override)
         (root / "figures").mkdir(parents=True, exist_ok=True)
@@ -584,11 +554,8 @@ def resolve_exp2_run_dir(
     model_slug: str,
     run_dir_override: Path | str | None = None,
     create_checkpoints: bool = True,
-    run_neurocombat: bool = False,
 ) -> Path:
     """RUN_DIR explícito ou colab/exp2/{scenario}/{model_slug}/."""
-    if run_neurocombat:
-        model_slug = f"{model_slug}_neurocombat"
     if run_dir_override is not None:
         root = Path(run_dir_override)
         (root / "figures").mkdir(parents=True, exist_ok=True)
@@ -969,32 +936,6 @@ def save_fold_best_params_json(path: Path, fold_params: list[dict]) -> None:
         ]
     }
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-
-
-def load_baseline_fold_params(baseline_run_dir: Path, fold_id: int) -> dict:
-    """best_params do baseline: checkpoints/fold_k/meta.json ou tables/fold_best_params.json."""
-    meta_path = baseline_run_dir / "checkpoints" / f"fold_{int(fold_id)}" / "meta.json"
-    if meta_path.is_file():
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        bp = meta.get("best_params")
-        if isinstance(bp, dict) and bp:
-            return dict(bp)
-        raise ValueError(f"best_params inválido em {meta_path}")
-
-    table_path = baseline_run_dir / "tables" / "fold_best_params.json"
-    if table_path.is_file():
-        data = json.loads(table_path.read_text(encoding="utf-8"))
-        for item in data.get("folds", []):
-            if int(item.get("fold", -1)) == int(fold_id):
-                bp = item.get("best_params")
-                if isinstance(bp, dict) and bp:
-                    return dict(bp)
-        raise ValueError(f"fold {fold_id} ausente em {table_path}")
-
-    raise FileNotFoundError(
-        f"Sem hiperparâmetros para fold {fold_id} em {baseline_run_dir} "
-        "(checkpoints/meta.json ou tables/fold_best_params.json)."
-    )
 
 
 def save_xgb_fold_checkpoint(

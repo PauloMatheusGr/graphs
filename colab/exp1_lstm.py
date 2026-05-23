@@ -25,7 +25,6 @@ EXP1_PATH = ROOT / "exp1.md"
 PAIR_ORDER = ["12", "13", "23"]
 DT_EPSILON = 0.5
 DOWNSAMPLE_GROUP_SEX = u.env_bool("DOWNSAMPLE_GROUP_SEX", True)
-RUN_NEUROCOMBAT = u.env_bool("RUN_NEUROCOMBAT", False)
 
 
 def main() -> None:
@@ -39,7 +38,6 @@ def main() -> None:
             dt_epsilon=DT_EPSILON,
             downsample_group_sex=DOWNSAMPLE_GROUP_SEX,
             title_prefix="Exp1 LSTM",
-            run_neurocombat=RUN_NEUROCOMBAT,
         )
     )
 

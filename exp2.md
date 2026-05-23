@@ -157,19 +157,6 @@ Todas entram em `tables/metrics_per_fold.csv` após re-treino. OOF agregado em `
 | `figures/demographics/` | Matrizes de confusão por F/M |
 | `run_meta.json` | Metadados do run (`metrics_schema`, `checkpoints`, etc.) |
 
-### Ablação LOO (XGBoost balanced)
-
-Após o baseline em `colab/exp2/balanced/xgboost/`:
-
-```bash
-python colab/run_roi_ablation_exp2.py
-```
-
-- Uma pasta por ROI removida (máscara a zero): `colab/exp2/balanced/xgboost_ablation/drop_<roi>/` com o mesmo `figures/` e `tables/` do treino.
-- Resumo: `xgboost_ablation/ablation_summary.csv` e `ablation_delta_auc_oof.pdf`.
-- Hiperparâmetros reutilizados do baseline (`ABLATION_SKIP_OPTUNA=1`); variável `ABLATION_FORCE_OPTUNA=1` para Optuna em cada ROI.
-- Uma execução manual: `ABLATION_DROP_ROIS=hippocampus RUN_DIR=colab/exp2/balanced/xgboost_ablation/drop_hippocampus DOWNSAMPLE_GROUP_SEX=1 python colab/exp2_xgboost.py` (com `ABLATION_BASELINE_RUN_DIR` e `ABLATION_SKIP_OPTUNA` se aplicável).
-
 ## Implementação e pipeline (`colab/exp2_xgboost.py`, `colab/exp2_rocket.py`, `colab/exp2_svm.py`, `colab/exp2_lstm.py`)
 
 Esta secção descreve o que está **efetivamente implementado** nos scripts Colab (espelho do experimento 1, com CSV unitário e ponderação `baseline_rate`).
