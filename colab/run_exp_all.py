@@ -1,12 +1,14 @@
 """Re-treina em série os quatro modelos de um experimento.
 
-Editar LOG_DIR, TRAIN_SCRIPTS e BALANCED antes de correr.
+Editar LOG_DIR, TRAIN_SCRIPTS, BALANCED e HARMONIZATION antes de correr.
 
 Uso (a partir da raiz do repo):
 
   python colab/run_exp_all.py
 
-Saídas: colab/exp{1,2}/{balanced|unbalanced}/{modelo}/.
+Saídas:
+  - sem harmonização: colab/exp{1,2}/{balanced|unbalanced}/{modelo}/
+  - com harmonização: colab/exp{1,2}/{balanced|unbalanced}/{modelo}_neurocombat/
 Logs em LOG_DIR (ex.: logs_exp1_retrain/).
 """
 
@@ -39,6 +41,7 @@ TRAIN_SCRIPTS = (
 )
 
 BALANCED = False
+HARMONIZATION = False
 
 
 def _resolve_python() -> str:
@@ -48,12 +51,21 @@ def _resolve_python() -> str:
     return sys.executable
 
 
-def _run_one(script: str, *, balanced: bool, python: str) -> int:
+def _run_one(
+    script: str,
+    *,
+    balanced: bool,
+    harmonization: bool,
+    python: str,
+) -> int:
     stem = Path(script).stem
-    name = f"{stem}_{'balanced' if balanced else 'unbalanced'}"
+    balance_tag = "balanced" if balanced else "unbalanced"
+    harmon_tag = "harmonized" if harmonization else "no_harmon"
+    name = f"{stem}_{balance_tag}_{harmon_tag}"
     log_path = LOG_DIR / f"{name}.log"
     env = os.environ.copy()
     env["DOWNSAMPLE_GROUP_SEX"] = "1" if balanced else "0"
+    env["HARMONIZATION"] = "1" if harmonization else "0"
     cmd = [python, str(COLAB / script)]
 
     print(f"=== {name} ===", flush=True)
@@ -85,12 +97,18 @@ def main() -> None:
     os.chdir(ROOT)
 
     print(
-        f"Config: balanced={BALANCED}, scripts={len(TRAIN_SCRIPTS)}",
+        f"Config: balanced={BALANCED}, harmonization={HARMONIZATION}, "
+        f"scripts={len(TRAIN_SCRIPTS)}",
         flush=True,
     )
 
     for script in TRAIN_SCRIPTS:
-        code = _run_one(script, balanced=BALANCED, python=python)
+        code = _run_one(
+            script,
+            balanced=BALANCED,
+            harmonization=HARMONIZATION,
+            python=python,
+        )
         if code != 0:
             sys.exit(code)
 

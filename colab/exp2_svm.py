@@ -17,6 +17,7 @@ import exp_utils as u
 import matplotlib.pyplot as plt
 import numpy as np
 import optuna
+import pandas as pd
 from sklearn.feature_selection import VarianceThreshold
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import StratifiedGroupKFold
@@ -43,6 +44,7 @@ def _env_bool(key: str, default: bool) -> bool:
 
 
 DOWNSAMPLE_GROUP_SEX = _env_bool("DOWNSAMPLE_GROUP_SEX", True)
+HARMONIZATION = u.env_bool("HARMONIZATION", False)
 FPR_GRID = np.linspace(0.0, 1.0, 101)
 REC_GRID = np.linspace(0.0, 1.0, 101)
 TOP_K_ROI = 10
@@ -121,11 +123,18 @@ def main() -> None:
         COLAB_DIR,
         downsample_group_sex=DOWNSAMPLE_GROUP_SEX,
         model_slug=model_slug,
+        harmonization=HARMONIZATION,
         run_dir_override=run_dir_override,
         create_checkpoints=True,
     )
     fig_dir = run_dir / "figures"
     tab_dir = run_dir / "tables"
+
+    if HARMONIZATION:
+        print("NeuroComBat por fold ativo (fit no treino externo).")
+        df_source = pd.read_csv(CSV_PATH)
+    else:
+        df_source = None
 
     X_3d, y, groups, sex, feat_names, slot_labels = u.load_tensor(
         CSV_PATH,
@@ -177,6 +186,22 @@ def main() -> None:
             print(
                 f"Fold 1 — treino externo: {n_tr0} -> {len(train_idx)} amostras"
                 + (" (após downsample)." if DOWNSAMPLE_GROUP_SEX else ".")
+            )
+
+        if HARMONIZATION and df_source is not None:
+            X_3d, y, groups, sex, feat_names, slot_labels = (
+                u.reload_tensor_after_harmonization(
+                    df_source,
+                    exp_md_path=EXP2_PATH,
+                    group_key=GROUP_KEY,
+                    pair_order=PAIR_ORDER,
+                    train_idx=train_idx,
+                    test_idx=test_idx,
+                    fold_id=fold_id,
+                    require_sex=DOWNSAMPLE_GROUP_SEX,
+                    temporal_mode=TEMPORAL_MODE,
+                    dt_epsilon=DT_EPSILON,
+                )
             )
 
         inner_splits = u.inner_cv_splits(

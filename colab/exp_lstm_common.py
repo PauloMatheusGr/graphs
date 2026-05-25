@@ -13,6 +13,7 @@ import exp_utils as u
 import matplotlib.pyplot as plt
 import numpy as np
 import optuna
+import pandas as pd
 import shap
 from sklearn.feature_selection import VarianceThreshold
 from sklearn.metrics import accuracy_score, roc_auc_score
@@ -107,6 +108,7 @@ class LstmExperimentConfig:
     dt_epsilon: float
     model_slug: str = "lstm"
     downsample_group_sex: bool = True
+    harmonization: bool = False
     title_prefix: str = "LSTM"
 
 
@@ -290,6 +292,7 @@ def run_lstm_experiment(cfg: LstmExperimentConfig) -> None:
             colab_dir,
             downsample_group_sex=cfg.downsample_group_sex,
             model_slug=cfg.model_slug,
+            harmonization=cfg.harmonization,
             run_dir_override=run_dir_override,
             create_checkpoints=True,
         )
@@ -298,6 +301,7 @@ def run_lstm_experiment(cfg: LstmExperimentConfig) -> None:
             colab_dir,
             downsample_group_sex=cfg.downsample_group_sex,
             model_slug=cfg.model_slug,
+            harmonization=cfg.harmonization,
             run_dir_override=run_dir_override,
             create_checkpoints=True,
         )
@@ -305,6 +309,13 @@ def run_lstm_experiment(cfg: LstmExperimentConfig) -> None:
     tab_dir = run_dir / "tables"
 
     group_key = ["ID_PT", "COMBINATION_NUMBER", "TRIPLET_IDX"]
+
+    if cfg.harmonization:
+        print("NeuroComBat por fold ativo (fit no treino externo).")
+        df_source = pd.read_csv(cfg.csv_path)
+    else:
+        df_source = None
+
     X_3d, y, groups, sex, feat_names, slot_labels = u.load_tensor(
         cfg.csv_path,
         cfg.exp_md_path,
@@ -365,6 +376,24 @@ def run_lstm_experiment(cfg: LstmExperimentConfig) -> None:
             print(
                 f"Fold 1 — treino externo: {n_tr0} -> {len(train_idx)} amostras"
                 + (" (após downsample)." if cfg.downsample_group_sex else ".")
+            )
+
+        if cfg.harmonization and df_source is not None:
+            reload_kwargs: dict[str, Any] = {
+                "exp_md_path": cfg.exp_md_path,
+                "group_key": group_key,
+                "pair_order": cfg.pair_order,
+                "train_idx": train_idx,
+                "test_idx": test_idx,
+                "fold_id": fold_id,
+                "require_sex": cfg.downsample_group_sex,
+                "temporal_mode": cfg.temporal_mode,
+                "dt_epsilon": cfg.dt_epsilon,
+            }
+            if cfg.temporal_mode == "delta_rate":
+                reload_kwargs["temporal_rate_norm"] = True
+            X_3d, y, groups, sex, feat_names, slot_labels = (
+                u.reload_tensor_after_harmonization(df_source, **reload_kwargs)
             )
 
         inner_splits = u.inner_cv_splits(

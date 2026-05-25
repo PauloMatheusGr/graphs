@@ -1,0 +1,13 @@
+Fold 1 — treino externo: 1035 -> 1035 amostras.
+Fold 1/5 — Optuna SVM linear (AUC val interna média em 5 folds NCV=0.6741): {'C': 0.004459721710204689}
+Fold 1/5 — teste: acc=0.7884, AUC=0.6416, F1=0.3377, AP=0.4656
+Fold 2/5 — Optuna SVM linear (AUC val interna média em 5 folds NCV=0.7080): {'C': 0.002345458390554073}
+Fold 2/5 — teste: acc=0.7586, AUC=0.6543, F1=0.1127, AP=0.3173
+Fold 3/5 — Optuna SVM linear (AUC val interna média em 5 folds NCV=0.6887): {'C': 0.004584711057631971}
+Fold 3/5 — teste: acc=0.7500, AUC=0.6882, F1=0.2727, AP=0.5371
+Fold 4/5 — Optuna SVM linear (AUC val interna média em 5 folds NCV=0.6524): {'C': 0.001959929396101042}
+Fold 4/5 — teste: acc=0.8372, AUC=0.6172, F1=0.1600, AP=0.2764
+Fold 5/5 — Optuna SVM linear (AUC val interna média em 5 folds NCV=0.6433): {'C': 0.007574293137482348}
+Fold 5/5 — teste: acc=0.7769, AUC=0.6850, F1=0.3556, AP=0.2827
+Resumo 5-fold SGK (média ± dp) — teste: acc=0.7822 ± 0.0306, AUC=0.6573 ± 0.0268, F1=0.2477 ± 0.0962, AP=0.3758 ± 0.1059.
+Tempo total: 1655.9 s — artefactos em /mnt/study-data/pgirardi/graphs/colab/exp1/unbalanced/svm

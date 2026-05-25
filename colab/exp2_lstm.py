@@ -14,6 +14,8 @@ os.environ.setdefault("LSTM_GPU_INDEX", "0")
 
 from exp_lstm_common import LstmExperimentConfig, run_lstm_experiment
 
+import exp_utils as u
+
 ROOT = Path(__file__).resolve().parents[1]
 CSV_PATH = ROOT / "csvs/abordagem_4_sMCI_pMCI/all_unitary_features.csv"
 EXP2_PATH = ROOT / "exp2.md"
@@ -29,6 +31,7 @@ def _env_bool(key: str, default: bool) -> bool:
 
 
 DOWNSAMPLE_GROUP_SEX = _env_bool("DOWNSAMPLE_GROUP_SEX", True)
+HARMONIZATION = u.env_bool("HARMONIZATION", False)
 
 
 def main() -> None:
@@ -41,6 +44,7 @@ def main() -> None:
             temporal_mode="baseline_rate",
             dt_epsilon=DT_EPSILON,
             downsample_group_sex=DOWNSAMPLE_GROUP_SEX,
+            harmonization=HARMONIZATION,
             title_prefix="Exp2 LSTM",
         )
     )

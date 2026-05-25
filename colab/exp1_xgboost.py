@@ -16,6 +16,7 @@ import exp_utils as u
 import matplotlib.pyplot as plt
 import optuna
 import numpy as np
+import pandas as pd
 import shap
 import xgboost as xgb
 from sklearn.metrics import accuracy_score, roc_auc_score
@@ -41,6 +42,7 @@ RANDOM_STATE = 42
 # True: antes do split interno, subsampling de pacientes no treino do fold
 # para min(# pacientes) por estrato GROUP×SEX (F/M × sMCI/pMCI).
 DOWNSAMPLE_GROUP_SEX = u.env_bool("DOWNSAMPLE_GROUP_SEX", True)
+HARMONIZATION = u.env_bool("HARMONIZATION", False)
 TEMPORAL_MODE = "delta_rate" if TEMPORAL_RATE_NORM else "none"
 FPR_GRID = np.linspace(0.0, 1.0, 101)
 REC_GRID = np.linspace(0.0, 1.0, 101)
@@ -210,10 +212,17 @@ def main() -> None:
         COLAB_DIR,
         downsample_group_sex=DOWNSAMPLE_GROUP_SEX,
         model_slug=MODEL_SLUG,
+        harmonization=HARMONIZATION,
         create_checkpoints=True,
     )
     fig_dir = run_dir / "figures"
     tab_dir = run_dir / "tables"
+
+    if HARMONIZATION:
+        print("NeuroComBat por fold ativo (fit no treino externo).")
+        df_source = pd.read_csv(CSV_PATH)
+    else:
+        df_source = None
 
     X_3d, y, groups, sex, feat_names, slot_labels = u.load_tensor(
         CSV_PATH,
@@ -233,6 +242,7 @@ def main() -> None:
     acc_folds: list[float] = []
     auc_folds: list[float] = []
     f1_folds: list[float] = []
+    ap_folds: list[float] = []
 
     y_oof = np.full(n_samples, -1, dtype=np.int32)
     pred_oof = np.full(n_samples, -1, dtype=np.int32)
@@ -266,6 +276,23 @@ def main() -> None:
             print(
                 f"Fold 1 — treino externo: {n_tr0} -> {len(train_idx)} amostras"
                 + (" (após downsample)." if DOWNSAMPLE_GROUP_SEX else ".")
+            )
+
+        if HARMONIZATION and df_source is not None:
+            X_3d, y, groups, sex, feat_names, slot_labels = (
+                u.reload_tensor_after_harmonization(
+                    df_source,
+                    exp_md_path=EXP1_PATH,
+                    group_key=GROUP_KEY,
+                    pair_order=PAIR_ORDER,
+                    train_idx=train_idx,
+                    test_idx=test_idx,
+                    fold_id=fold_id,
+                    require_sex=DOWNSAMPLE_GROUP_SEX,
+                    temporal_mode=TEMPORAL_MODE,
+                    temporal_rate_norm=TEMPORAL_RATE_NORM,
+                    dt_epsilon=DT_EPSILON,
+                )
             )
 
         inner_splits = u.inner_cv_splits(
@@ -416,28 +443,32 @@ def main() -> None:
             best_shap_n = len(test_idx)
             best_shap = (model, X_test_flat.copy(), keep_final.copy())
 
-        acc, auc, f1 = u.binary_metrics_from_proba(
+        acc, auc, f1, ap = u.binary_metrics_from_proba(
             y[test_idx], pred_te, proba_te
         )
         metrics_rows.append(
-            {"fold": int(fold_id) + 1, "acc": acc, "auc": auc, "f1": f1}
+            {"fold": int(fold_id) + 1, "acc": acc, "auc": auc, "f1": f1, "ap": ap}
         )
         acc_folds.append(acc)
         auc_folds.append(auc)
         f1_folds.append(f1)
+        ap_folds.append(ap)
         print(
-            f"Fold {fold_id + 1}/5 — teste: acc={acc:.4f}, AUC={auc:.4f}, F1={f1:.4f}"
+            f"Fold {fold_id + 1}/5 — teste: acc={acc:.4f}, AUC={auc:.4f}, "
+            f"F1={f1:.4f}, AP={ap:.4f}"
         )
 
     acc_a = np.asarray(acc_folds, dtype=np.float64)
     auc_a = np.asarray(auc_folds, dtype=np.float64)
     f1_a = np.asarray(f1_folds, dtype=np.float64)
+    ap_a = np.asarray(ap_folds, dtype=np.float64)
     suffix = " | treino com downsample GROUP×SEX." if DOWNSAMPLE_GROUP_SEX else "."
     print(
         "Resumo 5-fold SGK (média ± dp) — teste: "
         f"acc={acc_a.mean():.4f} ± {acc_a.std(ddof=0):.4f}, "
         f"AUC={np.nanmean(auc_a):.4f} ± {np.nanstd(auc_a):.4f}, "
-        f"F1={f1_a.mean():.4f} ± {f1_a.std(ddof=0):.4f}"
+        f"F1={f1_a.mean():.4f} ± {f1_a.std(ddof=0):.4f}, "
+        f"AP={np.nanmean(ap_a):.4f} ± {np.nanstd(ap_a):.4f}"
         f"{suffix}"
     )
 

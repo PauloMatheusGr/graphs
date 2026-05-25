@@ -1,0 +1,13 @@
+Fold 1 — treino externo: 1035 -> 1035 amostras.
+Fold 1/5 — Optuna (AUC val interna média em 5 folds NCV=0.7746): {'spw_mul': 0.5811445549005309, 'max_depth': 5, 'learning_rate': 0.04345454109729477, 'subsample': 0.645614570099021, 'colsample_bytree': 0.6894823157779035, 'reg_lambda': 0.004523529917658778, 'min_child_weight': 6.550748322169145, 'gamma': 1.8318092164684585}
+Fold 1/5 — teste: acc=0.7759, AUC=0.8002, F1=0.3415, AP=0.4649
+Fold 2/5 — Optuna (AUC val interna média em 5 folds NCV=0.8241): {'spw_mul': 0.3190192689173984, 'max_depth': 6, 'learning_rate': 0.10549771678170577, 'subsample': 0.8870276684584618, 'colsample_bytree': 0.47318937802218697, 'reg_lambda': 0.41064352008114813, 'min_child_weight': 15.032932994899294, 'gamma': 3.2812420678465317}
+Fold 2/5 — teste: acc=0.7701, AUC=0.6559, F1=0.2308, AP=0.3609
+Fold 3/5 — Optuna (AUC val interna média em 5 folds NCV=0.8171): {'spw_mul': 0.25156804435055935, 'max_depth': 4, 'learning_rate': 0.02732541324476859, 'subsample': 0.8327296305329711, 'colsample_bytree': 0.9629979419348277, 'reg_lambda': 0.04580017828648328, 'min_child_weight': 11.942638995531894, 'gamma': 2.9216921684388284}
+Fold 3/5 — teste: acc=0.7617, AUC=0.7480, F1=0.2824, AP=0.5513
+Fold 4/5 — Optuna (AUC val interna média em 5 folds NCV=0.7894): {'spw_mul': 0.7513103974047917, 'max_depth': 4, 'learning_rate': 0.03663632384687913, 'subsample': 0.6330251069528454, 'colsample_bytree': 0.2713923580189045, 'reg_lambda': 21.93826462511521, 'min_child_weight': 1.1135376110234532, 'gamma': 2.142974172459943}
+Fold 4/5 — teste: acc=0.8488, AUC=0.8036, F1=0.4179, AP=0.4875
+Fold 5/5 — Optuna (AUC val interna média em 5 folds NCV=0.7512): {'spw_mul': 0.4754686236422862, 'max_depth': 4, 'learning_rate': 0.042139644229049186, 'subsample': 0.5171415636208312, 'colsample_bytree': 0.3204466704059556, 'reg_lambda': 34.51470624052779, 'min_child_weight': 6.4421219091575646, 'gamma': 4.259914381275924}
+Fold 5/5 — teste: acc=0.8269, AUC=0.8294, F1=0.3077, AP=0.4542
+Resumo 5-fold SGK (média ± dp) — teste: acc=0.7967 ± 0.0346, AUC=0.7674 ± 0.0617, F1=0.3160 ± 0.0624, AP=0.4638 ± 0.0615.
+Tempo total: 31297.7 s — artefactos em /mnt/study-data/pgirardi/graphs/colab/exp1/unbalanced/xgboost

@@ -26,6 +26,72 @@ from sklearn.model_selection import StratifiedGroupKFold
 from sklearn.preprocessing import StandardScaler
 
 
+def iter_triplet_blocks(
+    df: pd.DataFrame,
+    group_key: list[str],
+    pair_order: list[str],
+):
+    """Gera (sample_index, block) na mesma ordem que ``load_tensor_from_dataframe``."""
+    df = df.copy()
+    df["pair"] = df["pair"].astype(str).str.strip()
+    sample_idx = 0
+    for _keys, g in df.groupby(group_key, sort=False):
+        rows: list[pd.DataFrame] | None = []
+        for p in pair_order:
+            gp = g[g["pair"] == str(p)]
+            if gp.empty:
+                rows = None
+                break
+            gp = gp.sort_values(["roi", "side", "label"], kind="mergesort")
+            rows.append(gp)
+        if rows is None:
+            continue
+        block = pd.concat(rows, axis=0)
+        if len(block) != 60:
+            print(f"Aviso: grupo {_keys} tem {len(block)} linhas (esperado 60); ignorado.")
+            continue
+        yield sample_idx, block
+        sample_idx += 1
+
+
+def reload_tensor_after_harmonization(
+    df_source: pd.DataFrame,
+    *,
+    exp_md_path: Path,
+    group_key: list[str],
+    pair_order: list[str],
+    train_idx: np.ndarray,
+    test_idx: np.ndarray,
+    fold_id: int,
+    require_sex: bool,
+    temporal_mode: str,
+    temporal_rate_norm: bool | None = None,
+    dt_epsilon: float = 0.5,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list[str], list[str]]:
+    """ComBat por fold (treino externo) e recarrega o tensor."""
+    from exp_harmonize import harmonize_fold_for_samples
+
+    df_fold = harmonize_fold_for_samples(
+        df_source,
+        exp_md_path=exp_md_path,
+        group_key=group_key,
+        pair_order=pair_order,
+        train_idx=train_idx,
+        test_idx=test_idx,
+        fold_id=fold_id,
+    )
+    return load_tensor_from_dataframe(
+        df_fold,
+        exp_md_path,
+        pair_order,
+        group_key,
+        require_sex=require_sex,
+        temporal_mode=temporal_mode,
+        temporal_rate_norm=temporal_rate_norm,
+        dt_epsilon=dt_epsilon,
+    )
+
+
 def env_bool(key: str, default: bool) -> bool:
     """Lê variável de ambiente booleana (1/true/yes). Usado por run_exp2_all.py e scripts exp1/exp2."""
     v = os.environ.get(key)
@@ -527,6 +593,7 @@ def resolve_exp1_run_dir(
     *,
     downsample_group_sex: bool,
     model_slug: str,
+    harmonization: bool = False,
     run_dir_override: Path | str | None = None,
     create_checkpoints: bool = True,
 ) -> Path:
@@ -543,6 +610,7 @@ def resolve_exp1_run_dir(
         exp_name="exp1",
         downsample_group_sex=downsample_group_sex,
         model_slug=model_slug,
+        harmonization=harmonization,
         create_checkpoints=create_checkpoints,
     )
 
@@ -552,6 +620,7 @@ def resolve_exp2_run_dir(
     *,
     downsample_group_sex: bool,
     model_slug: str,
+    harmonization: bool = False,
     run_dir_override: Path | str | None = None,
     create_checkpoints: bool = True,
 ) -> Path:
@@ -568,6 +637,7 @@ def resolve_exp2_run_dir(
         exp_name="exp2",
         downsample_group_sex=downsample_group_sex,
         model_slug=model_slug,
+        harmonization=harmonization,
         create_checkpoints=create_checkpoints,
     )
 
@@ -860,11 +930,13 @@ def exp_run_dir(
     exp_name: str,
     downsample_group_sex: bool,
     model_slug: str,
+    harmonization: bool = False,
     create_checkpoints: bool = False,
 ) -> Path:
     """colab/{exp_name}/{balanced|unbalanced}/{model_slug}/ com figures/ e tables/."""
     scenario = "balanced" if downsample_group_sex else "unbalanced"
-    root = colab_dir / exp_name / scenario / model_slug
+    slug = f"{model_slug}_neurocombat" if harmonization else model_slug
+    root = colab_dir / exp_name / scenario / slug
     (root / "figures").mkdir(parents=True, exist_ok=True)
     (root / "tables").mkdir(parents=True, exist_ok=True)
     if create_checkpoints:

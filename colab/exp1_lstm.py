@@ -25,6 +25,7 @@ EXP1_PATH = ROOT / "exp1.md"
 PAIR_ORDER = ["12", "13", "23"]
 DT_EPSILON = 0.5
 DOWNSAMPLE_GROUP_SEX = u.env_bool("DOWNSAMPLE_GROUP_SEX", True)
+HARMONIZATION = u.env_bool("HARMONIZATION", False)
 
 
 def main() -> None:
@@ -37,6 +38,7 @@ def main() -> None:
             temporal_mode="delta_rate",
             dt_epsilon=DT_EPSILON,
             downsample_group_sex=DOWNSAMPLE_GROUP_SEX,
+            harmonization=HARMONIZATION,
             title_prefix="Exp1 LSTM",
         )
     )
