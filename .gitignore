@@ -6,4 +6,4 @@ graphs/
 images/
 zold/
 .venv/
-colab/logs_exp2_retrain/
+colab/logs_*/
