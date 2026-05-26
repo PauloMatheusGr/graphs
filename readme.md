@@ -894,6 +894,52 @@ Mesma arquitetura de CV, filtros, Optuna e utilitários (`exp_utils.py`, `exp_ls
 - **Harmonização:** NeuroComBat por fold externo (evitar estatísticas globais na validação); avaliar **Longitudinal ComBat** (Beer et al., §3.1) para tripletas temporais.
 - Modelagem por **grafos** após fechar baseline tabular/sequencial.
 
+### 5.1.1. TODO pós-treino (publicação / estatística / ablação)
+
+Este bloco é um *checklist* para executar **após** finalizar os treinos `exp1_*` / `exp2_*`. A maioria das análises abaixo é possível **sem retreinar modelos**, usando apenas os artefactos por run em `tables/` (principalmente `oof_predictions.csv`, `metrics_per_fold.csv`, `fold_test_scores.csv`) e os `checkpoints/`.
+
+#### A) Definir hipótese primária vs. sensibilidade (evitar *data dredging*)
+
+- Escolher e documentar **uma configuração primária** para o artigo:
+  - eixo: `exp1` (deltas) vs `exp2` (unitários)
+  - `balanced` vs `unbalanced`
+  - `harmonized` (NeuroComBat) vs `no_harmon`
+  - modelo: XGBoost / SVM / ROCKET / LSTM
+- Tratar as restantes combinações como **análises secundárias/sensibilidade** (suplemento/heatmap), com correção para comparações múltiplas quando aplicável.
+
+#### B) Estatística com as previsões OOF (sem retreino)
+
+- Consolidar uma tabela da grelha completa (até \(2\times 2\times 2\times 4 = 32\) configurações) com:
+  - métricas OOF (AUC, AP, acc, F1) e dispersão por fold (`metrics_per_fold.csv`).
+  - heatmap/figura de comparação (principal + suplemento).
+- Estimar **IC 95% por bootstrap ao nível do paciente** (cluster bootstrap por `group_id` do `oof_predictions.csv`), reportando:
+  - AUC/AP globais por configuração.
+  - diferenças pareadas \(\Delta\)AUC/\(\Delta\)AP entre pares de interesse (ex.: `exp2` vs `exp1`, harmonizado vs não, balanced vs unbalanced) usando as mesmas amostras (`row_idx`) em OOF.
+- Comparações múltiplas:
+  - aplicar Bonferroni/FDR quando houver muitas comparações paralelas (ex.: grelha completa).
+- Calibração e decisão (baseadas em OOF):
+  - curvas de calibração / Brier score para a configuração primária.
+  - (opcional) *decision curve analysis* (benefício líquido vs limiar).
+- Nota metodológica: há **múltiplos conjuntos por paciente** (cluster). Para ICs/p-valores, preferir bootstrap por paciente em vez de assumir IID por amostra.
+
+#### C) Ablação por ROI na configuração vencedora (exige novo treino, mas pode evitar Optuna)
+
+Objetivo: quantificar impacto de cada ROI na performance, focando **apenas** na melhor abordagem (reduz custo e evita interpretabilidade difusa).
+
+- **Leave-One-ROI-Out (LORO)** (recomendado para o corpo do artigo):
+  - para cada ROI \(r\) (20 ROIs), remover os **3 slots** correspondentes (3 tempos/pares) do tensor e repetir o treino/avaliação no mesmo 5-fold SGK.
+  - preferir ablação com hiperparâmetros **fixos** (usar `best_params` guardados nos `checkpoints/fold_k/meta.json`) para evitar re-Optuna 20×.
+  - reportar \(\Delta\)AUC OOF = AUC(full) − AUC(sem ROI \(r\)), com IC 95% por bootstrap por paciente e distribuição por fold (boxplot).
+- **LORO + re-Optuna**:
+  - opcional só para 2–3 ROIs top (suplemento), devido ao custo.
+- **Permutation ablation** (sanity check, sem retreino completo):
+  - com o modelo já treinado (checkpoint), permutar/blindar features da ROI \(r\) apenas no teste do fold e medir queda de AUC.
+  - mede dependência do modelo treinado (não substitui LORO), mas é rápido e útil como validação.
+- Confrontar ablação (LORO/permutação) com interpretabilidade já exportada:
+  - XGBoost/LSTM: `importance_shap_roi_mean.csv`
+  - SVM/ROCKET: `importance_coef_roi_mean.csv`
+  - verificar concordância entre ROIs com alto \|SHAP\|/\|coef.\| e ROIs com maior \(\Delta\)AUC.
+
 ### 5.2. Scripts exploratórios (não são o pipeline de produção)
 
 | Script | Papel |
