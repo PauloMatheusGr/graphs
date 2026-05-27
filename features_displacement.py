@@ -9,7 +9,7 @@ Fluxo (objetivo, sem argparse/dataclass):
        - carrega imagem clínica (fixed)
        - monta displacement field em memória usando inv_list = [affine, inverseWarp]
          (evita segfault no jacobiano ao usar *_1Warp.nii.gz diretamente)
-       - calcula: logjac, mag, div, ux, uy, uz, curlmag
+       - calcula: logjac, mag, div, ux, uy, uz, curlmag, escalares do strain tensor (Green–Lagrange)
        - agrega stats por ROI (ROI_TABLE) e salva no OUT_CSV
   4) Retoma com done_keys.txt e também consultando o OUT_CSV.
 """
@@ -27,9 +27,9 @@ import ants
 # CONFIG (edite aqui)
 # =========================
 
-ab = "abordagem_4_sMCI_pMCI"
+ab = "abordagem_4_sMCI_pMCI_extremos"
 
-IMAGES_CSV = "image_data_sMCI_pMCI.txt"
+IMAGES_CSV = "image_data_sMCI_pMCI_extremos.txt"
 
 WARPS_DIR = "./images/displacement_field"
 CLINIC_DIR = "./images/resampled_1.0mm"
@@ -68,6 +68,21 @@ ROI_TABLE = (
     ("medial_orbitofrontal", "R", 2014),
     ("insula", "L", 1035),
     ("insula", "R", 2035),
+)
+
+# Escalares derivados do tensor de strain (Green–Lagrange) por voxel
+STRAIN_SCALAR_NAMES = (
+    "strain_trace",
+    "strain_det",
+    "strain_fro",
+    "strain_vol",
+    "strain_dev_norm",
+    "strain_shear_max",
+    "strain_l1",
+    "strain_l2",
+    "strain_l3",
+    "strain_shear_ratio",
+    "strain_shear_energy",
 )
 
 
@@ -154,6 +169,17 @@ def inv_list_for(warps_dir: str, img_id: str, sex: str, age_range: str) -> list[
         inv_warp_path_for(warps_dir, img_id, sex, age_range),
     ]
 
+def _feature_stats_columns(prefix: str, stats: dict[str, float]) -> dict[str, float]:
+    return {
+        f"{prefix}_n": stats["n"],
+        f"{prefix}_mean": stats["mean"],
+        f"{prefix}_std": stats["std"],
+        f"{prefix}_p05": stats["p05"],
+        f"{prefix}_p50": stats["p50"],
+        f"{prefix}_p95": stats["p95"],
+    }
+
+
 def _stats(x: np.ndarray) -> dict[str, float]:
     a = x.astype(np.float64, copy=False)
     a = a[np.isfinite(a)]
@@ -219,6 +245,66 @@ def field_components(field: ants.ANTsImage):
     uy = ants.from_numpy(arr[..., 1], origin=field.origin, spacing=field.spacing, direction=field.direction)
     uz = ants.from_numpy(arr[..., 2], origin=field.origin, spacing=field.spacing, direction=field.direction)
     return ux, uy, uz
+
+def _deformation_gradient_from_components(
+    ux: np.ndarray, uy: np.ndarray, uz: np.ndarray, spacing: tuple[float, float, float]
+) -> np.ndarray:
+    """H[i,j] = d(u_i)/d(x_j) com u = (ux, uy, uz)."""
+    sx, sy, sz = spacing
+    dux_dx, dux_dy, dux_dz = np.gradient(ux, sx, sy, sz, edge_order=1)
+    duy_dx, duy_dy, duy_dz = np.gradient(uy, sx, sy, sz, edge_order=1)
+    duz_dx, duz_dy, duz_dz = np.gradient(uz, sx, sy, sz, edge_order=1)
+    return np.stack(
+        [
+            np.stack([dux_dx, dux_dy, dux_dz], axis=-1),
+            np.stack([duy_dx, duy_dy, duy_dz], axis=-1),
+            np.stack([duz_dx, duz_dy, duz_dz], axis=-1),
+        ],
+        axis=-2,
+    ).astype(np.float32, copy=False)
+
+
+def _green_lagrange_strain(deformation_gradient: np.ndarray) -> np.ndarray:
+    """E = 0.5 * (F^T F - I), F = I + grad(u)."""
+    eye = np.eye(3, dtype=np.float32)
+    f = eye + deformation_gradient
+    ft_f = np.einsum("...ki,...kj->...ij", f, f)
+    return (0.5 * (ft_f - eye)).astype(np.float32, copy=False)
+
+
+def strain_scalar_maps_from_displacement(
+    ux: np.ndarray, uy: np.ndarray, uz: np.ndarray, spacing: tuple[float, float, float]
+) -> dict[str, np.ndarray]:
+    """
+    Invariantes escalares do tensor de Green–Lagrange no domínio da imagem clínica.
+    Convenção alinhada ao itk.StrainImageFilter (GREENLAGRANGIAN) do registration-mni.ipynb.
+    """
+    h = _deformation_gradient_from_components(ux, uy, uz, spacing)
+    e = _green_lagrange_strain(h)
+    trace = np.trace(e, axis1=-2, axis2=-1)
+    fro = np.linalg.norm(e, axis=(-2, -1))
+    vol = (trace / 3.0).astype(np.float32, copy=False)
+    dev = e - (vol[..., np.newaxis, np.newaxis] * np.eye(3, dtype=np.float32))
+    dev_norm = np.linalg.norm(dev, axis=(-2, -1)).astype(np.float32, copy=False)
+    eig = np.linalg.eigvalsh(e.astype(np.float64)).astype(np.float32)
+    shear_max = (0.5 * (eig[..., 2] - eig[..., 0])).astype(np.float32, copy=False)
+    fro_safe = fro + np.float32(1e-6)
+    shear_ratio = np.where(fro > 0, dev_norm / fro_safe, 0.0).astype(np.float32, copy=False)
+    shear_energy = (0.5 * dev_norm * dev_norm).astype(np.float32, copy=False)
+    return {
+        "strain_trace": trace.astype(np.float32, copy=False),
+        "strain_det": np.linalg.det(e.astype(np.float64)).astype(np.float32),
+        "strain_fro": fro.astype(np.float32, copy=False),
+        "strain_vol": vol,
+        "strain_dev_norm": dev_norm,
+        "strain_shear_max": shear_max,
+        "strain_l1": eig[..., 0],
+        "strain_l2": eig[..., 1],
+        "strain_l3": eig[..., 2],
+        "strain_shear_ratio": shear_ratio,
+        "strain_shear_energy": shear_energy,
+    }
+
 
 def field_curl_magnitude(field: ants.ANTsImage) -> ants.ANTsImage:
     arr = field.numpy().astype(np.float32, copy=False)
@@ -308,7 +394,7 @@ def compute_unitary_scalar_arrays(domain_img: ants.ANTsImage, inv_list: list[str
     inversa (fixed -> template) aos pontos. Isso evita segfault que ocorria ao passar
     diretamente o *_1Warp.nii.gz para create_jacobian_determinant_image.
 
-    Retorna arrays float32: logjac, mag, div, ux, uy, uz, curlmag + ref_img para resample/centroide.
+    Retorna arrays float32: logjac, mag, div, ux, uy, uz, curlmag, strain maps + ref_img.
     """
     delta = displacement_field_from_inv_list(domain_img, inv_list)
     logjac = ants.create_jacobian_determinant_image(domain_img, delta, do_log=True)
@@ -316,6 +402,11 @@ def compute_unitary_scalar_arrays(domain_img: ants.ANTsImage, inv_list: list[str
     div = field_divergence(delta)
     ux, uy, uz = field_components(delta)
     curlmag = field_curl_magnitude(delta)
+    arr = delta.numpy().astype(np.float32, copy=False)
+    spacing = tuple(map(float, delta.spacing))
+    strain_maps = strain_scalar_maps_from_displacement(
+        arr[..., 0], arr[..., 1], arr[..., 2], spacing
+    )
     return (
         logjac.numpy().astype(np.float32),
         mag.numpy().astype(np.float32),
@@ -324,6 +415,7 @@ def compute_unitary_scalar_arrays(domain_img: ants.ANTsImage, inv_list: list[str
         uy.numpy().astype(np.float32),
         uz.numpy().astype(np.float32),
         curlmag.numpy().astype(np.float32),
+        strain_maps,
         logjac,  # ref_img
     )
 
@@ -400,7 +492,9 @@ def main():
         t_img = time.time()
 
         domain_img = ants.image_read(fixed_p)
-        lj, m, dvg, ux, uy, uz, curl, refimg = compute_unitary_scalar_arrays(domain_img, inv_list)
+        lj, m, dvg, ux, uy, uz, curl, strain_maps, refimg = compute_unitary_scalar_arrays(
+            domain_img, inv_list
+        )
         labels = _load_and_resample_labelmap(regions_p, refimg)
         brain_mask = _load_and_resample_mask(bm_p, refimg) if os.path.isfile(bm_p) else None
 
@@ -421,66 +515,69 @@ def main():
             s_uz = _stats(uz[roi_mask])
             s_curl = _stats(curl[roi_mask])
 
-            rows.append(
-                {
-                    "ID_PT": id_pt,
-                    "ID_IMG": img_id,
-                    "DIAG": str(getattr(r, "DIAG", "")),
-                    "GROUP": str(getattr(r, "GROUP", "")),
-                    "SEX": str(getattr(r, "SEX", "")),
-                    "AGE": float(getattr(r, "AGE", np.nan)),
-                    "MRI_DATE": str(getattr(r, "MRI_DATE", "")),
-                    "ref_tag": f"CN_SEX-{sex}_AGE-{age_range}",
-                    "roi": str(roi),
-                    "side": str(side),
-                    "label": str(label),
-                    "centroid_x": float(cx),
-                    "centroid_y": float(cy),
-                    "centroid_z": float(cz),
-                    "logjac_n": s_lj["n"],
-                    "logjac_mean": s_lj["mean"],
-                    "logjac_std": s_lj["std"],
-                    "logjac_p05": s_lj["p05"],
-                    "logjac_p50": s_lj["p50"],
-                    "logjac_p95": s_lj["p95"],
-                    "mag_n": s_m["n"],
-                    "mag_mean": s_m["mean"],
-                    "mag_std": s_m["std"],
-                    "mag_p05": s_m["p05"],
-                    "mag_p50": s_m["p50"],
-                    "mag_p95": s_m["p95"],
-                    "div_n": s_div["n"],
-                    "div_mean": s_div["mean"],
-                    "div_std": s_div["std"],
-                    "div_p05": s_div["p05"],
-                    "div_p50": s_div["p50"],
-                    "div_p95": s_div["p95"],
-                    "ux_n": s_ux["n"],
-                    "ux_mean": s_ux["mean"],
-                    "ux_std": s_ux["std"],
-                    "ux_p05": s_ux["p05"],
-                    "ux_p50": s_ux["p50"],
-                    "ux_p95": s_ux["p95"],
-                    "uy_n": s_uy["n"],
-                    "uy_mean": s_uy["mean"],
-                    "uy_std": s_uy["std"],
-                    "uy_p05": s_uy["p05"],
-                    "uy_p50": s_uy["p50"],
-                    "uy_p95": s_uy["p95"],
-                    "uz_n": s_uz["n"],
-                    "uz_mean": s_uz["mean"],
-                    "uz_std": s_uz["std"],
-                    "uz_p05": s_uz["p05"],
-                    "uz_p50": s_uz["p50"],
-                    "uz_p95": s_uz["p95"],
-                    "curlmag_n": s_curl["n"],
-                    "curlmag_mean": s_curl["mean"],
-                    "curlmag_std": s_curl["std"],
-                    "curlmag_p05": s_curl["p05"],
-                    "curlmag_p50": s_curl["p50"],
-                    "curlmag_p95": s_curl["p95"],
-                }
-            )
+            row = {
+                "ID_PT": id_pt,
+                "ID_IMG": img_id,
+                "DIAG": str(getattr(r, "DIAG", "")),
+                "GROUP": str(getattr(r, "GROUP", "")),
+                "SEX": str(getattr(r, "SEX", "")),
+                "AGE": float(getattr(r, "AGE", np.nan)),
+                "MRI_DATE": str(getattr(r, "MRI_DATE", "")),
+                "ref_tag": f"CN_SEX-{sex}_AGE-{age_range}",
+                "roi": str(roi),
+                "side": str(side),
+                "label": str(label),
+                "centroid_x": float(cx),
+                "centroid_y": float(cy),
+                "centroid_z": float(cz),
+                "logjac_n": s_lj["n"],
+                "logjac_mean": s_lj["mean"],
+                "logjac_std": s_lj["std"],
+                "logjac_p05": s_lj["p05"],
+                "logjac_p50": s_lj["p50"],
+                "logjac_p95": s_lj["p95"],
+                "mag_n": s_m["n"],
+                "mag_mean": s_m["mean"],
+                "mag_std": s_m["std"],
+                "mag_p05": s_m["p05"],
+                "mag_p50": s_m["p50"],
+                "mag_p95": s_m["p95"],
+                "div_n": s_div["n"],
+                "div_mean": s_div["mean"],
+                "div_std": s_div["std"],
+                "div_p05": s_div["p05"],
+                "div_p50": s_div["p50"],
+                "div_p95": s_div["p95"],
+                "ux_n": s_ux["n"],
+                "ux_mean": s_ux["mean"],
+                "ux_std": s_ux["std"],
+                "ux_p05": s_ux["p05"],
+                "ux_p50": s_ux["p50"],
+                "ux_p95": s_ux["p95"],
+                "uy_n": s_uy["n"],
+                "uy_mean": s_uy["mean"],
+                "uy_std": s_uy["std"],
+                "uy_p05": s_uy["p05"],
+                "uy_p50": s_uy["p50"],
+                "uy_p95": s_uy["p95"],
+                "uz_n": s_uz["n"],
+                "uz_mean": s_uz["mean"],
+                "uz_std": s_uz["std"],
+                "uz_p05": s_uz["p05"],
+                "uz_p50": s_uz["p50"],
+                "uz_p95": s_uz["p95"],
+                "curlmag_n": s_curl["n"],
+                "curlmag_mean": s_curl["mean"],
+                "curlmag_std": s_curl["std"],
+                "curlmag_p05": s_curl["p05"],
+                "curlmag_p50": s_curl["p50"],
+                "curlmag_p95": s_curl["p95"],
+            }
+            for strain_name in STRAIN_SCALAR_NAMES:
+                row.update(
+                    _feature_stats_columns(strain_name, _stats(strain_maps[strain_name][roi_mask]))
+                )
+            rows.append(row)
 
         if rows:
             append_csv(pd.DataFrame(rows), OUT_CSV)

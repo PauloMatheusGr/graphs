@@ -7,3 +7,4 @@ images/
 zold/
 .venv/
 colab/logs_*/
+*.csv

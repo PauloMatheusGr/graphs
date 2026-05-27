@@ -23,12 +23,13 @@ from typing import Any, Iterable
 
 logger = logging.getLogger(__name__)
 
-# Defaults (edite aqui se quiser rodar como script, sem CLI)
-DEFAULT_LIST = Path("/mnt/study-data/pgirardi/graphs/image_data_teste.txt")
+ab = "abordagem_4_sMCI_pMCI_extremos"
+
+DEFAULT_LIST = Path(f"/mnt/study-data/pgirardi/graphs/image_data_sMCI_pMCI_extremos.csv")
 DEFAULT_IMAGE_DIR = Path("/mnt/study-data/pgirardi/graphs/images/resampled_1.0mm")
 DEFAULT_IMAGE_SUFFIX = "_stripped_nlm_denoised_biascorrected_mni_template.nii.gz"
 DEFAULT_REGIONS_DIR = Path("/mnt/study-data/pgirardi/graphs/images/regions")
-DEFAULT_OUT = Path("/mnt/study-data/pgirardi/graphs/csvs/abordagem_teste/features_radiomic_teste.csv")
+DEFAULT_OUT = Path(f"/mnt/study-data/pgirardi/graphs/csvs/{ab}/features_radiomic.csv")
 
 # Seleção de features no código (em vez de Params.yaml).
 # Referência das classes: https://github.com/AIM-Harvard/pyradiomics/blob/master/docs/features.rst
