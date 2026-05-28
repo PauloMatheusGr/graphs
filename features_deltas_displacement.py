@@ -11,11 +11,11 @@ import pandas as pd
 # =========================
 # Defaults (edite aqui)
 # =========================
-DEFAULT_IMAGES_CSV = "image_data_teste.txt"
+DEFAULT_IMAGES_CSV = "image_data_sMCI_pMCI_extremos.csv"
 DEFAULT_COMBINATIONS_CSV = "cj_data_abordagem_teste.txt"
 
 # Fases: "1" (warps), "2" (features), "both"
-DEFAULT_PHASE = "both"
+DEFAULT_PHASE = "1"#both"
 
 # Tamanho mínimo para considerar NIfTI completo (em bytes)
 DEFAULT_MIN_OUTPUT_BYTES = 1024

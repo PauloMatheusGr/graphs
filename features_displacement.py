@@ -29,7 +29,7 @@ import ants
 
 ab = "abordagem_4_sMCI_pMCI_extremos"
 
-IMAGES_CSV = "image_data_sMCI_pMCI_extremos.txt"
+IMAGES_CSV = "image_data_sMCI_pMCI_extremos.csv"
 
 WARPS_DIR = "./images/displacement_field"
 CLINIC_DIR = "./images/resampled_1.0mm"
