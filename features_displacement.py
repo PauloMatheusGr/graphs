@@ -9,8 +9,10 @@ Fluxo (objetivo, sem argparse/dataclass):
        - carrega imagem clínica (fixed)
        - monta displacement field em memória usando inv_list = [affine, inverseWarp]
          (evita segfault no jacobiano ao usar *_1Warp.nii.gz diretamente)
-       - calcula: logjac, mag, div, ux, uy, uz, curlmag, escalares do strain tensor (Green–Lagrange)
-       - agrega stats por ROI (ROI_TABLE) e salva no OUT_CSV
+       - calcula mapas escalares (logjac, mag, strain_fro infinitesimal, etc.)
+       - agrega por ROI: momentos do artigo (mean, variance, skewness, kurtosis) ou
+         legado (mean, std, p05, p50, p95) — ver USE_ARTICLE_MOMENTS
+       - salva no OUT_CSV
   4) Retoma com done_keys.txt e também consultando o OUT_CSV.
 """
 
@@ -22,6 +24,7 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 import ants
+from scipy.stats import kurtosis, skew
 
 # =========================
 # CONFIG (edite aqui)
@@ -36,8 +39,19 @@ CLINIC_DIR = "./images/resampled_1.0mm"
 REGIONS_DIR = "./images/regions"
 BRAIN_MASK_DIR = "./images/brain_mask"
 
-OUT_CSV = f"./csvs/{ab}/features_displacement_unitary.csv"
-RUN_DIR = os.path.join(WARPS_DIR, "features_unitary", ab)
+# True: 3 mapas (mag, logjac, strain_fro) × 4 momentos ROI (Seção 3.5 do artigo)
+USE_ARTICLE_MOMENTS = True
+
+OUT_CSV = (
+    f"./csvs/{ab}/features_displacement_article.csv"
+    if USE_ARTICLE_MOMENTS
+    else f"./csvs/{ab}/features_displacement_unitary.csv"
+)
+RUN_DIR = os.path.join(
+    WARPS_DIR,
+    "features_article" if USE_ARTICLE_MOMENTS else "features_unitary",
+    ab,
+)
 
 RESUME = True
 LOG_EVERY = 1  # log a cada N imagens processadas
@@ -70,7 +84,10 @@ ROI_TABLE = (
     ("insula", "R", 2035),
 )
 
-# Escalares derivados do tensor de strain (Green–Lagrange) por voxel
+# Mapas escalares exportados no modo artigo (displacement amplitude, Jacobian, strain Frobenius)
+ARTICLE_SCALAR_PREFIXES = ("logjac", "mag", "strain_fro")
+
+# Escalares derivados do tensor de strain (Green–Lagrange) por voxel — legado
 STRAIN_SCALAR_NAMES = (
     "strain_trace",
     "strain_det",
@@ -169,7 +186,19 @@ def inv_list_for(warps_dir: str, img_id: str, sex: str, age_range: str) -> list[
         inv_warp_path_for(warps_dir, img_id, sex, age_range),
     ]
 
+def _feature_moment_columns(prefix: str, stats: dict[str, float]) -> dict[str, float]:
+    """Colunas ROI: mean, variance, skewness, kurtosis (+ n para controle de qualidade)."""
+    return {
+        f"{prefix}_n": stats["n"],
+        f"{prefix}_mean": stats["mean"],
+        f"{prefix}_variance": stats["variance"],
+        f"{prefix}_skewness": stats["skewness"],
+        f"{prefix}_kurtosis": stats["kurtosis"],
+    }
+
+
 def _feature_stats_columns(prefix: str, stats: dict[str, float]) -> dict[str, float]:
+    """Legado: mean, std, percentis."""
     return {
         f"{prefix}_n": stats["n"],
         f"{prefix}_mean": stats["mean"],
@@ -180,7 +209,32 @@ def _feature_stats_columns(prefix: str, stats: dict[str, float]) -> dict[str, fl
     }
 
 
-def _stats(x: np.ndarray) -> dict[str, float]:
+def _stats_moments(x: np.ndarray) -> dict[str, float]:
+    """
+    Momentos estatísticos ROI (Seção 3.5.4 / 3.6 do artigo):
+      mean, variance (amostral), skewness, kurtosis (Fisher, normal → 0).
+    """
+    a = x.astype(np.float64, copy=False)
+    a = a[np.isfinite(a)]
+    if a.size == 0:
+        return {
+            "n": 0.0,
+            "mean": float("nan"),
+            "variance": float("nan"),
+            "skewness": float("nan"),
+            "kurtosis": float("nan"),
+        }
+    return {
+        "n": float(a.size),
+        "mean": float(np.mean(a)),
+        "variance": float(np.var(a, ddof=1)),
+        "skewness": float(skew(a, bias=False)),
+        "kurtosis": float(kurtosis(a, bias=False, fisher=True)),
+    }
+
+
+def _stats_percentiles(x: np.ndarray) -> dict[str, float]:
+    """Legado: mean, std, p05, p50, p95."""
     a = x.astype(np.float64, copy=False)
     a = a[np.isfinite(a)]
     if a.size == 0:
@@ -200,6 +254,13 @@ def _stats(x: np.ndarray) -> dict[str, float]:
         "p50": float(np.quantile(a, 0.50)),
         "p95": float(np.quantile(a, 0.95)),
     }
+
+
+def _stats(x: np.ndarray) -> dict[str, float]:
+    """Alias: delega ao modo ativo (artigo ou legado)."""
+    if USE_ARTICLE_MOMENTS:
+        return _stats_moments(x)
+    return _stats_percentiles(x)
 
 def _centroid_physical(mask: np.ndarray, ref_img: ants.ANTsImage) -> tuple[float, float, float]:
     idx = np.argwhere(mask)
@@ -262,6 +323,22 @@ def _deformation_gradient_from_components(
         ],
         axis=-2,
     ).astype(np.float32, copy=False)
+
+
+def _infinitesimal_strain_tensor(deformation_gradient: np.ndarray) -> np.ndarray:
+    """ε = 0.5 * (H + H^T), H = grad(u) — strain infinitesimal do artigo (Eq. 6)."""
+    return (0.5 * (deformation_gradient + np.swapaxes(deformation_gradient, -1, -2))).astype(
+        np.float32, copy=False
+    )
+
+
+def _infinitesimal_strain_fro_map(
+    ux: np.ndarray, uy: np.ndarray, uz: np.ndarray, spacing: tuple[float, float, float]
+) -> np.ndarray:
+    """Mapa escalar S(x) = ||ε(x)||_F (Eq. 7), com ε infinitesimal."""
+    h = _deformation_gradient_from_components(ux, uy, uz, spacing)
+    eps = _infinitesimal_strain_tensor(h)
+    return np.linalg.norm(eps, axis=(-2, -1)).astype(np.float32, copy=False)
 
 
 def _green_lagrange_strain(deformation_gradient: np.ndarray) -> np.ndarray:
@@ -495,6 +572,8 @@ def main():
         lj, m, dvg, ux, uy, uz, curl, strain_maps, refimg = compute_unitary_scalar_arrays(
             domain_img, inv_list
         )
+        spacing = tuple(map(float, refimg.spacing))
+        strain_inf_fro = _infinitesimal_strain_fro_map(ux, uy, uz, spacing)
         labels = _load_and_resample_labelmap(regions_p, refimg)
         brain_mask = _load_and_resample_mask(bm_p, refimg) if os.path.isfile(bm_p) else None
 
@@ -505,15 +584,7 @@ def main():
             if brain_mask is not None:
                 roi_mask = roi_mask & brain_mask
 
-            cx, cy, cz = _centroid_physical(roi_mask, refimg)
-
-            s_lj = _stats(lj[roi_mask])
-            s_m = _stats(m[roi_mask])
-            s_div = _stats(dvg[roi_mask])
-            s_ux = _stats(ux[roi_mask])
-            s_uy = _stats(uy[roi_mask])
-            s_uz = _stats(uz[roi_mask])
-            s_curl = _stats(curl[roi_mask])
+            # cx, cy, cz = _centroid_physical(roi_mask, refimg)
 
             row = {
                 "ID_PT": id_pt,
@@ -527,56 +598,85 @@ def main():
                 "roi": str(roi),
                 "side": str(side),
                 "label": str(label),
-                "centroid_x": float(cx),
-                "centroid_y": float(cy),
-                "centroid_z": float(cz),
-                "logjac_n": s_lj["n"],
-                "logjac_mean": s_lj["mean"],
-                "logjac_std": s_lj["std"],
-                "logjac_p05": s_lj["p05"],
-                "logjac_p50": s_lj["p50"],
-                "logjac_p95": s_lj["p95"],
-                "mag_n": s_m["n"],
-                "mag_mean": s_m["mean"],
-                "mag_std": s_m["std"],
-                "mag_p05": s_m["p05"],
-                "mag_p50": s_m["p50"],
-                "mag_p95": s_m["p95"],
-                "div_n": s_div["n"],
-                "div_mean": s_div["mean"],
-                "div_std": s_div["std"],
-                "div_p05": s_div["p05"],
-                "div_p50": s_div["p50"],
-                "div_p95": s_div["p95"],
-                "ux_n": s_ux["n"],
-                "ux_mean": s_ux["mean"],
-                "ux_std": s_ux["std"],
-                "ux_p05": s_ux["p05"],
-                "ux_p50": s_ux["p50"],
-                "ux_p95": s_ux["p95"],
-                "uy_n": s_uy["n"],
-                "uy_mean": s_uy["mean"],
-                "uy_std": s_uy["std"],
-                "uy_p05": s_uy["p05"],
-                "uy_p50": s_uy["p50"],
-                "uy_p95": s_uy["p95"],
-                "uz_n": s_uz["n"],
-                "uz_mean": s_uz["mean"],
-                "uz_std": s_uz["std"],
-                "uz_p05": s_uz["p05"],
-                "uz_p50": s_uz["p50"],
-                "uz_p95": s_uz["p95"],
-                "curlmag_n": s_curl["n"],
-                "curlmag_mean": s_curl["mean"],
-                "curlmag_std": s_curl["std"],
-                "curlmag_p05": s_curl["p05"],
-                "curlmag_p50": s_curl["p50"],
-                "curlmag_p95": s_curl["p95"],
+                # "centroid_x": float(cx),
+                # "centroid_y": float(cy),
+                # "centroid_z": float(cz),
             }
-            for strain_name in STRAIN_SCALAR_NAMES:
+
+            if USE_ARTICLE_MOMENTS:
+                for prefix, arr in (
+                    ("logjac", lj),
+                    ("mag", m),
+                    ("strain_fro", strain_inf_fro),
+                ):
+                    row.update(_feature_moment_columns(prefix, _stats_moments(arr[roi_mask])))
+            else:
+                cx, cy, cz = _centroid_physical(roi_mask, refimg)
+                row["centroid_x"] = float(cx)
+                row["centroid_y"] = float(cy)
+                row["centroid_z"] = float(cz)
+
+                s_lj = _stats_percentiles(lj[roi_mask])
+                s_m = _stats_percentiles(m[roi_mask])
+                s_div = _stats_percentiles(dvg[roi_mask])
+                s_ux = _stats_percentiles(ux[roi_mask])
+                s_uy = _stats_percentiles(uy[roi_mask])
+                s_uz = _stats_percentiles(uz[roi_mask])
+                s_curl = _stats_percentiles(curl[roi_mask])
+
                 row.update(
-                    _feature_stats_columns(strain_name, _stats(strain_maps[strain_name][roi_mask]))
+                    {
+                        "logjac_n": s_lj["n"],
+                        "logjac_mean": s_lj["mean"],
+                        "logjac_std": s_lj["std"],
+                        "logjac_p05": s_lj["p05"],
+                        "logjac_p50": s_lj["p50"],
+                        "logjac_p95": s_lj["p95"],
+                        "mag_n": s_m["n"],
+                        "mag_mean": s_m["mean"],
+                        "mag_std": s_m["std"],
+                        "mag_p05": s_m["p05"],
+                        "mag_p50": s_m["p50"],
+                        "mag_p95": s_m["p95"],
+                        "div_n": s_div["n"],
+                        "div_mean": s_div["mean"],
+                        "div_std": s_div["std"],
+                        "div_p05": s_div["p05"],
+                        "div_p50": s_div["p50"],
+                        "div_p95": s_div["p95"],
+                        "ux_n": s_ux["n"],
+                        "ux_mean": s_ux["mean"],
+                        "ux_std": s_ux["std"],
+                        "ux_p05": s_ux["p05"],
+                        "ux_p50": s_ux["p50"],
+                        "ux_p95": s_ux["p95"],
+                        "uy_n": s_uy["n"],
+                        "uy_mean": s_uy["mean"],
+                        "uy_std": s_uy["std"],
+                        "uy_p05": s_uy["p05"],
+                        "uy_p50": s_uy["p50"],
+                        "uy_p95": s_uy["p95"],
+                        "uz_n": s_uz["n"],
+                        "uz_mean": s_uz["mean"],
+                        "uz_std": s_uz["std"],
+                        "uz_p05": s_uz["p05"],
+                        "uz_p50": s_uz["p50"],
+                        "uz_p95": s_uz["p95"],
+                        "curlmag_n": s_curl["n"],
+                        "curlmag_mean": s_curl["mean"],
+                        "curlmag_std": s_curl["std"],
+                        "curlmag_p05": s_curl["p05"],
+                        "curlmag_p50": s_curl["p50"],
+                        "curlmag_p95": s_curl["p95"],
+                    }
                 )
+                for strain_name in STRAIN_SCALAR_NAMES:
+                    row.update(
+                        _feature_stats_columns(
+                            strain_name, _stats_percentiles(strain_maps[strain_name][roi_mask])
+                        )
+                    )
+
             rows.append(row)
 
         if rows:

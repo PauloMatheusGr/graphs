@@ -8,6 +8,14 @@ import ants
 import numpy as np
 import pandas as pd
 
+from features_displacement import (
+    USE_ARTICLE_MOMENTS,
+    _feature_moment_columns,
+    _infinitesimal_strain_fro_map,
+    _stats_moments,
+    _stats_percentiles,
+)
+
 # =========================
 # Defaults (edite aqui)
 # =========================
@@ -379,28 +387,35 @@ def run_individual_registrations(csv_images_path, *, min_output_bytes: int = 102
 
 def _stats(x: np.ndarray) -> dict[str, float]:
     """
-    Mesmo formato do notebook:
-      n, mean, std, p05, p50, p95
+    Legado (percentis). No modo artigo, use _stats_moments importado de features_displacement.
     """
-    a = x.astype(np.float64, copy=False)
-    a = a[np.isfinite(a)]
-    if a.size == 0:
-        return {
-            "n": 0.0,
-            "mean": float("nan"),
-            "std": float("nan"),
-            "p05": float("nan"),
-            "p50": float("nan"),
-            "p95": float("nan"),
-        }
-    return {
-        "n": float(a.size),
-        "mean": float(np.mean(a)),
-        "std": float(np.std(a, ddof=0)),
-        "p05": float(np.quantile(a, 0.05)),
-        "p50": float(np.quantile(a, 0.50)),
-        "p95": float(np.quantile(a, 0.95)),
-    }
+    return _stats_percentiles(x)
+
+
+# def _stats(x: np.ndarray) -> dict[str, float]:
+#     """
+#     Mesmo formato do notebook:
+#       n, mean, std, p05, p50, p95
+#     """
+#     a = x.astype(np.float64, copy=False)
+#     a = a[np.isfinite(a)]
+#     if a.size == 0:
+#         return {
+#             "n": 0.0,
+#             "mean": float("nan"),
+#             "std": float("nan"),
+#             "p05": float("nan"),
+#             "p50": float("nan"),
+#             "p95": float("nan"),
+#         }
+#     return {
+#         "n": float(a.size),
+#         "mean": float(np.mean(a)),
+#         "std": float(np.std(a, ddof=0)),
+#         "p05": float(np.quantile(a, 0.05)),
+#         "p50": float(np.quantile(a, 0.50)),
+#         "p95": float(np.quantile(a, 0.95)),
+#     }
 
 
 def _centroid_physical(mask: np.ndarray, ref_img: ants.ANTsImage) -> tuple[float, float, float]:
@@ -432,8 +447,8 @@ def _load_and_resample_mask(path: str, target: ants.ANTsImage) -> np.ndarray:
 
 def compute_pair_scalar_arrays(domain_img, fwd_list_a: list, inv_list_b: list):
     """
-    Calcula os 7 mapas (em memória) e devolve arrays numpy float32:
-      logjac, mag, div, ux, uy, uz, curlmag
+    Calcula mapas escalares (em memória) e devolve arrays numpy float32:
+      logjac, mag, div, ux, uy, uz, curlmag, strain_fro (infinitesimal)
     """
     delta = relative_displacement_field(domain_img, fwd_list_a, inv_list_b)
     logjac = ants.create_jacobian_determinant_image(domain_img, delta, do_log=True)
@@ -441,6 +456,13 @@ def compute_pair_scalar_arrays(domain_img, fwd_list_a: list, inv_list_b: list):
     div = field_divergence(delta)
     ux, uy, uz = field_components(delta)
     curlmag = field_curl_magnitude(delta)
+    spacing = tuple(map(float, delta.spacing))
+    strain_inf_fro = _infinitesimal_strain_fro_map(
+        ux.numpy().astype(np.float32),
+        uy.numpy().astype(np.float32),
+        uz.numpy().astype(np.float32),
+        spacing,
+    )
     return (
         logjac.numpy().astype(np.float32),
         mag.numpy().astype(np.float32),
@@ -449,6 +471,7 @@ def compute_pair_scalar_arrays(domain_img, fwd_list_a: list, inv_list_b: list):
         uy.numpy().astype(np.float32),
         uz.numpy().astype(np.float32),
         curlmag.numpy().astype(np.float32),
+        strain_inf_fro,
         logjac,  # ref_img (para resample/centroide)
     )
 
@@ -558,7 +581,13 @@ def process_longitudinal_combinations_to_features(
     parquet_dataset_dir = os.path.join(features_output_dir, "parquet_dataset")
     os.makedirs(parquet_dataset_dir, exist_ok=True)
 
-    out_csv_path = os.path.join(csvs_root, ab, f"deltas_displacement_{ab}.csv")
+    out_csv_path = os.path.join(
+        csvs_root,
+        ab,
+        f"deltas_displacement_article_{ab}.csv"
+        if USE_ARTICLE_MOMENTS
+        else f"deltas_displacement_{ab}.csv",
+    )
 
     persist_run_metadata(
         run_meta_path=run_meta_path,
@@ -658,13 +687,13 @@ def process_longitudinal_combinations_to_features(
                     continue
 
                 # Computa os arrays dos 3 pares (sem salvar NIfTI)
-                lj12, m12, d12, ux12, uy12, uz12, c12, refimg12 = compute_pair_scalar_arrays(
+                lj12, m12, d12, ux12, uy12, uz12, c12, sf12, refimg12 = compute_pair_scalar_arrays(
                     domain_img_1, fwd1, inv2
                 )
-                lj13, m13, d13, ux13, uy13, uz13, c13, refimg13 = compute_pair_scalar_arrays(
+                lj13, m13, d13, ux13, uy13, uz13, c13, sf13, refimg13 = compute_pair_scalar_arrays(
                     domain_img_1, fwd1, inv3
                 )
-                lj23, m23, d23, ux23, uy23, uz23, c23, refimg23 = compute_pair_scalar_arrays(
+                lj23, m23, d23, ux23, uy23, uz23, c23, sf23, refimg23 = compute_pair_scalar_arrays(
                     domain_img_2, fwd2, inv3
                 )
 
@@ -699,17 +728,10 @@ def process_longitudinal_combinations_to_features(
                     )
 
                     def pack_row(pair: str, centroid_xyz, roi_mask, arrays):
-                        a_lj, a_m, a_div, a_ux, a_uy, a_uz, a_curl = arrays
-                        s_lj = _stats(a_lj[roi_mask])
-                        s_m = _stats(a_m[roi_mask])
-                        s_div = _stats(a_div[roi_mask])
-                        s_ux = _stats(a_ux[roi_mask])
-                        s_uy = _stats(a_uy[roi_mask])
-                        s_uz = _stats(a_uz[roi_mask])
-                        s_curl = _stats(a_curl[roi_mask])
-
+                        a_lj, a_m, a_div, a_ux, a_uy, a_uz, a_curl, a_sf = arrays
                         cx, cy, cz = centroid_xyz
-                        return {
+
+                        base = {
                             "ID_PT": str(id_pt),
                             "COMBINATION_NUMBER": int(comb_id),
                             "TRIPLET_IDX": int(triplet_idx),
@@ -720,52 +742,83 @@ def process_longitudinal_combinations_to_features(
                             "roi": str(roi),
                             "side": str(side),
                             "label": str(label),
-                            "centroid_x": float(cx),
-                            "centroid_y": float(cy),
-                            "centroid_z": float(cz),
-                            "logjac_n": s_lj["n"],
-                            "logjac_mean": s_lj["mean"],
-                            "logjac_std": s_lj["std"],
-                            "logjac_p05": s_lj["p05"],
-                            "logjac_p50": s_lj["p50"],
-                            "logjac_p95": s_lj["p95"],
-                            "mag_n": s_m["n"],
-                            "mag_mean": s_m["mean"],
-                            "mag_std": s_m["std"],
-                            "mag_p05": s_m["p05"],
-                            "mag_p50": s_m["p50"],
-                            "mag_p95": s_m["p95"],
-                            "div_n": s_div["n"],
-                            "div_mean": s_div["mean"],
-                            "div_std": s_div["std"],
-                            "div_p05": s_div["p05"],
-                            "div_p50": s_div["p50"],
-                            "div_p95": s_div["p95"],
-                            "ux_n": s_ux["n"],
-                            "ux_mean": s_ux["mean"],
-                            "ux_std": s_ux["std"],
-                            "ux_p05": s_ux["p05"],
-                            "ux_p50": s_ux["p50"],
-                            "ux_p95": s_ux["p95"],
-                            "uy_n": s_uy["n"],
-                            "uy_mean": s_uy["mean"],
-                            "uy_std": s_uy["std"],
-                            "uy_p05": s_uy["p05"],
-                            "uy_p50": s_uy["p50"],
-                            "uy_p95": s_uy["p95"],
-                            "uz_n": s_uz["n"],
-                            "uz_mean": s_uz["mean"],
-                            "uz_std": s_uz["std"],
-                            "uz_p05": s_uz["p05"],
-                            "uz_p50": s_uz["p50"],
-                            "uz_p95": s_uz["p95"],
-                            "curlmag_n": s_curl["n"],
-                            "curlmag_mean": s_curl["mean"],
-                            "curlmag_std": s_curl["std"],
-                            "curlmag_p05": s_curl["p05"],
-                            "curlmag_p50": s_curl["p50"],
-                            "curlmag_p95": s_curl["p95"],
                         }
+
+                        if USE_ARTICLE_MOMENTS:
+                            for prefix, arr in (
+                                ("logjac", a_lj),
+                                ("mag", a_m),
+                                ("strain_fro", a_sf),
+                            ):
+                                base.update(
+                                    _feature_moment_columns(prefix, _stats_moments(arr[roi_mask]))
+                                )
+                            return base
+
+                        s_lj = _stats_percentiles(a_lj[roi_mask])
+                        s_m = _stats_percentiles(a_m[roi_mask])
+                        s_div = _stats_percentiles(a_div[roi_mask])
+                        s_ux = _stats_percentiles(a_ux[roi_mask])
+                        s_uy = _stats_percentiles(a_uy[roi_mask])
+                        s_uz = _stats_percentiles(a_uz[roi_mask])
+                        s_curl = _stats_percentiles(a_curl[roi_mask])
+
+                        base.update(
+                            {
+                                "centroid_x": float(cx),
+                                "centroid_y": float(cy),
+                                "centroid_z": float(cz),
+                                "logjac_n": s_lj["n"],
+                                "logjac_mean": s_lj["mean"],
+                                "logjac_std": s_lj["std"],
+                                "logjac_p05": s_lj["p05"],
+                                "logjac_p50": s_lj["p50"],
+                                "logjac_p95": s_lj["p95"],
+                                "mag_n": s_m["n"],
+                                "mag_mean": s_m["mean"],
+                                "mag_std": s_m["std"],
+                                "mag_p05": s_m["p05"],
+                                "mag_p50": s_m["p50"],
+                                "mag_p95": s_m["p95"],
+                                "div_n": s_div["n"],
+                                "div_mean": s_div["mean"],
+                                "div_std": s_div["std"],
+                                "div_p05": s_div["p05"],
+                                "div_p50": s_div["p50"],
+                                "div_p95": s_div["p95"],
+                                "ux_n": s_ux["n"],
+                                "ux_mean": s_ux["mean"],
+                                "ux_std": s_ux["std"],
+                                "ux_p05": s_ux["p05"],
+                                "ux_p50": s_ux["p50"],
+                                "ux_p95": s_ux["p95"],
+                                "uy_n": s_uy["n"],
+                                "uy_mean": s_uy["mean"],
+                                "uy_std": s_uy["std"],
+                                "uy_p05": s_uy["p05"],
+                                "uy_p50": s_uy["p50"],
+                                "uy_p95": s_uy["p95"],
+                                "uz_n": s_uz["n"],
+                                "uz_mean": s_uz["mean"],
+                                "uz_std": s_uz["std"],
+                                "uz_p05": s_uz["p05"],
+                                "uz_p50": s_uz["p50"],
+                                "uz_p95": s_uz["p95"],
+                                "curlmag_n": s_curl["n"],
+                                "curlmag_mean": s_curl["mean"],
+                                "curlmag_std": s_curl["std"],
+                                "curlmag_p05": s_curl["p05"],
+                                "curlmag_p50": s_curl["p50"],
+                                "curlmag_p95": s_curl["p95"],
+                            }
+                        )
+                        return base
+
+                    # def pack_row(...) legado inline acima — bloco antigo comentado abaixo:
+                    # return {
+                    #     ...
+                    #     "curlmag_p95": s_curl["p95"],
+                    # }
 
                     # pair 12 e 13 usam ROI do i1 (roi_mask12 / centroid12)
                     rows.append(
@@ -773,7 +826,7 @@ def process_longitudinal_combinations_to_features(
                             "12",
                             (centroid_x12, centroid_y12, centroid_z12),
                             roi_mask12,
-                            (lj12, m12, d12, ux12, uy12, uz12, c12),
+                            (lj12, m12, d12, ux12, uy12, uz12, c12, sf12),
                         )
                     )
                     rows.append(
@@ -781,7 +834,7 @@ def process_longitudinal_combinations_to_features(
                             "13",
                             (centroid_x12, centroid_y12, centroid_z12),
                             roi_mask12,
-                            (lj13, m13, d13, ux13, uy13, uz13, c13),
+                            (lj13, m13, d13, ux13, uy13, uz13, c13, sf13),
                         )
                     )
                     # pair 23 usa ROI do i2 (roi_mask23 / centroid23)
@@ -790,7 +843,7 @@ def process_longitudinal_combinations_to_features(
                             "23",
                             (centroid_x23, centroid_y23, centroid_z23),
                             roi_mask23,
-                            (lj23, m23, d23, ux23, uy23, uz23, c23),
+                            (lj23, m23, d23, ux23, uy23, uz23, c23, sf23),
                         )
                     )
 
