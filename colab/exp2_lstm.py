@@ -17,7 +17,7 @@ from exp_lstm_common import LstmExperimentConfig, run_lstm_experiment
 import exp_utils as u
 
 ROOT = Path(__file__).resolve().parents[1]
-CSV_PATH = ROOT / "csvs/abordagem_4_sMCI_pMCI/all_unitary_features.csv"
+CSV_PATH = ROOT / "csvs/abordagem_4_sMCI_pMCI_extremos/features_displacement_article_hippocampus_temporal.csv"
 EXP2_PATH = ROOT / "exp2.md"
 PAIR_ORDER = ["1", "2", "3"]
 DT_EPSILON = 0.5

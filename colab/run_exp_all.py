@@ -24,21 +24,21 @@ COLAB = Path(__file__).resolve().parent
 
 # --- CONFIG — editar antes de correr ---
 
-LOG_DIR = COLAB / "logs_exp1_no_combat_balanced"
-TRAIN_SCRIPTS = (
-    "exp1_xgboost.py",
-    "exp1_svm.py",
-    "exp1_rocket.py",
-    "exp1_lstm.py",
-)
-
-# LOG_DIR = COLAB / "logs_exp2_no_combat_balanced"
+# LOG_DIR = COLAB / "logs_exp1_no_combat_balanced"
 # TRAIN_SCRIPTS = (
-#     "exp2_xgboost.py",
-#     "exp2_svm.py",
-#     "exp2_rocket.py",
-#     "exp2_lstm.py",
+#     "exp1_xgboost.py",
+#     "exp1_svm.py",
+#     "exp1_rocket.py",
+#     "exp1_lstm.py",
 # )
+
+LOG_DIR = COLAB / "logs_exp2_no_combat_balanced"
+TRAIN_SCRIPTS = (
+    "exp2_xgboost.py",
+    "exp2_svm.py",
+    "exp2_rocket.py",
+    "exp2_lstm.py",
+)
 
 BALANCED = True
 HARMONIZATION = False

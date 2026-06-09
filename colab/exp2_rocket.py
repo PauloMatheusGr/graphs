@@ -26,7 +26,7 @@ from sktime.transformations.panel.rocket import Rocket
 
 ROOT = Path(__file__).resolve().parents[1]
 COLAB_DIR = Path(__file__).resolve().parent
-CSV_PATH = ROOT / "csvs/abordagem_4_sMCI_pMCI/all_unitary_features.csv"
+CSV_PATH = ROOT / "csvs/abordagem_4_sMCI_pMCI_extremos/features_displacement_article_hippocampus_temporal.csv"
 EXP2_PATH = ROOT / "exp2.md"
 MODEL_SLUG = "rocket"
 PAIR_ORDER = ["1", "2", "3"]
