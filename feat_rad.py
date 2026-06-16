@@ -23,11 +23,11 @@ from typing import Any, Iterable
 
 logger = logging.getLogger(__name__)
 
-ab = "abordagem_4_sMCI_pMCI_extremos"
+ab = "longitudinal_4_groups"
 
-DEFAULT_LIST = Path(f"/mnt/study-data/pgirardi/graphs/image_data_sMCI_pMCI_extremos.csv")
+DEFAULT_LIST = Path(f"/mnt/study-data/pgirardi/graphs/csvs/adnimerged_longitudinal.csv")
 DEFAULT_IMAGE_DIR = Path("/mnt/study-data/pgirardi/graphs/images/resampled_1.0mm")
-DEFAULT_IMAGE_SUFFIX = "_stripped_nlm_denoised_biascorrected_mni_template.nii.gz"
+DEFAULT_IMAGE_SUFFIX = "_stripped_nlm_denoised_biascorrected.nii.gz"
 DEFAULT_REGIONS_DIR = Path("/mnt/study-data/pgirardi/graphs/images/regions")
 DEFAULT_OUT = Path(f"/mnt/study-data/pgirardi/graphs/csvs/{ab}/features_radiomic.csv")
 

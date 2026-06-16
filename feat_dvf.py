@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """
-Gera um CSV com atributos unitários do displacement vector field por IMAGEM.
+Gera um CSV completo com atributos unitários do displacement vector field por IMAGEM.
 
-Fluxo (objetivo, sem argparse/dataclass):
+Fluxo:
   1) Lê IMAGES_CSV (imagens unitárias).
   2) Inferir ref_tag baseline por paciente (para bater com os warps já gerados).
   3) Para cada ID_IMG:
        - carrega imagem clínica (fixed)
        - monta displacement field em memória usando inv_list = [affine, inverseWarp]
-         (evita segfault no jacobiano ao usar *_1Warp.nii.gz diretamente)
-       - calcula mapas escalares (logjac, mag, strain_fro infinitesimal, etc.)
-       - agrega por ROI: momentos do artigo (mean, variance, skewness, kurtosis) ou
-         legado (mean, std, p05, p50, p95) — ver USE_ARTICLE_MOMENTS
-       - salva no OUT_CSV
+       - agrega por ROI:
+           * legado: percentis (mean, std, p05, p50, p95) de logjac, mag, div, ux, uy, uz,
+             curlmag e tensores de strain Green–Lagrange
+           * artigo: momentos (variance, skewness, kurtosis) de logjac, mag e strain_fro
+             infinitesimal — mean/n vêm do bloco legado quando compartilham o mesmo mapa
   4) Retoma com done_keys.txt e também consultando o OUT_CSV.
 """
 
@@ -30,28 +30,17 @@ from scipy.stats import kurtosis, skew
 # CONFIG (edite aqui)
 # =========================
 
-ab = "abordagem_4_sMCI_pMCI_extremos"
+ab = "longitudinal_4_groups"
 
-IMAGES_CSV = "image_data_sMCI_pMCI_extremos.csv"
+IMAGES_CSV = "csvs/adnimerged_longitudinal.csv"
 
 WARPS_DIR = "./images/displacement_field"
 CLINIC_DIR = "./images/resampled_1.0mm"
 REGIONS_DIR = "./images/regions"
 BRAIN_MASK_DIR = "./images/brain_mask"
 
-# True: 3 mapas (mag, logjac, strain_fro) × 4 momentos ROI (Seção 3.5 do artigo)
-USE_ARTICLE_MOMENTS = True
-
-OUT_CSV = (
-    f"./csvs/{ab}/features_displacement_article.csv"
-    if USE_ARTICLE_MOMENTS
-    else f"./csvs/{ab}/features_displacement_unitary.csv"
-)
-RUN_DIR = os.path.join(
-    WARPS_DIR,
-    "features_article" if USE_ARTICLE_MOMENTS else "features_unitary",
-    ab,
-)
+OUT_CSV = f"./csvs/{ab}/features_displacement.csv"
+RUN_DIR = os.path.join(WARPS_DIR, "features", ab)
 
 RESUME = True
 LOG_EVERY = 1  # log a cada N imagens processadas
@@ -83,9 +72,6 @@ ROI_TABLE = (
     ("insula", "L", 1035),
     ("insula", "R", 2035),
 )
-
-# Mapas escalares exportados no modo artigo (displacement amplitude, Jacobian, strain Frobenius)
-ARTICLE_SCALAR_PREFIXES = ("logjac", "mag", "strain_fro")
 
 # Escalares derivados do tensor de strain (Green–Lagrange) por voxel — legado
 STRAIN_SCALAR_NAMES = (
@@ -165,7 +151,7 @@ def baseline_ref_tag_by_pt(df_images: pd.DataFrame) -> dict[str, tuple[str, str]
 
 def fixed_path_for(clinic_dir: str, img_id: str) -> str:
     return os.path.join(
-        clinic_dir, f"{img_id}_stripped_nlm_denoised_biascorrected_mni_template.nii.gz"
+        clinic_dir, f"{img_id}_stripped_nlm_denoised_biascorrected.nii.gz"
     )
 
 def inv_warp_path_for(warps_dir: str, img_id: str, sex: str, age_range: str) -> str:
@@ -185,17 +171,6 @@ def inv_list_for(warps_dir: str, img_id: str, sex: str, age_range: str) -> list[
         affine_path_for(warps_dir, img_id, sex, age_range),
         inv_warp_path_for(warps_dir, img_id, sex, age_range),
     ]
-
-def _feature_moment_columns(prefix: str, stats: dict[str, float]) -> dict[str, float]:
-    """Colunas ROI: mean, variance, skewness, kurtosis (+ n para controle de qualidade)."""
-    return {
-        f"{prefix}_n": stats["n"],
-        f"{prefix}_mean": stats["mean"],
-        f"{prefix}_variance": stats["variance"],
-        f"{prefix}_skewness": stats["skewness"],
-        f"{prefix}_kurtosis": stats["kurtosis"],
-    }
-
 
 def _feature_stats_columns(prefix: str, stats: dict[str, float]) -> dict[str, float]:
     """Legado: mean, std, percentis."""
@@ -256,11 +231,132 @@ def _stats_percentiles(x: np.ndarray) -> dict[str, float]:
     }
 
 
-def _stats(x: np.ndarray) -> dict[str, float]:
-    """Alias: delega ao modo ativo (artigo ou legado)."""
-    if USE_ARTICLE_MOMENTS:
-        return _stats_moments(x)
-    return _stats_percentiles(x)
+def _append_article_moment_extras(
+    row: dict[str, object],
+    prefix: str,
+    arr: np.ndarray,
+    roi_mask: np.ndarray,
+) -> None:
+    """
+    Acrescenta variance, skewness e kurtosis do artigo (Seção 3.5).
+
+    mean/n/std/percentis vêm do bloco legado no mesmo prefixo quando aplicável.
+    Para strain_fro, o legado usa Green–Lagrange e o artigo usa ε infinitesimal.
+    """
+    stats = _stats_moments(arr[roi_mask])
+    for key in ("variance", "skewness", "kurtosis"):
+        row[f"{prefix}_{key}"] = stats[key]
+
+
+def _build_roi_feature_row(
+    *,
+    id_pt: str,
+    img_id: str,
+    meta_row,
+    sex: str,
+    age_range: str,
+    roi: str,
+    side: str,
+    label: int,
+    roi_mask: np.ndarray,
+    refimg: ants.ANTsImage,
+    lj: np.ndarray,
+    m: np.ndarray,
+    dvg: np.ndarray,
+    ux: np.ndarray,
+    uy: np.ndarray,
+    uz: np.ndarray,
+    curl: np.ndarray,
+    strain_maps: dict[str, np.ndarray],
+    strain_inf_fro: np.ndarray,
+) -> dict[str, object]:
+    cx, cy, cz = _centroid_physical(roi_mask, refimg)
+
+    row: dict[str, object] = {
+        "ID_PT": id_pt,
+        "ID_IMG": img_id,
+        "DIAG": str(getattr(meta_row, "DIAG", "")),
+        "GROUP": str(getattr(meta_row, "GROUP", "")),
+        "SEX": str(getattr(meta_row, "SEX", "")),
+        "AGE": float(getattr(meta_row, "AGE", np.nan)),
+        "MRI_DATE": str(getattr(meta_row, "MRI_DATE", "")),
+        "ref_tag": f"CN_SEX-{sex}_AGE-{age_range}",
+        "roi": str(roi),
+        "side": str(side),
+        "label": str(label),
+        "centroid_x": float(cx),
+        "centroid_y": float(cy),
+        "centroid_z": float(cz),
+    }
+
+    s_lj = _stats_percentiles(lj[roi_mask])
+    s_m = _stats_percentiles(m[roi_mask])
+    s_div = _stats_percentiles(dvg[roi_mask])
+    s_ux = _stats_percentiles(ux[roi_mask])
+    s_uy = _stats_percentiles(uy[roi_mask])
+    s_uz = _stats_percentiles(uz[roi_mask])
+    s_curl = _stats_percentiles(curl[roi_mask])
+
+    row.update(
+        {
+            "logjac_n": s_lj["n"],
+            "logjac_mean": s_lj["mean"],
+            "logjac_std": s_lj["std"],
+            "logjac_p05": s_lj["p05"],
+            "logjac_p50": s_lj["p50"],
+            "logjac_p95": s_lj["p95"],
+            "mag_n": s_m["n"],
+            "mag_mean": s_m["mean"],
+            "mag_std": s_m["std"],
+            "mag_p05": s_m["p05"],
+            "mag_p50": s_m["p50"],
+            "mag_p95": s_m["p95"],
+            "div_n": s_div["n"],
+            "div_mean": s_div["mean"],
+            "div_std": s_div["std"],
+            "div_p05": s_div["p05"],
+            "div_p50": s_div["p50"],
+            "div_p95": s_div["p95"],
+            "ux_n": s_ux["n"],
+            "ux_mean": s_ux["mean"],
+            "ux_std": s_ux["std"],
+            "ux_p05": s_ux["p05"],
+            "ux_p50": s_ux["p50"],
+            "ux_p95": s_ux["p95"],
+            "uy_n": s_uy["n"],
+            "uy_mean": s_uy["mean"],
+            "uy_std": s_uy["std"],
+            "uy_p05": s_uy["p05"],
+            "uy_p50": s_uy["p50"],
+            "uy_p95": s_uy["p95"],
+            "uz_n": s_uz["n"],
+            "uz_mean": s_uz["mean"],
+            "uz_std": s_uz["std"],
+            "uz_p05": s_uz["p05"],
+            "uz_p50": s_uz["p50"],
+            "uz_p95": s_uz["p95"],
+            "curlmag_n": s_curl["n"],
+            "curlmag_mean": s_curl["mean"],
+            "curlmag_std": s_curl["std"],
+            "curlmag_p05": s_curl["p05"],
+            "curlmag_p50": s_curl["p50"],
+            "curlmag_p95": s_curl["p95"],
+        }
+    )
+
+    for strain_name in STRAIN_SCALAR_NAMES:
+        row.update(
+            _feature_stats_columns(
+                strain_name, _stats_percentiles(strain_maps[strain_name][roi_mask])
+            )
+        )
+
+    _append_article_moment_extras(row, "logjac", lj, roi_mask)
+    _append_article_moment_extras(row, "mag", m, roi_mask)
+    _append_article_moment_extras(row, "strain_fro", strain_inf_fro, roi_mask)
+
+    return row
+
 
 def _centroid_physical(mask: np.ndarray, ref_img: ants.ANTsImage) -> tuple[float, float, float]:
     idx = np.argwhere(mask)
@@ -584,100 +680,29 @@ def main():
             if brain_mask is not None:
                 roi_mask = roi_mask & brain_mask
 
-            # cx, cy, cz = _centroid_physical(roi_mask, refimg)
-
-            row = {
-                "ID_PT": id_pt,
-                "ID_IMG": img_id,
-                "DIAG": str(getattr(r, "DIAG", "")),
-                "GROUP": str(getattr(r, "GROUP", "")),
-                "SEX": str(getattr(r, "SEX", "")),
-                "AGE": float(getattr(r, "AGE", np.nan)),
-                "MRI_DATE": str(getattr(r, "MRI_DATE", "")),
-                "ref_tag": f"CN_SEX-{sex}_AGE-{age_range}",
-                "roi": str(roi),
-                "side": str(side),
-                "label": str(label),
-                # "centroid_x": float(cx),
-                # "centroid_y": float(cy),
-                # "centroid_z": float(cz),
-            }
-
-            if USE_ARTICLE_MOMENTS:
-                for prefix, arr in (
-                    ("logjac", lj),
-                    ("mag", m),
-                    ("strain_fro", strain_inf_fro),
-                ):
-                    row.update(_feature_moment_columns(prefix, _stats_moments(arr[roi_mask])))
-            else:
-                cx, cy, cz = _centroid_physical(roi_mask, refimg)
-                row["centroid_x"] = float(cx)
-                row["centroid_y"] = float(cy)
-                row["centroid_z"] = float(cz)
-
-                s_lj = _stats_percentiles(lj[roi_mask])
-                s_m = _stats_percentiles(m[roi_mask])
-                s_div = _stats_percentiles(dvg[roi_mask])
-                s_ux = _stats_percentiles(ux[roi_mask])
-                s_uy = _stats_percentiles(uy[roi_mask])
-                s_uz = _stats_percentiles(uz[roi_mask])
-                s_curl = _stats_percentiles(curl[roi_mask])
-
-                row.update(
-                    {
-                        "logjac_n": s_lj["n"],
-                        "logjac_mean": s_lj["mean"],
-                        "logjac_std": s_lj["std"],
-                        "logjac_p05": s_lj["p05"],
-                        "logjac_p50": s_lj["p50"],
-                        "logjac_p95": s_lj["p95"],
-                        "mag_n": s_m["n"],
-                        "mag_mean": s_m["mean"],
-                        "mag_std": s_m["std"],
-                        "mag_p05": s_m["p05"],
-                        "mag_p50": s_m["p50"],
-                        "mag_p95": s_m["p95"],
-                        "div_n": s_div["n"],
-                        "div_mean": s_div["mean"],
-                        "div_std": s_div["std"],
-                        "div_p05": s_div["p05"],
-                        "div_p50": s_div["p50"],
-                        "div_p95": s_div["p95"],
-                        "ux_n": s_ux["n"],
-                        "ux_mean": s_ux["mean"],
-                        "ux_std": s_ux["std"],
-                        "ux_p05": s_ux["p05"],
-                        "ux_p50": s_ux["p50"],
-                        "ux_p95": s_ux["p95"],
-                        "uy_n": s_uy["n"],
-                        "uy_mean": s_uy["mean"],
-                        "uy_std": s_uy["std"],
-                        "uy_p05": s_uy["p05"],
-                        "uy_p50": s_uy["p50"],
-                        "uy_p95": s_uy["p95"],
-                        "uz_n": s_uz["n"],
-                        "uz_mean": s_uz["mean"],
-                        "uz_std": s_uz["std"],
-                        "uz_p05": s_uz["p05"],
-                        "uz_p50": s_uz["p50"],
-                        "uz_p95": s_uz["p95"],
-                        "curlmag_n": s_curl["n"],
-                        "curlmag_mean": s_curl["mean"],
-                        "curlmag_std": s_curl["std"],
-                        "curlmag_p05": s_curl["p05"],
-                        "curlmag_p50": s_curl["p50"],
-                        "curlmag_p95": s_curl["p95"],
-                    }
+            rows.append(
+                _build_roi_feature_row(
+                    id_pt=id_pt,
+                    img_id=img_id,
+                    meta_row=r,
+                    sex=sex,
+                    age_range=age_range,
+                    roi=roi,
+                    side=side,
+                    label=lab,
+                    roi_mask=roi_mask,
+                    refimg=refimg,
+                    lj=lj,
+                    m=m,
+                    dvg=dvg,
+                    ux=ux,
+                    uy=uy,
+                    uz=uz,
+                    curl=curl,
+                    strain_maps=strain_maps,
+                    strain_inf_fro=strain_inf_fro,
                 )
-                for strain_name in STRAIN_SCALAR_NAMES:
-                    row.update(
-                        _feature_stats_columns(
-                            strain_name, _stats_percentiles(strain_maps[strain_name][roi_mask])
-                        )
-                    )
-
-            rows.append(row)
+            )
 
         if rows:
             append_csv(pd.DataFrame(rows), OUT_CSV)

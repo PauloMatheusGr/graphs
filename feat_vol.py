@@ -21,9 +21,9 @@ import numpy as np
 # CONFIG (edite aqui)
 # =========================
 
-ab = "abordagem_4_sMCI_pMCI_extremos"
+ab = "longitudinal_4_groups"
 
-IMAGES_CSV = "image_data_sMCI_pMCI_extremos.csv"
+IMAGES_CSV = "csvs/adnimerged_longitudinal.csv"
 REGIONS_DIR = "./images/regions"
 SEG_DIR = "./images/seg"
 BRAIN_MASK_DIR = "./images/brain_mask"

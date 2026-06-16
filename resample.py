@@ -54,9 +54,9 @@ import time
 import ants
 import pandas as pd
 
-population_file = "image_data.txt"
+population_file = "csvs/adnimerged_longitudinal.csv" #"image_data.txt"
 
-input_dir = "/mnt/databases/mri/adni/preproc/4-mni-hist-matching/"
+input_dir = "/mnt/databases/mri/adni/preproc/3-biasfield/"
 output_dir = "/mnt/study-data/pgirardi/graphs/images/resampled_1.0mm"
 ref_mni_img = "/mnt/study-data/pgirardi/preproc/atlases/templates/mni152_2009c_template.nii.gz"
 
@@ -143,7 +143,7 @@ def resolver_caminho_imagem(input_dir, img_id):
         pool = nii if nii else matches
 
         prefer_suffixes = (
-            "_stripped_nlm_denoised_biascorrected_mni_template.nii.gz",
+            "_stripped_nlm_denoised_biascorrected.nii.gz",
         )
 
         def _rank(p: str) -> tuple[int, float, str]:
