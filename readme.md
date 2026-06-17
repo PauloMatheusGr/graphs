@@ -46,7 +46,7 @@ Volumes de RM estrutural T1: extração de crânio (ANTsPyNet / ANTsX), denoise 
 ```bibtex
 @article{tustison-2021,
   title         = {{The ANTsX ecosystem for quantitative biological and medical imaging}},
-  author        = {Tustison, Nicholas J. and Cook, Philip A. and Holbrook, Andrew J. and Johnson, Hans J. and Muschelli, John and Devenyi, Gabriel A. and Duda, Duda, Jeffrey T. and Das, Sandhitsu R. and Cullen, Nicholas C. and Gillen, Daniel L. and Yassa, Michael A. and Stone, James R. and Gee, James C. and Avants, Brian B.},
+  author        = {Tustison, Nicholas J. and Cook, Philip A. and Holbrook, Andrew J. and Johnson, Hans J. and Muschelli, John and Devenyi, Gabriel A. and Duda, Jeffrey T. and Das, Sandhitsu R. and Cullen, Nicholas C. and Gillen, Daniel L. and Yassa, Michael A. and Stone, James R. and Gee, James C. and Avants, Brian B.},
   journal       = {Scientific Reports},
   publisher     = {},
   volume        = {11},
@@ -56,7 +56,7 @@ Volumes de RM estrutural T1: extração de crânio (ANTsPyNet / ANTsX), denoise 
   doi           = {10.1038/s41598-021-87564-6},
   issn          = {},
   year          = {2021}
-  }
+}
 ```
 
 - **Ferramenta:** `antspynet.brain_extraction` dentro do ecossistema ANTsX.
@@ -72,7 +72,7 @@ Volumes de RM estrutural T1: extração de crânio (ANTsPyNet / ANTsX), denoise 
 @article{manjon-2010,
   title         = {{Adaptive non-local means denoising of MR images with spatially varying noise levels}},
   author        = {Manjón, José V. and Coupé, Pierrick and Martí-Bonmatí, Luis and Collins, D. Louis and Robles, Montserrat},
-  journal       = {Journal of Magnetic Resonance imaging},
+  journal       = {Journal of Magnetic Resonance Imaging},
   publisher     = {},
   volume        = {31},
   number        = {1},
@@ -125,7 +125,7 @@ Volumes de RM estrutural T1: extração de crânio (ANTsPyNet / ANTsX), denoise 
 ```bibtex
 @article{tustison-2021,
   title         = {{The ANTsX ecosystem for quantitative biological and medical imaging}},
-  author        = {Tustison, Nicholas J. and Cook, Philip A. and Holbrook, Andrew J. and Johnson, Hans J. and Muschelli, John and Devenyi, Gabriel A. and Duda, Duda, Jeffrey T. and Das, Sandhitsu R. and Cullen, Nicholas C. and Gillen, Daniel L. and Yassa, Michael A. and Stone, James R. and Gee, James C. and Avants, Brian B.},
+  author        = {Tustison, Nicholas J. and Cook, Philip A. and Holbrook, Andrew J. and Johnson, Hans J. and Muschelli, John and Devenyi, Gabriel A. and Duda, Jeffrey T. and Das, Sandhitsu R. and Cullen, Nicholas C. and Gillen, Daniel L. and Yassa, Michael A. and Stone, James R. and Gee, James C. and Avants, Brian B.},
   journal       = {Scientific Reports},
   publisher     = {},
   volume        = {11},
@@ -135,7 +135,7 @@ Volumes de RM estrutural T1: extração de crânio (ANTsPyNet / ANTsX), denoise 
   doi           = {10.1038/s41598-021-87564-6},
   issn          = {},
   year          = {2021}
-  }
+}
 ```
 
 - **Ferramenta:** `ants.histogram_match_image2`.
@@ -173,7 +173,7 @@ Repositório: [RadQy / MRQy](https://github.com/viswanath-lab/RadQy)
   number    = {12},
   pages     = {6029--6038},
   note      = {},
-  doi       = {10.1002/mp.14593 },
+  doi       = {10.1002/mp.14593},
   issn      = {},
   year      = {2020}
 }
@@ -190,7 +190,7 @@ A verificação de outliers foi realizada com **MRQy** sobre imagens RAW (IQMs s
 ```bibtex
 @article{tustison-2021,
   title         = {{The ANTsX ecosystem for quantitative biological and medical imaging}},
-  author        = {Tustison, Nicholas J. and Cook, Philip A. and Holbrook, Andrew J. and Johnson, Hans J. and Muschelli, John and Devenyi, Gabriel A. and Duda, Duda, Jeffrey T. and Das, Sandhitsu R. and Cullen, Nicholas C. and Gillen, Daniel L. and Yassa, Michael A. and Stone, James R. and Gee, James C. and Avants, Brian B.},
+  author        = {Tustison, Nicholas J. and Cook, Philip A. and Holbrook, Andrew J. and Johnson, Hans J. and Muschelli, John and Devenyi, Gabriel A. and Duda, Jeffrey T. and Das, Sandhitsu R. and Cullen, Nicholas C. and Gillen, Daniel L. and Yassa, Michael A. and Stone, James R. and Gee, James C. and Avants, Brian B.},
   journal       = {Scientific Reports},
   publisher     = {},
   volume        = {11},
@@ -200,7 +200,7 @@ A verificação de outliers foi realizada com **MRQy** sobre imagens RAW (IQMs s
   doi           = {10.1038/s41598-021-87564-6},
   issn          = {},
   year          = {2021}
-  }
+}
 ```
 
 - **Parcelação:** `antspynet.desikan_killiany_tourville_labeling()` com agrupamento lobar.
@@ -212,16 +212,27 @@ A verificação de outliers foi realizada com **MRQy** sobre imagens RAW (IQMs s
 
 ### 3.1. Harmonização entre scanners (NeuroComBat)
 
-Duas vias no repositório (ajuste **cross-sectional**, Fortin et al.; **não** Longitudinal ComBat — ver nota no fim):
+Duas vias no repositório (ajuste **cross-sectional** NeuroComBat, Fortin et al. 2018; base ComBat: Johnson et al. 2007). **Longitudinal ComBat** (Beer et al. 2020) — referência, não implementado (ver nota no fim):
 
 | Via | Onde | Pacote | Uso |
 |-----|------|--------|-----|
-| **Coorte inteira** | `features_selection.ipynb` | [`neuroCombat`](https://pypi.org/project/neuroCombat/) ≥ 0.2.10 | Exploração / CSV `*_neurocombat.csv` |
-| **Por fold (exp1/exp2)** | `colab/exp_harmonize.py` + scripts `exp{1,2}_*.py` | [`neurocombat-sklearn`](https://pypi.org/project/neurocombat-sklearn/) ≥ 0.1.2 | CV sem vazamento de harmonização |
+| **Coorte inteira** | `1_features_selection.ipynb` (legado) | [`neuroCombat`](https://pypi.org/project/neuroCombat/) ≥ 0.2.10 | Exploração / CSV `*_neurocombat.csv` |
+| **Por fold (colab exp1/exp2)** | `colab/exp_harmonize.py` + `exp{1,2}_*.py` | [`neuroCombat`](https://pypi.org/project/neuroCombat/) | CV sem vazamento (`RUN_NEUROCOMBAT=1`) |
+| **Por fold (ablação)** | `ablation_harmonize.py` + `ablation_runner.py` / `3_ablation.ipynb` | [`neuroCombat`](https://pypi.org/project/neuroCombat/) | Flag `WITH_COMBAT`; CSV long por `ID_IMG` |
 
-Dependências: `requirements-neurocombat.txt` (notebook + exp2 com `RUN_NEUROCOMBAT=1`).
+Dependências: `requirements-neurocombat.txt` (notebook legado + ablação + exp2 com `RUN_NEUROCOMBAT=1`).
 
 ```bibtex
+@article{johnson-2007,
+  title   = {{Adjusting batch effects in microarray expression data using empirical Bayes methods}},
+  author  = {Johnson, W. Evan and Li, Cheng and Rabinovic, Ariel},
+  journal = {Biostatistics},
+  volume  = {8},
+  number  = {1},
+  pages   = {118--127},
+  doi     = {10.1093/biostatistics/kxj037},
+  year    = {2007}
+}
 @article{fortin-2018,
   title     = {{Harmonization of cortical thickness measurements across scanners and sites}},
   author    = {Fortin, Jean‐Philippe and Cullen, Nicholas and Sheline, Yvette I. and Taylor, Warren D. and Aselcioglu, Irem and Cook, Philip A. and Adams, Phil and Cooper, Crystal and Fava, Maurizio and McGrath, Patrick J. and McInnis, Melvin G. and Phillips, Mary L. and Trivedi, Madhukar H. and Weissman, Myrna M. and Shinohara, Russell T.},
@@ -248,11 +259,13 @@ Dependências: `requirements-neurocombat.txt` (notebook + exp2 com `RUN_NEUROCOM
 
 #### Coluna `batch` (efeito de scanner)
 
-Definida no notebook a partir de metadados de aquisição (quando presentes):
+Definida a partir de metadados de aquisição em `run_nb1_post_extract.py` / notebook 1:
 
-`batch = MANUFACTURER + "_" + MFG_MODEL + "_" + FIELD_STRENGTH + "_" + SLICE_THICKNESS`
+`batch = MANUFACTURER + "_" + MFG_MODEL + "_" + FIELD_STRENGTH`
 
-(como string concatenada por linha). NeuroComBat exige **≥ 2** níveis de `batch`; batches com **&lt; 3** amostras geram aviso (ComBat pode ser instável).
+(No notebook legado de harmonização na coorte inteira pode incluir também `SLICE_THICKNESS`.)
+
+NeuroComBat exige **≥ 2** níveis de `batch`; batches com **&lt; 3** amostras geram aviso (ComBat pode ser instável).
 
 #### Design matrix do ComBat (implementação atual)
 
@@ -280,7 +293,7 @@ Nos scripts exp2, manter `RUN_NEUROCOMBAT=False` (predefinição). No exp1, usar
 
 #### Exp2: ComBat por fold (`RUN_NEUROCOMBAT`)
 
-Implementação em **`colab/exp_harmonize.py`** (`CombatModel` de neurocombat-sklearn, com compatibilidade sklearn ≥ 1.2).
+Implementação em **`colab/exp_harmonize.py`** (`neuroCombat` + `neuroCombatFromTraining`, espelhado em `ablation_harmonize.py`).
 
 | Parâmetro | Valor |
 |-----------|--------|
@@ -335,8 +348,8 @@ RUN_NEUROCOMBAT=1 ../.venv/bin/python exp2_svm.py
 ```bibtex
 @article{smith-2002,
   title     = {{Accurate, Robust, and Automated Longitudinal and Cross-Sectional Brain Change Analysis}},
-  author    = {Smith, Stephen M and Zhang, Yongyue and Jenkinson, Mark and Chen, Jue and Matthews, Paul M and Federico, Antonio and De Stefano, Nicola},
-  journal   = {Neuroimage},
+  author    = {Smith, Stephen M. and Zhang, Yongyue and Jenkinson, Mark and Chen, Jue and Matthews, Paul M. and Federico, Antonio and De Stefano, Nicola},
+  journal   = {NeuroImage},
   publisher = {},
   volume    = {17},
   number    = {},
@@ -348,7 +361,7 @@ RUN_NEUROCOMBAT=1 ../.venv/bin/python exp2_svm.py
 }
 @article{freeborough-1997,
   title     = {{The Boundary Shift Integral: An Accurate and Robust Measure of Cerebral Volume Changes from Registered Repeat MRI}},
-  author    = {Freeborough, Peter A and Fox, Nick C},
+  author    = {Freeborough, Peter A. and Fox, Nick C.},
   journal   = {IEEE Transactions on Medical Imaging},
   publisher = {},
   volume    = {16},
@@ -361,8 +374,8 @@ RUN_NEUROCOMBAT=1 ../.venv/bin/python exp2_svm.py
 }
 @article{reuter-2012,
   title     = {{Within-subject template estimation for unbiased longitudinal image analysis}},
-  author    = {Reuter, Martin_and Schmansky, Nicholas J and Rosas, H Diana and Fischl, Bruce},
-  journal   = {Neuroimage},
+  author    = {Reuter, Martin and Schmansky, Nicholas J. and Rosas, H. Diana and Fischl, Bruce},
+  journal   = {NeuroImage},
   publisher = {},
   volume    = {61},
   number    = {},
@@ -389,12 +402,12 @@ As deformações em RM refletem envelhecimento saudável e neurodegeneração. O
 
 #### Fundamentação e registo
 
-- **Referência CN:** atlas estratificado por sexo e década etária (indivíduos cognitivamente normais) — alinhado à ideia de modelos de envelhecimento normal (Wyman et al., 2012).
+- **Referência CN:** atlas estratificado por sexo e década etária (indivíduos cognitivamente normais) — alinhado à padronização ADNI (Wyman et al., 2013).
 
 ```bibtex
 @article{wyman-2013,
   title     = {{Standardization of analysis sets for reporting results from ADNI MRI data}},
-  author    = {Wyman, Bradley T. and Harveyb, Danielle J. and Crawfordc, Karen and Bernsteind, Matt A. and Carmichaele, Owen and Colef, Patricia E. and Craneg, Paul K. and DeCarlie, Charles and Foxh, Nick C. and Gunterd, Jeffrey L. and Hilli, Derek and Killianyj, Ronald J. and Pachaik, Chahin and Schwarzl, Adam J. and Schuffm, Norbert and Senjemd, Matthew L. and Suhyn, Joyce and Thompsonc, Paul M. and Weinero, Michael and Jack, Clifford R. and Jr.d and {for the Alzheimer’s Disease Neuroimaging Initiative}},
+  author    = {Wyman, Bradley T. and Harvey, Danielle J. and Crawford, Karen and Bernstein, Matt A. and Carmichael, Owen and Cole, Patricia E. and Crane, Paul K. and DeCarli, Charles and Fox, Nick C. and Gunter, Jeffrey L. and Hill, Derek L. and Killiany, Ronald J. and Pachachi, Chahin and Schwarz, Adam J. and Schuff, Norbert and Senjem, Matthew L. and Suhy, Joyce and Thompson, Paul M. and Weiner, Michael and Jack, Clifford R., Jr. and {Alzheimer's Disease Neuroimaging Initiative}},
   journal   = {Alzheimer's \& Dementia},
   publisher = {},
   volume    = {9},
@@ -454,7 +467,7 @@ As deformações em RM refletem envelhecimento saudável e neurodegeneração. O
 }
 @article{lambin-2017,
   title     = {{Radiomics: the bridge between medical imaging and personalized medicine}},
-  author    = {Sobrenome-autor1, Nome-autor1 and Sobrenome-autor2, Nome-autor2 and Sobrenome-autor3, Nome-autor3},
+  author    = {Lambin, Philippe and Rios-Velazquez, Emmanuel and Leijenaar, Ralph and Carvalho, Sara and van Stiphout, Ruud G. P. M. and Granton, Bram and Zegers, Catharina M. L. and Gillies, Richard and Boellard, Ronald and Dekker, Andre and Shinohara, Russell T. and Kerkmeijer, Ferda and Lambrecht, Matthias and Menyhart, Orsolya and Wientjes, Celine and Natussen, Ursula and Dekker, Floris and Hoebers, Frank and Aerts, Hugo J. W. L.},
   journal   = {Nature Reviews Clinical Oncology},
   publisher = {},
   volume    = {14},
@@ -467,7 +480,7 @@ As deformações em RM refletem envelhecimento saudável e neurodegeneração. O
 }
 @article{griethuysen-2017,
   title     = {{Computational Radiomics System to Decode the Radiographic Phenotype}},
-  author    = {van Griethuysen, JJM and Fedorov, A and Parmar,  C and Hosny, A and Aucoin, N and Narayan, V and Beets-Tan, RGH and Fillion-Robin, JC and Pieper, S and Aerts, HJWL},
+  author    = {van Griethuysen, Joost J. M. and Fedorov, Andriy and Parmar, Chintan and Hosny, Ahmed and Aucoin, Nicole and Narayan, Vivek and Beets-Tan, Regina G. H. and Fillion-Robin, Jean-Christophe and Pieper, Steve and Aerts, Hugo J. W. L.},
   journal   = {Cancer Research},
   publisher = {},
   volume    = {77},
@@ -969,18 +982,26 @@ Ideia original (substituída pelo código atual):
 
 As entradas BibTeX completas estão **inline** nas secções correspondentes:
 
-| Tema | Secção | Chave sugerida |
+| Tema | Secção | Chave BibTeX |
 |------|--------|----------------|
 | ANTs / ANTsPyNet | §2.1, §2.4, §2.7 | `tustison-2021` |
 | Denoise NLM | §2.2 | `manjon-2010` |
 | N4 bias | §2.3 | `tustison-2010` |
-| MRQy | §2.6 | `mrqy-2020` |
+| MRQy | §2.6 | `sadri-2020` |
+| ComBat (base) | §3.1 | `johnson-2007` |
 | NeuroComBat (implementado) | §3.1 | `fortin-2018` |
 | Longitudinal ComBat (referência) | §3.1 | `beer-2020` |
+| IBSI / radiomics | §3.3 | `zwanenburg-2020` |
+| Radiomics review | §3.3 | `lambin-2017` |
+| PyRadiomics | §3.3 | `griethuysen-2017` |
+| ADNI MRI standardization | §3.2 | `wyman-2013` |
+| Longitudinal SIENA | §3.2 | `smith-2002` |
+| Boundary Shift Integral | §3.2 | `freeborough-1997` |
+| Longitudinal template (FreeSurfer) | §3.2 | `reuter-2012` |
 | SHAP | §4.4 | `lundberg-2017` |
 | Optuna | §4.4 | `akiba-2019` |
 
-Literatura adicional citada no texto: Reuter et al. (2011–2012) — registo longitudinal; Wyman et al. (2012) — biomarcadores e referência CN.
+Literatura adicional citada no texto: Johnson et al. (2007) — ComBat original; Fortin et al. (2018) — NeuroComBat; Beer et al. (2020) — Longitudinal ComBat (não implementado).
 
 ---
 

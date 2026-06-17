@@ -19,6 +19,7 @@ import csv
 import logging
 import os
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -33,6 +34,7 @@ DEFAULT_LIST = Path(f"/mnt/study-data/pgirardi/graphs/csvs/adnimerged_longitudin
 DEFAULT_IMAGE_DIR = Path("/mnt/study-data/pgirardi/graphs/images/resampled_1.0mm")
 DEFAULT_IMAGE_SUFFIX = "_stripped_nlm_denoised_biascorrected.nii.gz"
 DEFAULT_REGIONS_DIR = Path("/mnt/study-data/pgirardi/graphs/images/regions")
+DEFAULT_BRAIN_MASK_DIR = Path("/mnt/study-data/pgirardi/graphs/images/brain_mask")
 DEFAULT_OUT = Path(f"/mnt/study-data/pgirardi/graphs/csvs/{ab}/features_radiomic.csv")
 
 # Seleção de features no código (em vez de Params.yaml).
@@ -152,6 +154,61 @@ def present_labels_in_regions(regions_path: Path) -> set[int]:
     return {int(x) for x in np.unique(data) if x}
 
 
+def validate_same_grid(
+    id_img: str,
+    ref_name: str,
+    ref_shape: tuple[int, ...],
+    ref_affine: np.ndarray,
+    other_name: str,
+    other_shape: tuple[int, ...],
+    other_affine: np.ndarray,
+) -> None:
+    if ref_shape != other_shape:
+        raise ValueError(
+            f"[{id_img}] grid inconsistente: {other_name} shape={other_shape} "
+            f"!= {ref_name} shape={ref_shape}"
+        )
+    if not np.allclose(ref_affine, other_affine, rtol=0.0, atol=1e-5):
+        raise ValueError(f"[{id_img}] affine de {other_name} difere de {ref_name}")
+
+
+def present_labels_in_masked_regions(regions_path: Path, brain_mask_path: Path) -> set[int]:
+    """Labels presentes após interseção regions ∩ brain_mask."""
+    img_regions = nib.load(str(regions_path))
+    img_bm = nib.load(str(brain_mask_path))
+    regions = np.asarray(img_regions.dataobj, dtype=np.int32)
+    brain = np.asarray(img_bm.dataobj) > 0
+    validate_same_grid(
+        regions_path.name,
+        "regions",
+        regions.shape,
+        img_regions.affine,
+        "brain_mask",
+        brain.shape,
+        img_bm.affine,
+    )
+    masked = np.where(brain, regions, 0)
+    return {int(x) for x in np.unique(masked) if x}
+
+
+def write_masked_regions_nifti(regions_path: Path, brain_mask_path: Path, dst_path: Path) -> None:
+    img_regions = nib.load(str(regions_path))
+    img_bm = nib.load(str(brain_mask_path))
+    regions = np.asarray(img_regions.dataobj, dtype=np.int32)
+    brain = np.asarray(img_bm.dataobj) > 0
+    validate_same_grid(
+        regions_path.name,
+        "regions",
+        regions.shape,
+        img_regions.affine,
+        "brain_mask",
+        brain.shape,
+        img_bm.affine,
+    )
+    masked = np.where(brain, regions, 0).astype(np.int32)
+    nib.save(nib.Nifti1Image(masked, img_regions.affine, img_regions.header), str(dst_path))
+
+
 def load_existing_csv_state(
     out_path: Path,
 ) -> tuple[list[str] | None, set[tuple[str, str, str]]]:
@@ -190,6 +247,7 @@ def main(
     image_dir: Path = DEFAULT_IMAGE_DIR,
     image_suffix: str = DEFAULT_IMAGE_SUFFIX,
     regions_dir: Path = DEFAULT_REGIONS_DIR,
+    brain_mask_dir: Path = DEFAULT_BRAIN_MASK_DIR,
     out_path: Path = DEFAULT_OUT,
     params: Path | None = None,
     bin_width: float | None = None,
@@ -212,6 +270,7 @@ def main(
 
     image_dir = image_dir.resolve()
     regions_dir = regions_dir.resolve()
+    brain_mask_dir = brain_mask_dir.resolve()
     out_path = out_path.resolve()
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -266,55 +325,61 @@ def main(
 
             img_path = image_dir / f"{id_img}{image_suffix}"
             regions_path = regions_dir / f"{id_img}_regions.nii.gz"
+            brain_mask_path = brain_mask_dir / f"{id_img}_brain_mask.nii.gz"
             if not img_path.is_file():
                 raise SystemExit(f"[{id_img}] arquivo ausente: {img_path}")
             if not regions_path.is_file():
                 raise SystemExit(f"[{id_img}] arquivo ausente: {regions_path}")
+            if not brain_mask_path.is_file():
+                raise SystemExit(f"[{id_img}] arquivo ausente: {brain_mask_path}")
 
             logger.info("[%s/%s] %s", i, len(id_imgs), id_img)
-            labels_present = present_labels_in_regions(regions_path)
+            labels_present = present_labels_in_masked_regions(regions_path, brain_mask_path)
             wrote_any = False
-            for roi_name, side, label in ROI_TABLE:
-                key = (id_img, roi_name, side)
-                if resume and key in done_keys:
-                    continue
+            with tempfile.TemporaryDirectory(prefix="feat_rad_mask_") as tmp_dir:
+                masked_regions_path = Path(tmp_dir) / f"{id_img}_regions_masked.nii.gz"
+                write_masked_regions_nifti(regions_path, brain_mask_path, masked_regions_path)
+                for roi_name, side, label in ROI_TABLE:
+                    key = (id_img, roi_name, side)
+                    if resume and key in done_keys:
+                        continue
 
-                if int(label) not in labels_present:
-                    logger.warning(
-                        "[%s] label %s (%s %s) ausente na mascara; pulando.",
-                        id_img,
-                        label,
-                        roi_name,
-                        side,
+                    if int(label) not in labels_present:
+                        logger.warning(
+                            "[%s] label %s (%s %s) ausente após brain_mask; pulando.",
+                            id_img,
+                            label,
+                            roi_name,
+                            side,
+                        )
+                        continue
+
+                    res = extractor.execute(
+                        str(img_path), str(masked_regions_path), label=int(label)
                     )
-                    continue
+                    feat = dict(iter_feature_items(res))
+                    row: dict[str, str] = {
+                        "ID_IMG": id_img,
+                        "roi": roi_name,
+                        "side": side,
+                        "label": str(int(label)),
+                        **feat,
+                    }
 
-                res = extractor.execute(
-                    str(img_path), str(regions_path), label=int(label)
-                )
-                feat = dict(iter_feature_items(res))
-                row: dict[str, str] = {
-                    "ID_IMG": id_img,
-                    "roi": roi_name,
-                    "side": side,
-                    "label": str(int(label)),
-                    **feat,
-                }
+                    if header is None:
+                        feat_cols = sorted([k for k in row.keys() if k not in meta_cols])
+                        header = meta_cols + feat_cols
+                        writer = csv.DictWriter(f, fieldnames=header, extrasaction="ignore")
+                        writer.writeheader()
+                        logger.info("Header criado (%s features).", len(feat_cols))
 
-                if header is None:
-                    feat_cols = sorted([k for k in row.keys() if k not in meta_cols])
-                    header = meta_cols + feat_cols
-                    writer = csv.DictWriter(f, fieldnames=header, extrasaction="ignore")
-                    writer.writeheader()
-                    logger.info("Header criado (%s features).", len(feat_cols))
+                    if writer is None:
+                        writer = csv.DictWriter(f, fieldnames=header, extrasaction="ignore")
 
-                if writer is None:
-                    writer = csv.DictWriter(f, fieldnames=header, extrasaction="ignore")
-
-                writer.writerow(row)
-                wrote_any = True
-                if resume:
-                    done_keys.add(key)
+                    writer.writerow(row)
+                    wrote_any = True
+                    if resume:
+                        done_keys.add(key)
 
             # Durabilidade: garante que o que foi escrito para este ID_IMG
             # foi empurrado para o disco antes de seguir para o próximo.

@@ -226,7 +226,7 @@ def process_image(id_img: str, regions_dir: Path, seg_dir: Path, brain_mask_dir:
     batch.append(global_row)
 
     for roi_name, side, label in ROI_TABLE:
-        roi_mask = regions == label
+        roi_mask = (regions == label) & brain_mask_bin
         roi_mm3 = int(np.count_nonzero(roi_mask)) * voxel_mm3
 
         v_csf = int(np.count_nonzero(roi_mask & (seg == SEG_LABEL_CSF))) * voxel_mm3

@@ -657,6 +657,7 @@ def main():
         if (
             not os.path.isfile(fixed_p)
             or not os.path.isfile(regions_p)
+            or not os.path.isfile(bm_p)
             or any(not os.path.isfile(p) for p in inv_list)
         ):
             skipped += 1
@@ -671,14 +672,12 @@ def main():
         spacing = tuple(map(float, refimg.spacing))
         strain_inf_fro = _infinitesimal_strain_fro_map(ux, uy, uz, spacing)
         labels = _load_and_resample_labelmap(regions_p, refimg)
-        brain_mask = _load_and_resample_mask(bm_p, refimg) if os.path.isfile(bm_p) else None
+        brain_mask = _load_and_resample_mask(bm_p, refimg)
 
         rows = []
         for roi, side, label in ROI_TABLE:
             lab = int(label)
-            roi_mask = labels == lab
-            if brain_mask is not None:
-                roi_mask = roi_mask & brain_mask
+            roi_mask = (labels == lab) & brain_mask
 
             rows.append(
                 _build_roi_feature_row(
