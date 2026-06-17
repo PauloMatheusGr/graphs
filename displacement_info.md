@@ -51,12 +51,6 @@ Antes do groupwise, cada imagem é padronizada para reduzir variações não-bio
 
 1) **Reorientação**: todas as imagens são reorientadas para uma convenção fixa (por padrão, RAS).
 
-2) **Casamento de histograma (Histogram Matching)**: as intensidades são harmonizadas usando um template MNI como referência (\(\mathrm{MNI}\)), de forma mascarada no cérebro. Em notação conceitual:
-
-\[
-\tilde{C}_i = \mathrm{HM}\big(C_i; \mathrm{MNI}\big)
-\]
-
 3) **Reamostragem isotrópica**: cada volume é reamostrado para espaçamento isotrópico desejado (por padrão, \(1\text{ mm}\)) com interpolação adequada para T1 contínua (Bspline).
 
 \[

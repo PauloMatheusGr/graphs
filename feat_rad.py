@@ -5,6 +5,7 @@ Extrai features radiomicas por ROI (labels) usando PyRadiomics e salva em CSV (w
 
 Foco: ser pequeno e simples.
 - ROIs problematicas podem ser removidas diretamente em `ROI_TABLE`.
+- Se uma label nao existir na mascara de um sujeito, a ROI e pulada (warning) e o script continua.
 - Por padrao, usa o "default" do PyRadiomics.
 - Opcional: use `--params Params.yaml` para reprodutibilidade e controle de features/image types.
 - Se o CSV de saida ja existir (e nao usar --overwrite), por padrao **retoma**: pula linhas
@@ -20,6 +21,9 @@ import os
 import sys
 from pathlib import Path
 from typing import Any, Iterable
+
+import nibabel as nib
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -143,6 +147,11 @@ def iter_feature_items(res: dict[str, Any]) -> Iterable[tuple[str, str]]:
         yield k, str(v)
 
 
+def present_labels_in_regions(regions_path: Path) -> set[int]:
+    data = np.asarray(nib.load(str(regions_path)).dataobj)
+    return {int(x) for x in np.unique(data) if x}
+
+
 def load_existing_csv_state(
     out_path: Path,
 ) -> tuple[list[str] | None, set[tuple[str, str, str]]]:
@@ -263,10 +272,21 @@ def main(
                 raise SystemExit(f"[{id_img}] arquivo ausente: {regions_path}")
 
             logger.info("[%s/%s] %s", i, len(id_imgs), id_img)
+            labels_present = present_labels_in_regions(regions_path)
             wrote_any = False
             for roi_name, side, label in ROI_TABLE:
                 key = (id_img, roi_name, side)
                 if resume and key in done_keys:
+                    continue
+
+                if int(label) not in labels_present:
+                    logger.warning(
+                        "[%s] label %s (%s %s) ausente na mascara; pulando.",
+                        id_img,
+                        label,
+                        roi_name,
+                        side,
+                    )
                     continue
 
                 res = extractor.execute(
