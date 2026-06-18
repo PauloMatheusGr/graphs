@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Notebook 1 pós-extração: merge feat_*_all, long/wide, export ablation."""
+"""Notebook 1 pós-extração: merge in-memory → export ablation long only."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 import pandas as pd
-from ablation_prep import ROI_FILTER_DEFAULT, export_ablation_datasets, filter_rois, pivot_long_to_wide
+from ablation_prep import export_ablation_long_only
 
 BASE = Path("csvs/longitudinal_4_groups")
 LONGITUDINAL = Path("csvs/adnimerged_longitudinal.csv")
@@ -37,7 +37,7 @@ def normalize_merge_keys(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def merge_rad_vol_icv() -> Path:
+def merge_rad_vol_icv() -> pd.DataFrame:
     vol_df = normalize_merge_keys(pd.read_csv(BASE / "features_volumetric.csv"))
     rad_df = normalize_merge_keys(pd.read_csv(BASE / "features_radiomic.csv"))
 
@@ -58,19 +58,37 @@ def merge_rad_vol_icv() -> Path:
     merged = rad_df.merge(vol_roi, on=MERGE_KEYS, how="left", validate="one_to_one")
     merged = merged.merge(icv_df, on="ID_IMG", how="left", validate="many_to_one")
 
+    rad_feat_cols = [c for c in merged.columns if c.startswith("original_")]
+    rad_has = merged[rad_feat_cols].notna().any(axis=1)
+    vol_missing = merged[VOL_FEAT_COLS].isna().all(axis=1)
+    missing_vol = int((rad_has & vol_missing).sum())
+    if missing_vol:
+        raise ValueError(
+            f"Volumetria ausente para {missing_vol} linhas com radiomico presente. "
+            "Verifique se (ID_IMG, roi, side, label) bate entre os dois CSVs."
+        )
+
+    missing_icv = int(merged["ICV_mask_mm3"].isna().sum())
+    if missing_icv:
+        raise ValueError(
+            f"ICV ausente para {missing_icv} linhas radiomicas. "
+            "Verifique se todos os ID_IMG do radiomico existem no volumetrico (linha __global__)."
+        )
+
     cols_to_norm = [c for c in RAD_SIZE_COLS + VOL_SIZE_COLS if c in merged.columns]
-    merged[cols_to_norm] = pd.to_numeric(merged[cols_to_norm], errors="coerce")
+    for c in cols_to_norm:
+        merged[c] = pd.to_numeric(merged[c], errors="coerce")
     merged[cols_to_norm] = merged[cols_to_norm].div(merged["ICV_mask_mm3"], axis=0)
 
-    out = BASE / "feat_rad_all.csv"
-    merged.to_csv(out, index=False)
-    print(f"[rad+vol] {out} shape={merged.shape}")
-    return out
+    # intermediário (legado): BASE / "feat_rad_all.csv"
+    # merged.to_csv(BASE / "feat_rad_all.csv", index=False)
+    print(f"[rad+vol] shape={merged.shape}")
+    return merged
 
 
-def add_cohort_meta() -> None:
-    radiomics_merge = pd.read_csv(BASE / "feat_rad_all.csv")
-    radiomics_merge["ID_IMG"] = radiomics_merge["ID_IMG"].astype(str).str.strip()
+def add_cohort_meta(radiomics_merge: pd.DataFrame) -> pd.DataFrame:
+    out = radiomics_merge.copy()
+    out["ID_IMG"] = out["ID_IMG"].astype(str).str.strip()
 
     cohort_cols = ["ID_IMG", "ID_PT", "GROUP", "SEX", "AGE", "MRI_DATE", "DIAG", "slot"]
     tech_cols = [
@@ -84,7 +102,7 @@ def add_cohort_meta() -> None:
         .assign(ID_IMG=lambda d: d["ID_IMG"].astype(str).str.strip())
         .drop_duplicates(subset=["ID_IMG"], keep="last")
     )
-    merge = radiomics_merge.merge(meta_sub, on="ID_IMG", how="left", validate="many_to_one")
+    merge = out.merge(meta_sub, on="ID_IMG", how="left", validate="many_to_one")
     batch_cols = ["MANUFACTURER", "MFG_MODEL", "FIELD_STRENGTH"]
     merge["batch"] = merge[batch_cols].astype(str).agg("_".join, axis=1)
 
@@ -101,11 +119,12 @@ def add_cohort_meta() -> None:
     known = set(prefix) | set(radiomic_cols) | set(vol_cols) | set(icv_cols)
     extra = [c for c in merge.columns if c not in known]
     merge = merge[prefix + radiomic_cols + vol_cols + icv_cols + extra]
-    merge.to_csv(BASE / "feat_rad_all.csv", index=False)
+    # intermediário (legado): merge.to_csv(BASE / "feat_rad_all.csv", index=False)
     print(f"[meta rad] shape={merge.shape}")
+    return merge
 
 
-def build_feat_disp_all() -> Path:
+def build_feat_disp_all() -> pd.DataFrame:
     def norm_keys(df: pd.DataFrame) -> pd.DataFrame:
         out = df.copy()
         out["ID_IMG"] = out["ID_IMG"].astype(str).str.strip()
@@ -136,45 +155,37 @@ def build_feat_disp_all() -> Path:
     prefix = [c for c in meta_order if c in df_all.columns]
     feat_cols = [c for c in df_all.columns if c not in prefix]
     df_all = df_all[prefix + feat_cols]
-    out = BASE / "feat_disp_all.csv"
-    df_all.to_csv(out, index=False)
-    print(f"[disp] {out} shape={df_all.shape}")
-    return out
+    # intermediário (legado): df_all.to_csv(BASE / "feat_disp_all.csv", index=False)
+    print(f"[disp] shape={df_all.shape}")
+    return df_all
 
 
-def build_feat_merge_all() -> Path:
+def build_feat_merge_all(rad: pd.DataFrame, disp: pd.DataFrame) -> pd.DataFrame:
     overlap_meta = {
         "ID_PT", "SEX", "DIAG", "GROUP", "AGE", "MRI_DATE", "slot",
         "FIELD_STRENGTH", "MANUFACTURER", "MFG_MODEL",
         "MMSE_SCORE", "CDR_GLOBAL", "ADAS_SCORE", "FAQ_SCORE", "batch",
     }
-    rad = pd.read_csv(BASE / "feat_rad_all.csv")
-    rad = rad.drop(columns=[c for c in overlap_meta if c in rad.columns], errors="ignore")
-    rad = normalize_merge_keys(rad)
-    disp = normalize_merge_keys(pd.read_csv(BASE / "feat_disp_all.csv"))
-    all_unit = rad.merge(disp, on=MERGE_KEYS, how="left", validate="one_to_one")
+    rad_only = rad.drop(columns=[c for c in overlap_meta if c in rad.columns], errors="ignore")
+    rad_only = normalize_merge_keys(rad_only)
+    disp_only = normalize_merge_keys(disp)
+    all_unit = rad_only.merge(disp_only, on=MERGE_KEYS, how="left", validate="one_to_one")
     if "MRI_DATE" in all_unit.columns:
         all_unit["MRI_DATE"] = (
             pd.to_datetime(all_unit["MRI_DATE"], errors="coerce").dt.strftime("%Y-%m-%d")
         )
-    out = BASE / "feat_merge_all.csv"
-    all_unit.to_csv(out, index=False)
-    print(f"[merge] {out} shape={all_unit.shape}")
-    return out
+    # intermediário (legado): all_unit.to_csv(BASE / "feat_merge_all.csv", index=False)
+    print(f"[merge] shape={all_unit.shape}")
+    return all_unit
 
 
-def export_long_wide(roi: str = ROI_FILTER_DEFAULT) -> None:
-    for name in ("merge", "rad", "disp"):
-        src = pd.read_csv(BASE / f"feat_{name}_all.csv")
-        long_df = filter_rois(src, roi)
-        long_path = BASE / f"feat_{name}_all_{roi}_long.csv"
-        long_df.to_csv(long_path, index=False)
-        wide = pivot_long_to_wide(long_df)
-        wide_path = BASE / f"feat_{name}_all_{roi}_wide.csv"
-        wide.to_csv(wide_path, index=False)
-        # aliases legados
-        long_df.to_csv(BASE / f"feat_{name}_all_hipp.csv", index=False)
-        print(f"[{name}] long={long_path.name} wide={wide_path.name} patients={len(wide)}")
+# legado: export long/wide + feat_*_hipp na raiz — ablação usa ablation/{roi}/*_long.csv
+# def export_long_wide(roi: str = ROI_FILTER_DEFAULT) -> None:
+#     for name in ("merge", "rad", "disp"):
+#         src = pd.read_csv(BASE / f"feat_{name}_all.csv")
+#         long_df = filter_rois(src, roi)
+#         long_df.to_csv(BASE / f"feat_{name}_all_{roi}_long.csv", index=False)
+#         long_df.to_csv(BASE / f"feat_{name}_all_hipp.csv", index=False)
 
 
 def main() -> None:
@@ -186,13 +197,11 @@ def main() -> None:
         if not p.is_file():
             raise FileNotFoundError(f"Extração incompleta: {p}")
 
-    merge_rad_vol_icv()
-    add_cohort_meta()
-    build_feat_disp_all()
-    build_feat_merge_all()
-    export_long_wide()
-    paths = export_ablation_datasets(BASE)
-    print(f"ablation export OK: {len(paths)} ficheiros")
+    rad = add_cohort_meta(merge_rad_vol_icv())
+    disp = build_feat_disp_all()
+    merge = build_feat_merge_all(rad, disp)
+    paths = export_ablation_long_only(rad, disp, merge, BASE)
+    print(f"ablation export OK: {len(paths)} ficheiros → {list(paths.values())}")
 
 
 if __name__ == "__main__":

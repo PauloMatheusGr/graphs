@@ -31,8 +31,10 @@ from scipy.stats import kurtosis, skew
 # =========================
 
 ab = "longitudinal_window_4_groups"
+# ab = "longitudinal_4_groups"
 
-IMAGES_CSV = "csvs/adnimerged_longitudinal_window.csv"
+IMAGES_CSV = "csvs/adnimerged_longitudinal_window_extremos.csv"
+# IMAGES_CSV = "csvs/adnimerged_longitudinal.csv"
 
 WARPS_DIR = "./images/displacement_field"
 CLINIC_DIR = "./images/resampled_1.0mm"
@@ -595,7 +597,7 @@ def compute_unitary_scalar_arrays(domain_img: ants.ANTsImage, inv_list: list[str
 def append_csv(df: pd.DataFrame, out_csv_path: str) -> None:
     os.makedirs(os.path.dirname(out_csv_path), exist_ok=True)
     exists = os.path.isfile(out_csv_path) and os.path.getsize(out_csv_path) > 0
-    df.to_csv(out_csv_path, mode="a", header=not exists, index=False)
+    df.to_csv(out_csv_path, mode="a", header=not exists, index=False, na_rep="NaN")
 
 def main():
     df = pd.read_csv(IMAGES_CSV)

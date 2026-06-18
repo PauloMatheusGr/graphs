@@ -1,4 +1,4 @@
-"""Runner de ablação: dual task (CN×AD, sMCI×pMCI), 4 modalidades, ComBat opcional por fold."""
+"""Runner de ablação: tarefas binárias entre grupos CN/sMCI/pMCI/AD, 4 modalidades, ComBat opcional por fold."""
 
 from __future__ import annotations
 
@@ -11,7 +11,12 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from ablation_harmonize import harmonize_long_fold, image_ids_for_patients
-from ablation_prep import ROI_FILTER_DEFAULT, block_key_regex, pivot_long_to_wide
+from ablation_prep import (
+    ROI_FILTER_DEFAULT,
+    block_key_regex,
+    modality_wide_columns,
+    pivot_long_to_wide,
+)
 from imblearn.pipeline import Pipeline as ImbPipeline
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.ensemble import RandomForestClassifier
@@ -51,22 +56,41 @@ class TaskConfig:
     def group_labels(self) -> dict[int, str]:
         return {v: k for k, v in self.label_map.items()}
 
+    @property
+    def label(self) -> str:
+        return f"{self.negative} (0) vs {self.positive} (1)"
+
+
+def make_binary_task(negative: str, positive: str) -> TaskConfig:
+    """negative=0, positive=1; task_id ex.: cn_ad, smci_pmci."""
+    task_id = f"{negative.lower()}_{positive.lower()}"
+    return TaskConfig(
+        task_id=task_id,
+        groups=(negative, positive),
+        label_map={negative: 0, positive: 1},
+        positive=positive,
+        negative=negative,
+    )
+
+
+# Pares pedidos: within-diagnosis (cn×ad, smci×pmci) + cross (cn×smci, …)
+BINARY_TASK_PAIRS: tuple[tuple[str, str], ...] = (
+    ("CN", "AD"),
+    ("sMCI", "pMCI"),
+    ("CN", "sMCI"),
+    ("sMCI", "AD"),
+    ("CN", "pMCI"),
+    ("pMCI", "AD"),
+)
 
 TASKS: dict[str, TaskConfig] = {
-    "cn_ad": TaskConfig(
-        task_id="cn_ad",
-        groups=("CN", "AD"),
-        label_map={"CN": 0, "AD": 1},
-        positive="AD",
-        negative="CN",
-    ),
-    "smci_pmci": TaskConfig(
-        task_id="smci_pmci",
-        groups=("sMCI", "pMCI"),
-        label_map={"sMCI": 0, "pMCI": 1},
-        positive="pMCI",
-        negative="sMCI",
-    ),
+    tc.task_id: tc for tc in (make_binary_task(n, p) for n, p in BINARY_TASK_PAIRS)
+}
+
+TASK_PRESETS: dict[str, tuple[str, ...]] = {
+    "core": ("cn_ad", "smci_pmci"),
+    "cross": ("cn_smci", "smci_ad", "cn_pmci", "pmci_ad"),
+    "all": tuple(TASKS.keys()),
 }
 
 MODALITIES: dict[str, dict[str, str]] = {
@@ -148,7 +172,14 @@ def corr_keep_mask(X: np.ndarray, threshold: float = 0.90) -> np.ndarray:
 
 def var_keep_mask(X: np.ndarray, threshold: float = 0.01) -> np.ndarray:
     xf = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
-    return np.var(xf, axis=0) >= threshold
+    if xf.shape[0] < 2:
+        return np.ones(xf.shape[1], dtype=bool)
+    v = np.var(xf, axis=0)
+    keep = v >= threshold
+    # ponytail: vol ICV-normalizado costuma ter var < 0.01; relaxa só se filtro zera tudo
+    if threshold > 0 and not keep.any():
+        keep = v > 0
+    return keep
 
 
 def mrmr_by_block(
@@ -168,6 +199,10 @@ def mrmr_by_block(
             blocks.setdefault((m.group(1), m.group(2)), []).append(col)
     for cols in blocks.values():
         if not cols:
+            continue
+        # ponytail: feature-engine exige max_features < len(variables)
+        if len(cols) <= max_per_block:
+            selected.extend(cols)
             continue
         selector = MRMR(
             variables=cols,
@@ -229,6 +264,10 @@ class CorrVarMRMRByBlock(BaseEstimator, TransformerMixin):
                 selected_names = names[: min(10, len(names))]
         else:
             selected_names = names
+
+        if not selected_names:
+            # ponytail: fallback se corr/var/MRMR zerarem (ex. vol após ICV norm)
+            selected_names = list(self.feature_names_in_)
 
         name_to_idx = {n: i for i, n in enumerate(self.feature_names_in_)}
         self.selected_names_ = selected_names
@@ -332,6 +371,14 @@ def nested_cv_ablation(
     y = pt["y"].to_numpy(dtype=int)
     pts = pt["ID_PT"].astype(str).to_numpy()
 
+    class_counts = pd.Series(y).value_counts()
+    min_class = int(class_counts.min()) if not class_counts.empty else 0
+    if min_class < k_out:
+        raise ValueError(
+            f"Task {task.task_id}: classe minoritária tem {min_class} pacientes, "
+            f"menos que k_out={k_out}. Reduza folds ou exclua a task."
+        )
+
     outer_cv = StratifiedKFold(k_out, shuffle=True, random_state=seed)
     results: list[dict[str, Any]] = []
 
@@ -350,7 +397,11 @@ def nested_cv_ablation(
         wide["y"] = wide["GROUP"].map(task.label_map).astype(int)
 
         meta = {"ID_PT", "GROUP", "SEX", "y"}
-        feature_cols = [c for c in wide.columns if c not in meta]
+        feature_cols = modality_wide_columns(wide.columns, modality, roi=roi)
+        if not feature_cols:
+            raise ValueError(
+                f"Nenhuma coluna de feature para modalidade={modality!r} roi={roi!r}"
+            )
         X = wide[feature_cols].astype(float)
         y_wide = wide["y"].to_numpy(dtype=int)
 
@@ -381,9 +432,9 @@ def nested_cv_ablation(
             train_scores = train_scores[:, 1]
         threshold = tune_youden_threshold(y_train, train_scores)
         test_scores = (
-            clf.predict_proba(X_test)[:, 1]
-            if hasattr(clf, "predict_proba")
-            else clf.decision_function(X_test)
+            best.predict_proba(X_test)[:, 1]
+            if hasattr(best, "predict_proba")
+            else best.decision_function(X_test)
         )
         test_preds = (test_scores >= threshold).astype(int)
 
@@ -455,9 +506,9 @@ def run_full_ablation_suite(
                             base_dir=base,
                             seed=seed,
                         )
-                        tag = "combat" if with_combat else "nocombat"
-                        out_path = out_dir / f"results_{task_id}_{modality}_{tag}_{selection_mode}_{model_key}.csv"
-                        res.to_csv(out_path, index=False)
+                        # tag = "combat" if with_combat else "nocombat"
+                        # out_path = out_dir / f"results_{task_id}_{modality}_{tag}_{selection_mode}_{model_key}.csv"
+                        # res.to_csv(out_path, index=False)
                         all_results.append(res)
 
     combined = pd.concat(all_results, ignore_index=True)

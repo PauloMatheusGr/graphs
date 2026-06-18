@@ -22,8 +22,10 @@ import numpy as np
 # =========================
 
 ab = "longitudinal_window_4_groups"
+# ab = "longitudinal_4_groups"
 
-IMAGES_CSV = "csvs/adnimerged_longitudinal_window.csv"
+IMAGES_CSV = "csvs/adnimerged_longitudinal_window_extremos.csv"
+# IMAGES_CSV = "csvs/adnimerged_longitudinal.csv"
 REGIONS_DIR = "./images/regions"
 SEG_DIR = "./images/seg"
 BRAIN_MASK_DIR = "./images/brain_mask"
@@ -229,27 +231,28 @@ def process_image(id_img: str, regions_dir: Path, seg_dir: Path, brain_mask_dir:
         roi_mask = (regions == label) & brain_mask_bin
         roi_mm3 = int(np.count_nonzero(roi_mask)) * voxel_mm3
 
-        v_csf = int(np.count_nonzero(roi_mask & (seg == SEG_LABEL_CSF))) * voxel_mm3
-        v_gm = int(np.count_nonzero(roi_mask & (seg == SEG_LABEL_GM))) * voxel_mm3
-        v_wm = int(np.count_nonzero(roi_mask & (seg == SEG_LABEL_WM))) * voxel_mm3
-        v_roi_tissue = v_csf + v_gm + v_wm
-
         row: dict[str, str] = {
             "ID_IMG": id_img,
             "roi": roi_name,
             "side": side,
             "label": str(label),
-            **{c: "" for c in FEATURE_COLS},
         }
-        row["mask_mm3"] = format_value(roi_mm3)
-        row["gm_mm3"] = format_value(v_gm)
-        row["gm_norm"] = format_value(safe_div(v_gm, roi_mm3))
-        row["wm_mm3"] = format_value(v_wm)
-        row["wm_norm"] = format_value(safe_div(v_wm, roi_mm3))
-        row["csf_mm3"] = format_value(v_csf)
-        row["csf_norm"] = format_value(safe_div(v_csf, roi_mm3))
-        row["tissues_mm3"] = format_value(v_roi_tissue)
-        row["tissues_norm"] = format_value(safe_div(v_roi_tissue, roi_mm3))
+        if roi_mm3 == 0:
+            row.update({c: format_value(float("nan")) for c in FEATURE_COLS})
+        else:
+            v_csf = int(np.count_nonzero(roi_mask & (seg == SEG_LABEL_CSF))) * voxel_mm3
+            v_gm = int(np.count_nonzero(roi_mask & (seg == SEG_LABEL_GM))) * voxel_mm3
+            v_wm = int(np.count_nonzero(roi_mask & (seg == SEG_LABEL_WM))) * voxel_mm3
+            v_roi_tissue = v_csf + v_gm + v_wm
+            row["mask_mm3"] = format_value(roi_mm3)
+            row["gm_mm3"] = format_value(v_gm)
+            row["gm_norm"] = format_value(safe_div(v_gm, roi_mm3))
+            row["wm_mm3"] = format_value(v_wm)
+            row["wm_norm"] = format_value(safe_div(v_wm, roi_mm3))
+            row["csf_mm3"] = format_value(v_csf)
+            row["csf_norm"] = format_value(safe_div(v_csf, roi_mm3))
+            row["tissues_mm3"] = format_value(v_roi_tissue)
+            row["tissues_norm"] = format_value(safe_div(v_roi_tissue, roi_mm3))
         batch.append(row)
 
     return batch

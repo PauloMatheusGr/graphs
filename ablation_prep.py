@@ -167,6 +167,28 @@ def _select_disp_wide_columns(columns: list[str], roi: str) -> list[str]:
     return out
 
 
+def modality_wide_columns(
+    columns: list[str] | pd.Index,
+    modality: str,
+    *,
+    roi: str = ROI_FILTER_DEFAULT,
+) -> list[str]:
+    """Mesmas colunas de feature que export_ablation_datasets grava em *_wide.csv."""
+    cols = list(columns)
+    if modality == "vol":
+        return _select_vol_wide_columns(cols, roi)
+    if modality == "texture":
+        return _select_texture_wide_columns(cols, roi)
+    if modality == "disp":
+        return _select_disp_wide_columns(cols, roi)
+    if modality == "all":
+        out = _select_vol_wide_columns(cols, roi)
+        out += _select_texture_wide_columns(cols, roi)
+        out += _select_disp_wide_columns(cols, roi)
+        return list(dict.fromkeys(out))
+    raise ValueError(f"modalidade desconhecida: {modality}")
+
+
 def vol_long_from_rad_long(df_rad_long: pd.DataFrame) -> pd.DataFrame:
     meta = [c for c in df_rad_long.columns if c in META_COLS_WIDE or c in ("ID_IMG",)]
     feat = [c for c in VOL_FEAT_COLS if c in df_rad_long.columns]
@@ -175,50 +197,70 @@ def vol_long_from_rad_long(df_rad_long: pd.DataFrame) -> pd.DataFrame:
     return df_rad_long[cols].copy()
 
 
-def export_ablation_datasets(
+def export_ablation_long_only(
+    rad: pd.DataFrame,
+    disp: pd.DataFrame,
+    merge: pd.DataFrame,
     base_dir: Path | str,
     *,
     roi: str = ROI_FILTER_DEFAULT,
 ) -> dict[str, Path]:
-    """Gera long/wide e CSVs por modalidade em base_dir/ablation/{roi}/."""
-    base = Path(base_dir)
-    ablation_dir = base / "ablation" / roi
+    """Grava só os 4 CSV long consumidos por ablation_runner."""
+    ablation_dir = Path(base_dir) / "ablation" / roi
     ablation_dir.mkdir(parents=True, exist_ok=True)
 
-    paths: dict[str, Path] = {}
-
-    rad_long_src = base / "feat_rad_all.csv"
-    disp_long_src = base / "feat_disp_all.csv"
-    merge_long_src = base / "feat_merge_all.csv"
-
-    rad_long = filter_rois(pd.read_csv(rad_long_src), roi)
-    disp_long = filter_rois(pd.read_csv(disp_long_src), roi)
-    merge_long = filter_rois(pd.read_csv(merge_long_src), roi)
+    rad_long = filter_rois(rad, roi)
+    disp_long = filter_rois(disp, roi)
+    merge_long = filter_rois(merge, roi)
     vol_long = vol_long_from_rad_long(rad_long)
 
-    long_map = {
+    paths: dict[str, Path] = {}
+    for name, df in {
         "rad_long": rad_long,
         "disp_long": disp_long,
         "merge_long": merge_long,
         "vol_long": vol_long,
-    }
-    for name, df in long_map.items():
+    }.items():
         p = ablation_dir / f"{name}.csv"
         df.to_csv(p, index=False)
         paths[name] = p
+        print(f"[ablation] {p.name} rows={len(df)}")
+    return paths
+
+
+def export_ablation_datasets(
+    base_dir: Path | str,
+    *,
+    roi: str = ROI_FILTER_DEFAULT,
+    write_wide: bool = False,
+) -> dict[str, Path]:
+    """Lê feat_*_all do disco; grava long em ablation/. Wide opcional (legado)."""
+    base = Path(base_dir)
+    rad = pd.read_csv(base / "feat_rad_all.csv")
+    disp = pd.read_csv(base / "feat_disp_all.csv")
+    merge = pd.read_csv(base / "feat_merge_all.csv")
+    paths = export_ablation_long_only(rad, disp, merge, base, roi=roi)
+
+    if not write_wide:
+        return paths
+
+    ablation_dir = base / "ablation" / roi
+    rad_long = filter_rois(rad, roi)
+    disp_long = filter_rois(disp, roi)
+    merge_long = filter_rois(merge, roi)
+    vol_long = vol_long_from_rad_long(rad_long)
 
     rad_wide = pivot_long_to_wide(rad_long)
     disp_wide = pivot_long_to_wide(disp_long)
     merge_wide = pivot_long_to_wide(merge_long)
     vol_wide = pivot_long_to_wide(vol_long)
 
-    wide_map = {
+    for name, df in {
         "rad_wide": rad_wide,
         "disp_wide": disp_wide,
         "merge_wide": merge_wide,
         "vol_wide": vol_wide,
-    }
-    for name, df in wide_map.items():
+    }.items():
         p = ablation_dir / f"{name}.csv"
         df.to_csv(p, index=False)
         paths[name] = p
@@ -232,13 +274,12 @@ def export_ablation_datasets(
     all_cols += _select_disp_wide_columns(list(merge_wide.columns), roi)
     all_cols = list(dict.fromkeys(all_cols))
 
-    modality_map = {
+    for mod, (wide_df, cols) in {
         "vol": (vol_wide, vol_cols),
         "texture": (rad_wide, texture_cols),
         "disp": (disp_wide, disp_cols),
         "all": (merge_wide, all_cols),
-    }
-    for mod, (wide_df, cols) in modality_map.items():
+    }.items():
         out = wide_df[meta + cols].copy()
         p = ablation_dir / f"{mod}_wide.csv"
         out.to_csv(p, index=False)

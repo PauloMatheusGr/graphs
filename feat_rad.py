@@ -5,7 +5,7 @@ Extrai features radiomicas por ROI (labels) usando PyRadiomics e salva em CSV (w
 
 Foco: ser pequeno e simples.
 - ROIs problematicas podem ser removidas diretamente em `ROI_TABLE`.
-- Se uma label nao existir na mascara de um sujeito, a ROI e pulada (warning) e o script continua.
+- Se uma label nao existir na mascara de um sujeito, grava linha com features NaN (grade fixa 20 ROIs/img).
 - Por padrao, usa o "default" do PyRadiomics.
 - Opcional: use `--params Params.yaml` para reprodutibilidade e controle de features/image types.
 - Se o CSV de saida ja existir (e nao usar --overwrite), por padrao **retoma**: pula linhas
@@ -29,8 +29,10 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 ab = "longitudinal_window_4_groups"
+# ab = "longitudinal_4_groups"
 
-DEFAULT_LIST = Path(f"/mnt/study-data/pgirardi/graphs/csvs/adnimerged_longitudinal_window.csv")
+DEFAULT_LIST = Path(f"/mnt/study-data/pgirardi/graphs/csvs/adnimerged_longitudinal_window_extremos.csv")
+# DEFAULT_LIST = Path(f"/mnt/study-data/pgirardi/graphs/csvs/adnimerged_longitudinal.csv")
 DEFAULT_IMAGE_DIR = Path("/mnt/study-data/pgirardi/graphs/images/resampled_1.0mm")
 DEFAULT_IMAGE_SUFFIX = "_stripped_nlm_denoised_biascorrected.nii.gz"
 DEFAULT_REGIONS_DIR = Path("/mnt/study-data/pgirardi/graphs/images/regions")
@@ -140,6 +142,26 @@ def configure_extractor_in_code(extractor: Any) -> None:
                 extractor.enableFeatureClassByName(str(cls_name))
             else:
                 extractor.enableFeaturesByName(**{str(cls_name): list(spec)})
+
+
+NA_CELL = "NaN"
+
+
+def nan_feature_row(
+    id_img: str,
+    roi_name: str,
+    side: str,
+    label: int,
+    feat_cols: list[str],
+) -> dict[str, str]:
+    row: dict[str, str] = {
+        "ID_IMG": id_img,
+        "roi": roi_name,
+        "side": side,
+        "label": str(int(label)),
+    }
+    row.update({c: NA_CELL for c in feat_cols})
+    return row
 
 
 def iter_feature_items(res: dict[str, Any]) -> Iterable[tuple[str, str]]:
@@ -336,6 +358,7 @@ def main(
             logger.info("[%s/%s] %s", i, len(id_imgs), id_img)
             labels_present = present_labels_in_masked_regions(regions_path, brain_mask_path)
             wrote_any = False
+            pending_nan: list[tuple[str, str, int, tuple[str, str, str]]] = []
             with tempfile.TemporaryDirectory(prefix="feat_rad_mask_") as tmp_dir:
                 masked_regions_path = Path(tmp_dir) / f"{id_img}_regions_masked.nii.gz"
                 write_masked_regions_nifti(regions_path, brain_mask_path, masked_regions_path)
@@ -346,12 +369,13 @@ def main(
 
                     if int(label) not in labels_present:
                         logger.warning(
-                            "[%s] label %s (%s %s) ausente após brain_mask; pulando.",
+                            "[%s] label %s (%s %s) ausente após brain_mask; NaN.",
                             id_img,
                             label,
                             roi_name,
                             side,
                         )
+                        pending_nan.append((roi_name, side, int(label), key))
                         continue
 
                     res = extractor.execute(
@@ -380,6 +404,28 @@ def main(
                     wrote_any = True
                     if resume:
                         done_keys.add(key)
+
+                if pending_nan:
+                    if header is None:
+                        logger.warning(
+                            "[%s] %s ROI(s) sem label, mas header ainda indefinido; "
+                            "nenhuma linha NaN escrita nesta imagem.",
+                            id_img,
+                            len(pending_nan),
+                        )
+                    else:
+                        feat_cols = [c for c in header if c not in meta_cols]
+                        if writer is None:
+                            writer = csv.DictWriter(f, fieldnames=header, extrasaction="ignore")
+                        for roi_name, side, label, key in pending_nan:
+                            if resume and key in done_keys:
+                                continue
+                            writer.writerow(
+                                nan_feature_row(id_img, roi_name, side, label, feat_cols)
+                            )
+                            wrote_any = True
+                            if resume:
+                                done_keys.add(key)
 
             # Durabilidade: garante que o que foi escrito para este ID_IMG
             # foi empurrado para o disco antes de seguir para o próximo.
