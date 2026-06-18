@@ -28,9 +28,9 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-ab = "longitudinal_4_groups"
+ab = "longitudinal_window_4_groups"
 
-DEFAULT_LIST = Path(f"/mnt/study-data/pgirardi/graphs/csvs/adnimerged_longitudinal.csv")
+DEFAULT_LIST = Path(f"/mnt/study-data/pgirardi/graphs/csvs/adnimerged_longitudinal_window.csv")
 DEFAULT_IMAGE_DIR = Path("/mnt/study-data/pgirardi/graphs/images/resampled_1.0mm")
 DEFAULT_IMAGE_SUFFIX = "_stripped_nlm_denoised_biascorrected.nii.gz"
 DEFAULT_REGIONS_DIR = Path("/mnt/study-data/pgirardi/graphs/images/regions")

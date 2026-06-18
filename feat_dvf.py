@@ -30,9 +30,9 @@ from scipy.stats import kurtosis, skew
 # CONFIG (edite aqui)
 # =========================
 
-ab = "longitudinal_4_groups"
+ab = "longitudinal_window_4_groups"
 
-IMAGES_CSV = "csvs/adnimerged_longitudinal.csv"
+IMAGES_CSV = "csvs/adnimerged_longitudinal_window.csv"
 
 WARPS_DIR = "./images/displacement_field"
 CLINIC_DIR = "./images/resampled_1.0mm"

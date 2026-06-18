@@ -28,7 +28,7 @@ import pandas as pd
 # CONFIG (edite aqui)
 # =========================
 
-DEFAULT_IMAGES_CSV = "csvs/adnimerged_longitudinal.csv"
+DEFAULT_IMAGES_CSV = "csvs/adnimerged_longitudinal_window.csv"
 
 # Tamanho mínimo para considerar NIfTI completo (em bytes)
 DEFAULT_MIN_OUTPUT_BYTES = 1024
@@ -42,7 +42,7 @@ groupwise_dir = "./images/groupwise"
 clinic_dir = "./images/resampled_1.0mm"
 warps_output = "./images/displacement_field"
 
-SLOT_ORDER = {"baseline": 0, "m12": 1, "m24": 2}
+SLOT_ORDER = {"baseline": 0, "m12": 1, "m24": 2, "t0": 0, "t1": 1, "t2": 2}
 
 os.makedirs(warps_output, exist_ok=True)
 

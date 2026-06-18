@@ -9,7 +9,7 @@ import pandas as pd
 
 ROI_FILTER_DEFAULT = "hippocampus"
 
-SLOT_ORDER = {"baseline": 0, "m12": 1, "m24": 2}
+SLOT_ORDER = {"baseline": 0, "m12": 1, "m24": 2, "t0": 0, "t1": 1, "t2": 2}
 
 META_COLS_WIDE = {
     "ID_PT",
