@@ -6,8 +6,10 @@ Covariáveis: batch, AGE, SEX (sem GROUP).
 
 from __future__ import annotations
 
+import contextlib
+import io
 import warnings
-from typing import Any
+from typing import Any, Iterator
 
 import numpy as np
 import pandas as pd
@@ -15,6 +17,16 @@ from neuroCombat import neuroCombat
 from neuroCombat.neuroCombat import neuroCombatFromTraining
 
 MIN_BATCH_SAMPLES = 3
+
+
+@contextlib.contextmanager
+def _quiet_combat(quiet: bool) -> Iterator[None]:
+    if not quiet:
+        yield
+        return
+    with contextlib.redirect_stdout(io.StringIO()), warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        yield
 
 META_COLS = frozenset(
     {
@@ -164,19 +176,22 @@ def _run_neurocombat_train(
     wide_train: pd.DataFrame,
     cov_train: pd.DataFrame,
     train_ids: list[str],
+    *,
+    quiet: bool = True,
 ) -> tuple[pd.DataFrame, dict]:
     dat = wide_train.loc[train_ids].to_numpy(dtype=np.float64).T
     covars = cov_train.loc[train_ids].copy()
-    res = neuroCombat(
-        dat=dat,
-        covars=covars,
-        batch_col="batch",
-        categorical_cols=["SEX"],
-        continuous_cols=["AGE"],
-        eb=True,
-        parametric=True,
-        mean_only=False,
-    )
+    with _quiet_combat(quiet):
+        res = neuroCombat(
+            dat=dat,
+            covars=covars,
+            batch_col="batch",
+            categorical_cols=["SEX"],
+            continuous_cols=["AGE"],
+            eb=True,
+            parametric=True,
+            mean_only=False,
+        )
     wide_h = pd.DataFrame(
         np.asarray(res["data"], dtype=np.float64).T,
         index=train_ids,
@@ -190,10 +205,13 @@ def _run_neurocombat_apply(
     cov: pd.DataFrame,
     image_ids: list[str],
     estimates: dict,
+    *,
+    quiet: bool = True,
 ) -> pd.DataFrame:
     dat = wide.loc[image_ids].to_numpy(dtype=np.float64).T
     batch = cov.loc[image_ids, "batch"].to_numpy(dtype=str)
-    res = neuroCombatFromTraining(dat=dat, batch=batch, estimates=estimates)
+    with _quiet_combat(quiet):
+        res = neuroCombatFromTraining(dat=dat, batch=batch, estimates=estimates)
     return pd.DataFrame(
         np.asarray(res["data"], dtype=np.float64).T,
         index=image_ids,
@@ -208,6 +226,7 @@ def harmonize_long_fold(
     transform_id_imgs: set[str],
     feature_cols: list[str] | None = None,
     fold_id: int = 0,
+    quiet: bool = True,
 ) -> pd.DataFrame:
     """Fit ComBat nas imagens de treino; harmoniza imagens de transform (treino ∪ teste)."""
     if not train_id_imgs:
@@ -261,14 +280,18 @@ def harmonize_long_fold(
 
     wide_train = wide_all.loc[train_ids]
     cov_train = cov_all.loc[train_ids]
-    wide_h_train, estimates = _run_neurocombat_train(wide_train, cov_train, train_ids)
+    wide_h_train, estimates = _run_neurocombat_train(
+        wide_train, cov_train, train_ids, quiet=quiet
+    )
 
     harmonized_parts: list[pd.DataFrame] = [wide_h_train]
     apply_ids = [i for i in transform_ids if i not in train_ids]
     if apply_ids:
         apply_ok = [i for i in apply_ids if cov_all.loc[i, "batch"] in train_batches.index]
         if apply_ok:
-            wide_h_apply = _run_neurocombat_apply(wide_all, cov_all, apply_ok, estimates)
+            wide_h_apply = _run_neurocombat_apply(
+                wide_all, cov_all, apply_ok, estimates, quiet=quiet
+            )
             harmonized_parts.append(wide_h_apply)
 
     wide_harmonized = pd.concat(harmonized_parts)

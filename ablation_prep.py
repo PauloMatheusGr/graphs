@@ -48,11 +48,12 @@ VOL_FEAT_COLS = [
 ]
 
 VOL_FEATURE_SUFFIXES = {
-    "original_shape_MeshVolume",
     "gm_norm",
     "wm_norm",
     "csf_norm",
 }
+
+SHAPE_RE = re.compile(r"^original_shape_")
 
 TEXTURE_RE = re.compile(r"original_(glcm|gldm|glrlm|glszm|ngtdm)_")
 
@@ -144,6 +145,16 @@ def _select_vol_wide_columns(columns: list[str], roi: str) -> list[str]:
     return out
 
 
+def _select_shape_wide_columns(columns: list[str], roi: str) -> list[str]:
+    pat = re.compile(rf"^{re.escape(roi)}_[LR]_T[123]_(.+)$")
+    out: list[str] = []
+    for col in columns:
+        m = pat.match(col)
+        if m and SHAPE_RE.match(m.group(1)):
+            out.append(col)
+    return out
+
+
 def _select_texture_wide_columns(columns: list[str], roi: str) -> list[str]:
     pat = wide_feat_regex(roi)
     return [c for c in columns if pat.match(c) and TEXTURE_RE.search(c)]
@@ -177,16 +188,27 @@ def modality_wide_columns(
     cols = list(columns)
     if modality == "vol":
         return _select_vol_wide_columns(cols, roi)
+    if modality == "shape":
+        return _select_shape_wide_columns(cols, roi)
     if modality == "texture":
         return _select_texture_wide_columns(cols, roi)
     if modality == "disp":
         return _select_disp_wide_columns(cols, roi)
     if modality == "all":
         out = _select_vol_wide_columns(cols, roi)
+        out += _select_shape_wide_columns(cols, roi)
         out += _select_texture_wide_columns(cols, roi)
         out += _select_disp_wide_columns(cols, roi)
         return list(dict.fromkeys(out))
     raise ValueError(f"modalidade desconhecida: {modality}")
+
+
+def shape_long_from_rad_long(df_rad_long: pd.DataFrame) -> pd.DataFrame:
+    meta = [c for c in df_rad_long.columns if c in META_COLS_WIDE or c in ("ID_IMG",)]
+    feat = [c for c in df_rad_long.columns if SHAPE_RE.match(c)]
+    icv = ["ICV_mask_mm3"] if "ICV_mask_mm3" in df_rad_long.columns else []
+    cols = list(dict.fromkeys(meta + feat + icv))
+    return df_rad_long[cols].copy()
 
 
 def vol_long_from_rad_long(df_rad_long: pd.DataFrame) -> pd.DataFrame:
@@ -205,7 +227,7 @@ def export_ablation_long_only(
     *,
     roi: str = ROI_FILTER_DEFAULT,
 ) -> dict[str, Path]:
-    """Grava só os 4 CSV long consumidos por ablation_runner."""
+    """Grava CSV long consumidos por ablation_runner (vol, shape, rad, disp, merge)."""
     ablation_dir = Path(base_dir) / "ablation" / roi
     ablation_dir.mkdir(parents=True, exist_ok=True)
 
@@ -213,6 +235,7 @@ def export_ablation_long_only(
     disp_long = filter_rois(disp, roi)
     merge_long = filter_rois(merge, roi)
     vol_long = vol_long_from_rad_long(rad_long)
+    shape_long = shape_long_from_rad_long(rad_long)
 
     paths: dict[str, Path] = {}
     for name, df in {
@@ -220,6 +243,7 @@ def export_ablation_long_only(
         "disp_long": disp_long,
         "merge_long": merge_long,
         "vol_long": vol_long,
+        "shape_long": shape_long,
     }.items():
         p = ablation_dir / f"{name}.csv"
         df.to_csv(p, index=False)
@@ -249,17 +273,20 @@ def export_ablation_datasets(
     disp_long = filter_rois(disp, roi)
     merge_long = filter_rois(merge, roi)
     vol_long = vol_long_from_rad_long(rad_long)
+    shape_long = shape_long_from_rad_long(rad_long)
 
     rad_wide = pivot_long_to_wide(rad_long)
     disp_wide = pivot_long_to_wide(disp_long)
     merge_wide = pivot_long_to_wide(merge_long)
     vol_wide = pivot_long_to_wide(vol_long)
+    shape_wide = pivot_long_to_wide(shape_long)
 
     for name, df in {
         "rad_wide": rad_wide,
         "disp_wide": disp_wide,
         "merge_wide": merge_wide,
         "vol_wide": vol_wide,
+        "shape_wide": shape_wide,
     }.items():
         p = ablation_dir / f"{name}.csv"
         df.to_csv(p, index=False)
@@ -267,15 +294,18 @@ def export_ablation_datasets(
 
     meta = ["ID_PT", "GROUP", "SEX"]
     vol_cols = _select_vol_wide_columns(list(vol_wide.columns), roi)
+    shape_cols = _select_shape_wide_columns(list(shape_wide.columns), roi)
     texture_cols = _select_texture_wide_columns(list(rad_wide.columns), roi)
     disp_cols = _select_disp_wide_columns(list(disp_wide.columns), roi)
     all_cols = _select_vol_wide_columns(list(merge_wide.columns), roi)
+    all_cols += _select_shape_wide_columns(list(merge_wide.columns), roi)
     all_cols += _select_texture_wide_columns(list(merge_wide.columns), roi)
     all_cols += _select_disp_wide_columns(list(merge_wide.columns), roi)
     all_cols = list(dict.fromkeys(all_cols))
 
     for mod, (wide_df, cols) in {
         "vol": (vol_wide, vol_cols),
+        "shape": (shape_wide, shape_cols),
         "texture": (rad_wide, texture_cols),
         "disp": (disp_wide, disp_cols),
         "all": (merge_wide, all_cols),
@@ -287,3 +317,23 @@ def export_ablation_datasets(
         print(f"[{mod}] {p.name}: pacientes={len(out)} features={len(cols)}")
 
     return paths
+
+
+if __name__ == "__main__":
+    # ponytail: smoke — shape long deve ter 14 original_shape_* por ROI hipocampo
+    import sys
+
+    base = Path("csvs/longitudinal_4_groups")
+    rad_path = base / "ablation" / ROI_FILTER_DEFAULT / "rad_long.csv"
+    if not rad_path.is_file():
+        print(f"pulando self-check: {rad_path} ausente (correr run_post_extract.py)")
+        sys.exit(0)
+    rad = pd.read_csv(rad_path, nrows=1)
+    n_shape = sum(1 for c in rad.columns if SHAPE_RE.match(c))
+    assert n_shape == 14, f"esperado 14 shape cols, got {n_shape}"
+    wide_n = len(modality_wide_columns(
+        [f"hippocampus_L_T1_{c}" for c in rad.columns if SHAPE_RE.match(c)],
+        "shape",
+    ))
+    assert wide_n == 14
+    print(f"ok: {n_shape} shape long, modality_wide_columns shape={wide_n}")

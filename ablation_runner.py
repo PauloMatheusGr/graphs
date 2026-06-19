@@ -11,6 +11,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from ablation_harmonize import harmonize_long_fold, image_ids_for_patients
+from ablation_analysis import summary_with_pooled
 from ablation_prep import (
     ROI_FILTER_DEFAULT,
     block_key_regex,
@@ -43,6 +44,8 @@ try:
 except ImportError:
     HAS_MRMR = False
 
+import os
+os.environ.setdefault("PYTHONWARNINGS", "ignore")
 
 @dataclass(frozen=True)
 class TaskConfig:
@@ -95,9 +98,14 @@ TASK_PRESETS: dict[str, tuple[str, ...]] = {
 
 MODALITIES: dict[str, dict[str, str]] = {
     "vol": {"long": "vol_long.csv", "wide": "vol_wide.csv", "label": "volumétrico"},
+    "shape": {"long": "shape_long.csv", "wide": "shape_wide.csv", "label": "shape"},
     "texture": {"long": "rad_long.csv", "wide": "texture_wide.csv", "label": "textura"},
     "disp": {"long": "disp_long.csv", "wide": "disp_wide.csv", "label": "deslocamento"},
-    "all": {"long": "merge_long.csv", "wide": "all_wide.csv", "label": "merge (vol+tex+disp)"},
+    "all": {
+        "long": "merge_long.csv",
+        "wide": "all_wide.csv",
+        "label": "merge (vol+shape+tex+disp)",
+    },
 }
 
 SELECTION_MODES = {
@@ -108,26 +116,30 @@ SELECTION_MODES = {
 
 PARAM_GRIDS: dict[str, dict[str, list[Any]]] = {
     "svm": {
+        "preselect__k_per_block": [1, 2, 3, 4],
         "clf__C": [0.01, 0.1, 1.0, 10.0],
         "clf__kernel": ["linear", "rbf"],
         "clf__gamma": ["scale"],
         "clf__class_weight": [None, "balanced"],
     },
     "rf": {
+        "preselect__k_per_block": [1, 2, 3, 4],
         "clf__n_estimators": [100, 300],
         "clf__max_depth": [None, 5, 10],
         "clf__class_weight": [None, "balanced"],
     },
     "xgb": {
+        "preselect__k_per_block": [1, 2, 3, 4],
         "clf__n_estimators": [100, 300],
         "clf__max_depth": [3, 5],
         "clf__learning_rate": [0.05, 0.1],
         "clf__subsample": [0.8, 1.0],
     },
     "mlp": {
+        "preselect__k_per_block": [1, 2, 3, 4],
         "clf__hidden_layer_sizes": [(64,), (128, 64)],
         "clf__alpha": [1e-4, 1e-3],
-        "clf__max_iter": [500],
+        "clf__max_iter": [2000],
     },
 }
 
@@ -220,7 +232,7 @@ class CorrVarMRMRByBlock(BaseEstimator, TransformerMixin):
         *,
         use_mrmr: bool = True,
         use_filters: bool = True,
-        k_per_block: int = 4,
+        k_per_block: int = 2, #4,
         corr_threshold: float = 0.90,
         var_threshold: float = 0.01,
         roi: str = ROI_FILTER_DEFAULT,
@@ -338,6 +350,7 @@ def wide_for_fold(
     test_pts: set[str],
     with_combat: bool,
     fold_id: int,
+    combat_quiet: bool = True,
 ) -> pd.DataFrame:
     pts = train_pts | test_pts
     sub = df_long[df_long["ID_PT"].astype(str).isin(pts)].copy()
@@ -349,8 +362,16 @@ def wide_for_fold(
             train_id_imgs=train_imgs,
             transform_id_imgs=transform_imgs,
             fold_id=fold_id,
+            quiet=combat_quiet,
         )
     return pivot_long_to_wide(sub)
+
+
+def repeat_ids(r_repeats: int) -> range:
+    """R=0 → uma execução (repeat_id=0); R>0 → repeat_id em 0..R-1."""
+    if r_repeats < 0:
+        raise ValueError(f"r_repeats deve ser >= 0, recebido {r_repeats}")
+    return range(1) if r_repeats == 0 else range(r_repeats)
 
 
 def nested_cv_ablation(
@@ -366,6 +387,8 @@ def nested_cv_ablation(
     k_out: int = 5,
     k_in: int = 5,
     seed: int = 42,
+    repeat_id: int = 0,
+    combat_quiet: bool = True,
 ) -> pd.DataFrame:
     pt = patient_labels_from_long(df_long, task)
     y = pt["y"].to_numpy(dtype=int)
@@ -392,6 +415,7 @@ def nested_cv_ablation(
             test_pts=test_pts,
             with_combat=with_combat,
             fold_id=fold,
+            combat_quiet=combat_quiet,
         )
         wide = wide[wide["GROUP"].astype(str).isin(task.groups)].copy()
         wide["y"] = wide["GROUP"].map(task.label_map).astype(int)
@@ -422,6 +446,7 @@ def nested_cv_ablation(
             scoring="roc_auc",
             n_jobs=-1,
             refit=True,
+            verbose=0,
         )
         grid.fit(X_train, y_train)
         best = grid.best_estimator_
@@ -437,6 +462,7 @@ def nested_cv_ablation(
             else best.decision_function(X_test)
         )
         test_preds = (test_scores >= threshold).astype(int)
+        test_id_pts = wide.iloc[test_idx]["ID_PT"].astype(str).tolist()
 
         preselect = best.named_steps["preselect"]
         row = {
@@ -446,6 +472,7 @@ def nested_cv_ablation(
             "modality": modality,
             "modality_label": MODALITIES[modality]["label"],
             "model_key": model_key,
+            "repeat_id": repeat_id,
             "fold": fold,
             "best_model": clf.__class__.__name__,
             "best_inner_auc": float(grid.best_score_),
@@ -454,6 +481,9 @@ def nested_cv_ablation(
             "n_features_raw": X.shape[1],
             "n_features_selected": int(best.named_steps["preselect"].transform(X_train).shape[1]),
             "selected_features": json.dumps(list(preselect.selected_names_)),
+            "test_id_pts": json.dumps(test_id_pts),
+            "test_y_true": json.dumps(y_test.tolist()),
+            "test_scores": json.dumps(test_scores.tolist()),
             **fold_metrics(y_test, test_scores, test_preds),
         }
         results.append(row)
@@ -461,62 +491,85 @@ def nested_cv_ablation(
     return pd.DataFrame(results)
 
 
+def _results_dir_for_modality(
+    base: Path,
+    modality: str,
+    results_dir: Path | str | None,
+) -> Path:
+    if results_dir is not None:
+        return Path(results_dir)
+    return base.parent.parent / "ablation_results" / modality
+
+
 def run_full_ablation_suite(
     *,
     base_dir: Path | str = "csvs/longitudinal_4_groups/ablation/hippocampus",
     roi: str = ROI_FILTER_DEFAULT,
     tasks: tuple[str, ...] = ("cn_ad", "smci_pmci"),
-    modalities: tuple[str, ...] = ("vol", "texture", "disp", "all"),
+    modalities: tuple[str, ...] = ("vol", "shape", "texture", "disp", "all"),
     models: tuple[str, ...] = ("svm", "rf", "xgb", "mlp"),
     selection_modes: tuple[str, ...] = ("mrmr",),
     with_combat_flags: tuple[bool, ...] = (False, True),
     results_dir: Path | str | None = None,
     seed: int = 42,
+    r_repeats: int = 0,
+    verbose: bool = False,
+    combat_quiet: bool = True,
 ) -> pd.DataFrame:
     if not HAS_MRMR and "mrmr" in selection_modes:
         raise ImportError("feature-engine necessário para modo mrmr: pip install feature-engine")
 
     base = Path(base_dir)
-    out_dir = Path(results_dir) if results_dir else base.parent.parent / "ablation_results"
-    out_dir.mkdir(parents=True, exist_ok=True)
-
     all_results: list[pd.DataFrame] = []
-    for task_id in tasks:
-        task = TASKS[task_id]
-        for modality in modalities:
-            long_path = base / MODALITIES[modality]["long"]
-            if not long_path.is_file():
-                raise FileNotFoundError(f"Long CSV ausente: {long_path}")
-            df_long = pd.read_csv(long_path)
+
+    for modality in modalities:
+        out_dir = _results_dir_for_modality(base, modality, results_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        modality_results: list[pd.DataFrame] = []
+
+        long_path = base / MODALITIES[modality]["long"]
+        if not long_path.is_file():
+            raise FileNotFoundError(f"Long CSV ausente: {long_path}")
+        df_long = pd.read_csv(long_path)
+
+        for task_id in tasks:
+            task = TASKS[task_id]
             for with_combat in with_combat_flags:
                 for selection_mode in selection_modes:
                     for model_key in models:
-                        print(
-                            f"\n=== {task_id} | {modality} | combat={with_combat} | "
-                            f"{selection_mode} | {model_key} ==="
-                        )
-                        res = nested_cv_ablation(
-                            df_long,
-                            task=task,
-                            modality=modality,
-                            model_key=model_key,
-                            selection_mode=selection_mode,
-                            with_combat=with_combat,
-                            roi=roi,
-                            base_dir=base,
-                            seed=seed,
-                        )
-                        # tag = "combat" if with_combat else "nocombat"
-                        # out_path = out_dir / f"results_{task_id}_{modality}_{tag}_{selection_mode}_{model_key}.csv"
-                        # res.to_csv(out_path, index=False)
-                        all_results.append(res)
+                        for repeat_id in repeat_ids(r_repeats):
+                            seed_rep = seed + repeat_id * 1000
+                            rep_label = (
+                                f"rep={repeat_id}"
+                                if r_repeats > 0
+                                else "rep=0 (única)"
+                            )
+                            if verbose:
+                                print(
+                                    f"\n=== {task_id} | {modality} | combat={with_combat} | "
+                                    f"{selection_mode} | {model_key} | {rep_label} ==="
+                                )
+                            res = nested_cv_ablation(
+                                df_long,
+                                task=task,
+                                modality=modality,
+                                model_key=model_key,
+                                selection_mode=selection_mode,
+                                with_combat=with_combat,
+                                roi=roi,
+                                base_dir=base,
+                                seed=seed_rep,
+                                repeat_id=repeat_id,
+                                combat_quiet=combat_quiet,
+                            )
+                            modality_results.append(res)
 
-    combined = pd.concat(all_results, ignore_index=True)
-    combined.to_csv(out_dir / "ablation_results_all.csv", index=False)
-    summary = (
-        combined.groupby(["task", "modality", "with_combat", "model_key", "selection_mode"])
-        .agg(auc_mean=("auc", "mean"), auc_std=("auc", "std"), auc_pr_mean=("auc_pr", "mean"))
-        .reset_index()
-    )
-    summary.to_csv(out_dir / "ablation_summary.csv", index=False)
-    return combined
+        combined_mod = pd.concat(modality_results, ignore_index=True)
+        combined_mod.to_csv(out_dir / "ablation_results_all.csv", index=False)
+        summary = summary_with_pooled(combined_mod)
+        summary.to_csv(out_dir / "ablation_summary.csv", index=False)
+        if verbose:
+            print(f"\nSalvo: {out_dir / 'ablation_results_all.csv'} ({len(combined_mod)} linhas)")
+        all_results.append(combined_mod)
+
+    return pd.concat(all_results, ignore_index=True) if all_results else pd.DataFrame()
