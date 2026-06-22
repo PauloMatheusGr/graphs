@@ -9,3 +9,4 @@ zold/
 colab/logs_*/
 *.csv
 .cursor/
+docs/
