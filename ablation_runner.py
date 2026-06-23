@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -11,7 +13,11 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from ablation_harmonize import harmonize_long_fold, image_ids_for_patients
-from ablation_analysis import summary_with_pooled
+from ablation_analysis import (
+    anatomical_key,
+    estimate_stable_pool_columns,
+    summary_with_pooled,
+)
 from ablation_prep import (
     ROI_FILTER_DEFAULT,
     block_key_regex,
@@ -36,6 +42,8 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 from xgboost import XGBClassifier
+
+log = logging.getLogger(__name__)
 
 try:
     from feature_engine.selection import MRMR
@@ -110,9 +118,20 @@ MODALITIES: dict[str, dict[str, str]] = {
 
 SELECTION_MODES = {
     "mrmr": {"use_mrmr": True, "use_filters": True, "label": "corr + var + MRMR"},
+    "mrmr_stable": {
+        "use_mrmr": True,
+        "use_filters": True,
+        "use_stable_pool": True,
+        "label": "stable pool + corr + var + MRMR",
+    },
     "filters": {"use_mrmr": False, "use_filters": True, "label": "corr + var (sem MRMR)"},
     "raw": {"use_mrmr": False, "use_filters": False, "label": "sem seleção"},
 }
+
+# Estimativa do pool estável (inner CV do outer train)
+STABLE_POOL_MIN_PCT = 70
+STABLE_POOL_MIN_TIMEPOINTS = 2
+STABLE_POOL_K_PER_BLOCK = 2
 
 PARAM_GRIDS: dict[str, dict[str, list[Any]]] = {
     "svm": {
@@ -167,15 +186,33 @@ def tune_youden_threshold(y_true, scores) -> float:
     return float(thr[int(np.argmax(tpr - fpr))])
 
 
-def corr_keep_mask(X: np.ndarray, threshold: float = 0.90) -> np.ndarray:
+def corr_keep_mask(
+    X: np.ndarray,
+    threshold: float = 0.90,
+    *,
+    feature_names: list[str] | None = None,
+) -> np.ndarray:
+    """Greedy corr prune. Pares com mesmo anatomical_key (T1/T2/T3) nunca se removem."""
     xf = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
     n = xf.shape[1]
     if xf.shape[0] < 2:
         return np.ones(n, dtype=bool)
+    if feature_names is not None and len(feature_names) != n:
+        feature_names = None
+    keys = [anatomical_key(name) for name in feature_names] if feature_names else None
+
     c = np.corrcoef(xf.T)
     keep_idx: list[int] = []
     for j in range(n):
-        if all(not (np.isfinite(c[j, k]) and abs(c[j, k]) > threshold) for k in keep_idx):
+        drop = False
+        for k in keep_idx:
+            if not np.isfinite(c[j, k]) or abs(c[j, k]) <= threshold:
+                continue
+            if keys is not None and keys[j] == keys[k]:
+                continue
+            drop = True
+            break
+        if not drop:
             keep_idx.append(j)
     mask = np.zeros(n, dtype=bool)
     mask[keep_idx] = True
@@ -236,6 +273,7 @@ class CorrVarMRMRByBlock(BaseEstimator, TransformerMixin):
         corr_threshold: float = 0.90,
         var_threshold: float = 0.01,
         roi: str = ROI_FILTER_DEFAULT,
+        allowed_columns: list[str] | None = None,
     ):
         self.use_mrmr = use_mrmr
         self.use_filters = use_filters
@@ -243,10 +281,16 @@ class CorrVarMRMRByBlock(BaseEstimator, TransformerMixin):
         self.corr_threshold = corr_threshold
         self.var_threshold = var_threshold
         self.roi = roi
+        self.allowed_columns = allowed_columns
         self.block_re = block_key_regex(roi)
         self.selected_names_: list[str] = []
         self.selected_indices_: np.ndarray = np.array([], dtype=int)
         self.feature_names_in_: list[str] = []
+        self.removed_by_stable_pool_: list[str] = []
+        self.removed_by_filters_: list[str] = []
+        self.removed_by_mrmr_: list[str] = []
+        self.after_stable_pool_names_: list[str] = []
+        self.after_filter_names_: list[str] = []
 
     def _as_frame(self, X):
         if isinstance(X, pd.DataFrame):
@@ -256,30 +300,48 @@ class CorrVarMRMRByBlock(BaseEstimator, TransformerMixin):
     def fit(self, X, y):
         df_in = self._as_frame(X)
         self.feature_names_in_ = list(df_in.columns)
-        names = list(df_in.columns)
-        X_arr = df_in.to_numpy(dtype=float)
+        names = list(self.feature_names_in_)
 
-        if self.use_filters:
-            cmask = corr_keep_mask(X_arr, self.corr_threshold)
+        if self.allowed_columns is not None:
+            allowed = set(self.allowed_columns)
+            self.removed_by_stable_pool_ = [n for n in names if n not in allowed]
+            names = [n for n in names if n in allowed]
+        else:
+            self.removed_by_stable_pool_ = []
+        self.after_stable_pool_names_ = list(names)
+
+        X_arr = df_in[names].to_numpy(dtype=float) if names else np.empty((len(df_in), 0))
+
+        if self.use_filters and names:
+            before = list(names)
+            cmask = corr_keep_mask(X_arr, self.corr_threshold, feature_names=names)
             names = [n for n, k in zip(names, cmask) if k]
             X_arr = X_arr[:, cmask]
             vmask = var_keep_mask(X_arr, self.var_threshold)
             names = [n for n, k in zip(names, vmask) if k]
             X_arr = X_arr[:, vmask]
+            self.removed_by_filters_ = [n for n in before if n not in set(names)]
+        else:
+            self.removed_by_filters_ = []
+        self.after_filter_names_ = list(names)
 
         if self.use_mrmr and names:
             df_f = pd.DataFrame(X_arr, columns=names)
+            before_mrmr = list(names)
             selected_names = mrmr_by_block(
                 df_f, y, block_re=self.block_re, max_per_block=self.k_per_block
             )
             if not selected_names:
                 selected_names = names[: min(10, len(names))]
+            self.removed_by_mrmr_ = [n for n in before_mrmr if n not in set(selected_names)]
         else:
-            selected_names = names
+            selected_names = list(names)
+            self.removed_by_mrmr_ = []
 
         if not selected_names:
             # ponytail: fallback se corr/var/MRMR zerarem (ex. vol após ICV norm)
             selected_names = list(self.feature_names_in_)
+            self.removed_by_mrmr_ = []
 
         name_to_idx = {n: i for i, n in enumerate(self.feature_names_in_)}
         self.selected_names_ = selected_names
@@ -326,8 +388,51 @@ def param_grid_for(model_key: str, selection_mode: str) -> dict[str, Any]:
     return {
         k: v
         for k, v in PARAM_GRIDS[model_key].items()
-        if k != "preselect__k_per_block" or selection_mode == "mrmr"
+        if k != "preselect__k_per_block" or selection_mode in ("mrmr", "mrmr_stable")
     }
+
+
+def inner_selections_for_stable_pool(
+    X_train: pd.DataFrame,
+    y_train: np.ndarray,
+    *,
+    inner_cv: StratifiedKFold,
+    roi: str,
+    k_per_block: int = STABLE_POOL_K_PER_BLOCK,
+) -> list[list[str]]:
+    """Seleção corr/var/mRMR em cada inner fold (só treino interno)."""
+    inner_selected: list[list[str]] = []
+    for tr_idx, _ in inner_cv.split(X_train, y_train):
+        pre = CorrVarMRMRByBlock(
+            use_mrmr=True,
+            use_filters=True,
+            k_per_block=k_per_block,
+            roi=roi,
+        )
+        pre.fit(X_train.iloc[tr_idx], y_train[tr_idx])
+        inner_selected.append(list(pre.selected_names_))
+    return inner_selected
+
+
+def stable_pool_for_outer_train(
+    X_train: pd.DataFrame,
+    y_train: np.ndarray,
+    *,
+    inner_cv: StratifiedKFold,
+    roi: str,
+    min_pct: int = STABLE_POOL_MIN_PCT,
+    min_timepoints: int = STABLE_POOL_MIN_TIMEPOINTS,
+    k_per_block: int = STABLE_POOL_K_PER_BLOCK,
+) -> tuple[list[str], list[str]]:
+    inner_selected = inner_selections_for_stable_pool(
+        X_train, y_train, inner_cv=inner_cv, roi=roi, k_per_block=k_per_block
+    )
+    return estimate_stable_pool_columns(
+        list(X_train.columns),
+        inner_selected,
+        min_pct=min_pct,
+        min_timepoints=min_timepoints,
+    )
 
 
 def patient_labels_from_long(df_long: pd.DataFrame, task: TaskConfig) -> pd.DataFrame:
@@ -389,6 +494,10 @@ def nested_cv_ablation(
     seed: int = 42,
     repeat_id: int = 0,
     combat_quiet: bool = True,
+    stable_pool_min_pct: int = STABLE_POOL_MIN_PCT,
+    stable_pool_min_timepoints: int = STABLE_POOL_MIN_TIMEPOINTS,
+    stable_pool_k_per_block: int = STABLE_POOL_K_PER_BLOCK,
+    verbose: bool = False,
 ) -> pd.DataFrame:
     pt = patient_labels_from_long(df_long, task)
     y = pt["y"].to_numpy(dtype=int)
@@ -439,6 +548,19 @@ def nested_cv_ablation(
 
         pipeline = make_pipeline(selection_mode, model_key, roi=roi, seed=seed)
         inner_cv = StratifiedKFold(k_in, shuffle=True, random_state=seed + fold)
+        allowed_columns: list[str] | None = None
+        if SELECTION_MODES[selection_mode].get("use_stable_pool"):
+            allowed_columns, _ = stable_pool_for_outer_train(
+                X_train,
+                y_train,
+                inner_cv=inner_cv,
+                roi=roi,
+                min_pct=stable_pool_min_pct,
+                min_timepoints=stable_pool_min_timepoints,
+                k_per_block=stable_pool_k_per_block,
+            )
+            pipeline.set_params(preselect__allowed_columns=allowed_columns)
+
         grid = GridSearchCV(
             pipeline,
             param_grid_for(model_key, selection_mode),
@@ -479,7 +601,12 @@ def nested_cv_ablation(
             "best_params": json.dumps(grid.best_params_, default=str),
             "threshold": threshold,
             "n_features_raw": X.shape[1],
+            "n_features_after_stable_pool": len(preselect.after_stable_pool_names_),
+            "n_features_after_filters": len(preselect.after_filter_names_),
             "n_features_selected": int(best.named_steps["preselect"].transform(X_train).shape[1]),
+            "removed_by_stable_pool": json.dumps(preselect.removed_by_stable_pool_),
+            "removed_by_filters": json.dumps(preselect.removed_by_filters_),
+            "removed_by_mrmr": json.dumps(preselect.removed_by_mrmr_),
             "selected_features": json.dumps(list(preselect.selected_names_)),
             "test_id_pts": json.dumps(test_id_pts),
             "test_y_true": json.dumps(y_test.tolist()),
@@ -487,6 +614,15 @@ def nested_cv_ablation(
             **fold_metrics(y_test, test_scores, test_preds),
         }
         results.append(row)
+        if verbose:
+            log.debug(
+                "  fold %d/%d | inner_auc=%.3f | test_auc=%.3f | n_feat=%d",
+                fold,
+                k_out,
+                row["best_inner_auc"],
+                row.get("auc", float("nan")),
+                row["n_features_selected"],
+            )
 
     return pd.DataFrame(results)
 
@@ -515,12 +651,26 @@ def run_full_ablation_suite(
     r_repeats: int = 0,
     verbose: bool = False,
     combat_quiet: bool = True,
+    stable_pool_min_pct: int = STABLE_POOL_MIN_PCT,
+    stable_pool_min_timepoints: int = STABLE_POOL_MIN_TIMEPOINTS,
+    stable_pool_k_per_block: int = STABLE_POOL_K_PER_BLOCK,
 ) -> pd.DataFrame:
-    if not HAS_MRMR and "mrmr" in selection_modes:
+    if not HAS_MRMR and {"mrmr", "mrmr_stable"} & set(selection_modes):
         raise ImportError("feature-engine necessário para modo mrmr: pip install feature-engine")
 
     base = Path(base_dir)
     all_results: list[pd.DataFrame] = []
+    n_reps = len(repeat_ids(r_repeats))
+    total_jobs = (
+        len(modalities)
+        * len(tasks)
+        * len(with_combat_flags)
+        * len(selection_modes)
+        * len(models)
+        * n_reps
+    )
+    job_no = 0
+    t0 = time.monotonic()
 
     for modality in modalities:
         out_dir = _results_dir_for_modality(base, modality, results_dir)
@@ -530,6 +680,7 @@ def run_full_ablation_suite(
         long_path = base / MODALITIES[modality]["long"]
         if not long_path.is_file():
             raise FileNotFoundError(f"Long CSV ausente: {long_path}")
+        log.info("modalidade %s | long=%s", modality, long_path)
         df_long = pd.read_csv(long_path)
 
         for task_id in tasks:
@@ -538,17 +689,30 @@ def run_full_ablation_suite(
                 for selection_mode in selection_modes:
                     for model_key in models:
                         for repeat_id in repeat_ids(r_repeats):
+                            job_no += 1
                             seed_rep = seed + repeat_id * 1000
                             rep_label = (
                                 f"rep={repeat_id}"
                                 if r_repeats > 0
                                 else "rep=0 (única)"
                             )
-                            if verbose:
-                                print(
-                                    f"\n=== {task_id} | {modality} | combat={with_combat} | "
-                                    f"{selection_mode} | {model_key} | {rep_label} ==="
-                                )
+                            elapsed = time.monotonic() - t0
+                            eta_s = (elapsed / job_no) * (total_jobs - job_no) if job_no else 0
+                            log.info(
+                                "[%d/%d] %s | %s | combat=%s | %s | %s | %s | "
+                                "elapsed=%s eta=%s",
+                                job_no,
+                                total_jobs,
+                                task_id,
+                                modality,
+                                with_combat,
+                                selection_mode,
+                                model_key,
+                                rep_label,
+                                fmt_duration(elapsed),
+                                fmt_duration(eta_s),
+                            )
+                            job_t0 = time.monotonic()
                             res = nested_cv_ablation(
                                 df_long,
                                 task=task,
@@ -561,6 +725,19 @@ def run_full_ablation_suite(
                                 seed=seed_rep,
                                 repeat_id=repeat_id,
                                 combat_quiet=combat_quiet,
+                                stable_pool_min_pct=stable_pool_min_pct,
+                                stable_pool_min_timepoints=stable_pool_min_timepoints,
+                                stable_pool_k_per_block=stable_pool_k_per_block,
+                                verbose=verbose,
+                            )
+                            auc_mean = float(res["auc"].mean()) if "auc" in res.columns else float("nan")
+                            log.info(
+                                "[%d/%d] ok | auc_mean=%.3f | %d folds | job=%s",
+                                job_no,
+                                total_jobs,
+                                auc_mean,
+                                len(res),
+                                fmt_duration(time.monotonic() - job_t0),
                             )
                             modality_results.append(res)
 
@@ -568,8 +745,49 @@ def run_full_ablation_suite(
         combined_mod.to_csv(out_dir / "ablation_results_all.csv", index=False)
         summary = summary_with_pooled(combined_mod)
         summary.to_csv(out_dir / "ablation_summary.csv", index=False)
-        if verbose:
-            print(f"\nSalvo: {out_dir / 'ablation_results_all.csv'} ({len(combined_mod)} linhas)")
+        log.info(
+            "salvo %s (%d linhas, %d configs)",
+            out_dir / "ablation_results_all.csv",
+            len(combined_mod),
+            len(summary),
+        )
         all_results.append(combined_mod)
 
+    log.info("concluído | %d jobs | %s", job_no, fmt_duration(time.monotonic() - t0))
     return pd.concat(all_results, ignore_index=True) if all_results else pd.DataFrame()
+
+
+def fmt_duration(seconds: float) -> str:
+    s = int(max(0, seconds))
+    h, rem = divmod(s, 3600)
+    m, sec = divmod(rem, 60)
+    if h:
+        return f"{h}h{m:02d}m"
+    if m:
+        return f"{m}m{sec:02d}s"
+    return f"{sec}s"
+
+
+if __name__ == "__main__":
+    # ponytail: T1/T2/T3 mesmo biomarcador não caem por corr entre si
+    rng = np.random.default_rng(0)
+    n = 80
+    base = rng.normal(size=n)
+    X = np.column_stack(
+        [
+            base,
+            base + rng.normal(scale=0.01, size=n),
+            base + rng.normal(scale=0.01, size=n),
+            base * 0.98 + rng.normal(scale=0.02, size=n),
+        ]
+    )
+    names = [
+        "hippocampus_L_T1_gm_norm",
+        "hippocampus_L_T2_gm_norm",
+        "hippocampus_L_T3_gm_norm",
+        "hippocampus_L_T1_wm_norm",
+    ]
+    mask = corr_keep_mask(X, 0.90, feature_names=names)
+    assert mask[:3].all(), "visitas T1/T2/T3 devem sobreviver"
+    assert mask.sum() == 3, "wm_norm redundante com gm_norm deve cair"
+    print("ablation_runner self-check ok")

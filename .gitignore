@@ -10,3 +10,4 @@ colab/logs_*/
 *.csv
 .cursor/
 docs/
+logs/

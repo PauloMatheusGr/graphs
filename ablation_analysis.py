@@ -14,6 +14,19 @@ from sklearn.metrics import roc_auc_score
 
 CONFIG_COLS = ("task", "modality", "model_key", "with_combat", "selection_mode")
 FEAT_RE = re.compile(r"^hippocampus_([LR])_(T[123])_(.+)$")
+TIME_ORDER = ("T1", "T2", "T3")
+LINE_PALETTE = (
+    "#4477AA",
+    "#EE6677",
+    "#228833",
+    "#CCBB44",
+    "#AA3377",
+    "#BBBBBB",
+    "#000000",
+    "#88CCEE",
+    "#44AA99",
+    "#DDCC77",
+)
 METRIC_COLS = (
     "accuracy",
     "auc",
@@ -32,6 +45,24 @@ def coerce_with_combat(series: pd.Series) -> pd.Series:
     return series.astype(str).str.strip().str.lower().isin(("true", "1", "yes"))
 
 
+def parse_feature(name: str) -> tuple[str, str, str] | None:
+    """(lado, tempo, sufixo) ou None se não casar FEAT_RE."""
+    m = FEAT_RE.match(name)
+    if not m:
+        return None
+    return m.group(1), m.group(2), m.group(3)
+
+
+def anatomical_key(name: str) -> str:
+    """Colapsa T1/T2/T3: hippocampus_L_T2_gm_norm → hippocampus_L_gm_norm."""
+    parsed = parse_feature(name)
+    if parsed is None:
+        return name
+    side, _, feat = parsed
+    roi = name.split(f"_{side}_", 1)[0]
+    return f"{roi}_{side}_{feat}"
+
+
 def short_feature(name: str) -> str:
     m = FEAT_RE.match(name)
     if m:
@@ -40,6 +71,19 @@ def short_feature(name: str) -> str:
             feat = feat.removeprefix("original_shape_")
         return f"{m.group(1)} {m.group(2)} | {feat}"
     return name
+
+
+ANATOMICAL_RE = re.compile(r"^hippocampus_([LR])_(.+)$")
+
+
+def short_anatomical_key(key: str) -> str:
+    m = ANATOMICAL_RE.match(key)
+    if m:
+        feat = m.group(2)
+        if feat.startswith("original_shape_"):
+            feat = feat.removeprefix("original_shape_")
+        return f"{m.group(1)} | {feat}"
+    return key
 
 
 def prepare_ablation_df(df: pd.DataFrame) -> pd.DataFrame:
@@ -157,6 +201,452 @@ def feature_freq_table(
     return out.reset_index(drop=True)
 
 
+def feature_freq_table_grouped(
+    df: pd.DataFrame,
+    *,
+    top_n: int | None = None,
+    min_coverage: float = 0.0,
+) -> pd.DataFrame:
+    """Estabilidade por biomarcador anatômico (T1/T2/T3 colapsados).
+
+  - coverage: % folds com ≥1 tempo selecionado
+  - freq_T1/T2/T3: % folds em que cada visita entrou
+  - amplitude: média de (#tempos no fold / 3) nos folds em que entrou
+    """
+    df = prepare_ablation_df(df)
+    n_runs = n_outer_evals(df)
+    empty_cols = [
+        "feature_group",
+        "feature_short",
+        "coverage",
+        "coverage_pct",
+        "freq_T1",
+        "freq_T2",
+        "freq_T3",
+        "pct_T1",
+        "pct_T2",
+        "pct_T3",
+        "amplitude",
+        "n_folds_any",
+        "total_selections",
+        "n_runs",
+    ]
+    if n_runs == 0:
+        return pd.DataFrame(columns=empty_cols)
+
+    meta = df.iloc[0]
+    fold_any: dict[str, int] = {}
+    fold_time: dict[str, dict[str, int]] = {}
+    fold_n_times: dict[str, list[int]] = {}
+    total_sel: dict[str, int] = {}
+
+    for _, row in df.iterrows():
+        by_group: dict[str, set[str]] = {}
+        for feat in json.loads(row["selected_features"]):
+            grp = anatomical_key(feat)
+            parsed = parse_feature(feat)
+            if parsed is None:
+                continue
+            _, time_pt, _ = parsed
+            by_group.setdefault(grp, set()).add(time_pt)
+            total_sel[grp] = total_sel.get(grp, 0) + 1
+
+        for grp, times in by_group.items():
+            fold_any[grp] = fold_any.get(grp, 0) + 1
+            fold_n_times.setdefault(grp, []).append(len(times))
+            ft = fold_time.setdefault(grp, {"T1": 0, "T2": 0, "T3": 0})
+            for t in times:
+                if t in ft:
+                    ft[t] += 1
+
+    rows: list[dict[str, Any]] = []
+    for grp in sorted(fold_any.keys(), key=lambda g: (-fold_any[g], g)):
+        cov = fold_any[grp] / n_runs
+        if cov < min_coverage:
+            continue
+        ft = fold_time.get(grp, {"T1": 0, "T2": 0, "T3": 0})
+        amp_vals = fold_n_times.get(grp, [])
+        amplitude = float(np.mean([n / 3 for n in amp_vals])) if amp_vals else 0.0
+        rows.append(
+            {
+                "task": meta.get("task"),
+                "modality": meta.get("modality"),
+                "combat_label": meta.get("combat_label"),
+                "model_key": meta.get("model_key"),
+                "selection_mode": meta.get("selection_mode"),
+                "feature_group": grp,
+                "feature_short": short_anatomical_key(grp),
+                "coverage": cov,
+                "coverage_pct": int(round(100 * cov)),
+                "freq_T1": ft["T1"] / n_runs,
+                "freq_T2": ft["T2"] / n_runs,
+                "freq_T3": ft["T3"] / n_runs,
+                "pct_T1": int(round(100 * ft["T1"] / n_runs)),
+                "pct_T2": int(round(100 * ft["T2"] / n_runs)),
+                "pct_T3": int(round(100 * ft["T3"] / n_runs)),
+                "amplitude": amplitude,
+                "n_folds_any": fold_any[grp],
+                "total_selections": total_sel.get(grp, 0),
+                "n_runs": n_runs,
+            }
+        )
+
+    out = pd.DataFrame(rows).sort_values(
+        ["coverage", "amplitude", "feature_group"], ascending=[False, False, True]
+    )
+    if top_n is not None:
+        out = out.head(top_n)
+    return out.reset_index(drop=True)
+
+
+def count_stable_timepoints(
+    grp: pd.DataFrame,
+    *,
+    min_pct: int = 70,
+) -> pd.Series:
+    """Quantas visitas (T1/T2/T3) têm incidência >= min_pct."""
+    pcts = grp[["pct_T1", "pct_T2", "pct_T3"]]
+    return (pcts >= min_pct).sum(axis=1)
+
+
+def filter_temporally_stable(
+    grp: pd.DataFrame,
+    *,
+    min_pct: int = 70,
+    min_timepoints: int = 2,
+) -> pd.DataFrame:
+    """Pós-hoc: mantém biomarcadores com >= min_timepoints visitas em >= min_pct%."""
+    if grp.empty:
+        return grp.copy()
+    n = count_stable_timepoints(grp, min_pct=min_pct)
+    return grp.loc[n >= min_timepoints].reset_index(drop=True)
+
+
+def estimate_stable_pool_columns(
+    feature_names: list[str],
+    inner_selected: list[list[str]],
+    *,
+    min_pct: int = 70,
+    min_timepoints: int = 2,
+) -> tuple[list[str], list[str]]:
+    """Pool restrito a partir de seleções em inner folds (sem leakage do teste externo)."""
+    if not feature_names:
+        return [], []
+    n_inner = len(inner_selected)
+    if n_inner == 0:
+        return list(feature_names), []
+
+    fold_any: dict[str, int] = {}
+    fold_time: dict[str, dict[str, int]] = {}
+    for selected in inner_selected:
+        by_group: dict[str, set[str]] = {}
+        for feat in selected:
+            grp = anatomical_key(feat)
+            parsed = parse_feature(feat)
+            if parsed is None:
+                continue
+            _, time_pt, _ = parsed
+            by_group.setdefault(grp, set()).add(time_pt)
+        for grp, times in by_group.items():
+            fold_any[grp] = fold_any.get(grp, 0) + 1
+            ft = fold_time.setdefault(grp, {"T1": 0, "T2": 0, "T3": 0})
+            for t in times:
+                if t in ft:
+                    ft[t] += 1
+
+    passing: set[str] = set()
+    for grp in fold_any:
+        ft = fold_time[grp]
+        n_pass = sum(1 for t in TIME_ORDER if 100 * ft[t] / n_inner >= min_pct)
+        if n_pass >= min_timepoints:
+            passing.add(grp)
+
+    kept: list[str] = []
+    removed: list[str] = []
+    for col in feature_names:
+        parsed = parse_feature(col)
+        if parsed is None:
+            kept.append(col)
+            continue
+        if anatomical_key(col) in passing:
+            kept.append(col)
+        else:
+            removed.append(col)
+
+    if not kept:
+        return list(feature_names), []  # ponytail: evita pool vazio
+    return kept, removed
+
+
+def summarize_selection_audit(df: pd.DataFrame) -> pd.DataFrame:
+    """Resumo por fold: contagem e listas removidas em cada estágio."""
+    cols = [
+        "task",
+        "modality",
+        "model_key",
+        "with_combat",
+        "selection_mode",
+        "repeat_id",
+        "fold",
+        "n_features_raw",
+        "n_features_after_stable_pool",
+        "n_features_after_filters",
+        "n_features_selected",
+        "removed_by_stable_pool",
+        "removed_by_filters",
+        "removed_by_mrmr",
+        "selected_features",
+    ]
+    present = [c for c in cols if c in df.columns]
+    return df[present].copy()
+
+
+def union_removed(df: pd.DataFrame, col: str) -> list[str]:
+    """União de features removidas numa coluna JSON ao longo dos folds."""
+    out: set[str] = set()
+    if col not in df.columns:
+        return []
+    for val in df[col].dropna():
+        out.update(json.loads(val) if isinstance(val, str) else val)
+    return sorted(out)
+
+
+def feature_short_name(name: str) -> str:
+    s = short_anatomical_key(name)
+    return s if "|" in s else short_feature(name)
+
+
+def _col_or(frame: pd.DataFrame, name: str, fallback: pd.Series) -> pd.Series:
+    return frame[name] if name in frame.columns else fallback
+
+
+def selection_audit_report(
+    df: pd.DataFrame,
+    *,
+    task: str,
+    model: str,
+    with_combat: bool,
+    modality: str | None = None,
+    selection_modes: tuple[str, ...] | None = None,
+) -> pd.DataFrame:
+    """Contagem wide→final e remoções por estágio (para 3_results.ipynb)."""
+    df = prepare_ablation_df(df)
+    mask = (
+        (df["task"].astype(str) == task)
+        & (df["model_key"].astype(str) == model)
+        & (df["with_combat"] == with_combat)
+    )
+    if modality is not None:
+        mask &= df["modality"].astype(str) == modality
+    sub = df.loc[mask]
+    if sub.empty:
+        print(f"Auditoria vazia: {task}/{model}/combat={with_combat}")
+        return pd.DataFrame()
+
+    present = sorted(sub["selection_mode"].astype(str).unique())
+    modes = selection_modes or tuple(present)
+
+    for mode in modes:
+        if mode not in present:
+            print(f"\n[{mode}] sem dados")
+            continue
+        part = sub[sub["selection_mode"].astype(str) == mode]
+        mod_label = modality or str(part["modality"].iloc[0])
+        n_inicial = int(part["n_features_raw"].iloc[0])
+        n_final = float(part["n_features_selected"].mean())
+
+        print(f"\n{'=' * 60}")
+        print(f"[{mode}] {task} | {mod_label} | {model} | combat={with_combat}")
+        print(f"  wide (inicial):     {n_inicial} colunas")
+        if mode == "mrmr_stable" and "n_features_after_stable_pool" in part.columns:
+            n_pool = float(_col_or(part, "n_features_after_stable_pool", part["n_features_raw"]).mean())
+            print(f"  após pool estável:  {n_pool:.1f} (média folds)")
+        if mode in ("mrmr", "mrmr_stable", "filters") and "n_features_after_filters" in part.columns:
+            n_filt = float(_col_or(part, "n_features_after_filters", part["n_features_selected"]).mean())
+            print(f"  após corr/var:      {n_filt:.1f} (média folds)")
+        print(
+            f"  selecionados final: {n_final:.1f} (média) | "
+            f"min={part['n_features_selected'].min()} max={part['n_features_selected'].max()}"
+        )
+
+        if mode == "mrmr_stable" and "removed_by_stable_pool" in part.columns:
+            stable_rm = union_removed(part, "removed_by_stable_pool")
+            print(f"  removidos pool estável ({len(stable_rm)}): {[feature_short_name(x) for x in stable_rm[:12]]}")
+
+        if "removed_by_filters" in part.columns:
+            filt_rm = union_removed(part, "removed_by_filters")
+            if filt_rm:
+                print(f"  removidos corr/var ({len(filt_rm)}): {[feature_short_name(x) for x in filt_rm[:12]]}")
+        if mode in ("mrmr", "mrmr_stable") and "removed_by_mrmr" in part.columns:
+            mrmr_rm = union_removed(part, "removed_by_mrmr")
+            if mrmr_rm:
+                print(f"  removidos mRMR ({len(mrmr_rm)}): {[feature_short_name(x) for x in mrmr_rm[:12]]}")
+
+    rows = []
+    for mode in modes:
+        part = sub[sub["selection_mode"].astype(str) == mode]
+        if part.empty:
+            continue
+        rows.append(
+            {
+                "selection_mode": mode,
+                "n_wide": int(part["n_features_raw"].iloc[0]),
+                "n_final_mean": round(float(part["n_features_selected"].mean()), 1),
+                "n_removidos_mean": round(
+                    float(part["n_features_raw"].iloc[0] - part["n_features_selected"].mean()), 1
+                ),
+            }
+        )
+    summary = pd.DataFrame(rows)
+    if not summary.empty:
+        print("\nResumo wide → final:")
+        print(summary.to_string(index=False))
+    return summary
+
+
+def _plot_temporal_lines_on_ax(ax: plt.Axes, freq: pd.DataFrame) -> None:
+    """Uma linha por biomarcador; eixo X = T1/T2/T3; eixo Y = incidência (%)."""
+    x = np.arange(len(TIME_ORDER))
+    for i, row in enumerate(freq.itertuples()):
+        ys = [row.pct_T1, row.pct_T2, row.pct_T3]
+        ax.plot(
+            x,
+            ys,
+            color=LINE_PALETTE[i % len(LINE_PALETTE)],
+            marker="o",
+            markersize=7,
+            linewidth=1.8,
+            label=row.feature_short,
+        )
+    ax.set_xticks(x)
+    ax.set_xticklabels(TIME_ORDER)
+    ax.set_xlabel("Visita")
+    ax.set_ylim(0, 105)
+    ax.set_ylabel("Incidência (% das avaliações externas)")
+    for y in (20, 40, 60, 80):
+        ax.axhline(y, color="gray", ls="--", lw=0.4, alpha=0.45)
+    ax.legend(
+        loc="center left",
+        bbox_to_anchor=(1.02, 0.5),
+        fontsize=8,
+        framealpha=0.9,
+    )
+
+
+def plot_temporal_stability_lines(
+    df_config: pd.DataFrame,
+    *,
+    freq: pd.DataFrame | None = None,
+    title: str | None = None,
+    out_path: Path | str | None = None,
+    figsize: tuple[float, float] | None = None,
+    min_coverage: float = 0.0,
+    show_coverage: bool = False,  # ponytail: cobertura não mapeia a um único T
+    sort_by: str = "feature_short",
+) -> plt.Figure:
+    """Uma linha por biomarcador; eixo X = T1/T2/T3; eixo Y = % de incidência."""
+    if freq is None:
+        freq = feature_freq_table_grouped(df_config, min_coverage=min_coverage)
+    if freq.empty:
+        raise ValueError("Nenhum biomarcador agrupado para plotar.")
+
+    if sort_by == "coverage":
+        freq = freq.sort_values(
+            ["coverage_pct", "feature_short"], ascending=[False, True]
+        )
+    else:
+        freq = freq.sort_values("feature_short")
+
+    n = len(freq)
+    if figsize is None:
+        figsize = (7, max(4.5, 0.35 * n + 3.5))
+
+    fig, ax = plt.subplots(figsize=figsize)
+    _plot_temporal_lines_on_ax(ax, freq)
+
+    meta = freq.iloc[0]
+    if title is None:
+        title = (
+            f"{meta['task']} | {meta['modality']} | {meta['model_key']} | "
+            f"{meta['combat_label']} | n={meta['n_runs']} avaliações externas"
+        )
+    ax.set_title(title, fontsize=10)
+    plt.tight_layout()
+    if out_path is not None:
+        fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    return fig
+
+
+def plot_feature_stability_grouped(
+    df_config: pd.DataFrame,
+    *,
+    title: str | None = None,
+    out_path: Path | str | None = None,
+    figsize: tuple[float, float] | None = None,
+    min_coverage: float = 0.0,
+    show_coverage: bool = True,
+) -> plt.Figure:
+    """Alias: gráfico de linhas T1/T2/T3 (substitui barras de cobertura)."""
+    return plot_temporal_stability_lines(
+        df_config,
+        title=title,
+        out_path=out_path,
+        figsize=figsize,
+        min_coverage=min_coverage,
+        show_coverage=show_coverage,
+    )
+
+
+def plot_compare_stability(
+    df_config: pd.DataFrame,
+    *,
+    title: str | None = None,
+    out_path: Path | str | None = None,
+    figsize: tuple[float, float] | None = None,
+) -> plt.Figure:
+    """Empilhado: barras por coluna (cima) + linhas T1/T2/T3 agrupadas (baixo)."""
+    ind = feature_freq_table(df_config, top_n=None)
+    grp = feature_freq_table_grouped(df_config)
+    if ind.empty and grp.empty:
+        raise ValueError("Nenhum atributo selecionado para comparar.")
+
+    ind = ind.sort_values(["pct", "feature_short"], ascending=[True, True])
+    grp = grp.sort_values("feature_short")
+    n_ind, n_grp = len(ind), len(grp)
+    if figsize is None:
+        figsize = (9, max(8, 0.22 * n_ind + 5))
+
+    fig, (ax_top, ax_bot) = plt.subplots(
+        2, 1, figsize=figsize, gridspec_kw={"height_ratios": [max(n_ind, 3), 3]}
+    )
+    if n_ind:
+        y = np.arange(n_ind)
+        ax_top.barh(y, ind["pct"], height=0.75, color="#4477AA", alpha=0.9)
+        ax_top.set_yticks(y)
+        ax_top.set_yticklabels(ind["feature_short"], fontsize=7)
+    ax_top.set_xlim(0, 100)
+    ax_top.set_xlabel("Frequência (%)")
+    ax_top.set_title("Por coluna (T1/T2/T3 separados)", fontsize=9)
+    for x in (20, 40, 60, 80):
+        ax_top.axvline(x, color="gray", ls="--", lw=0.5, alpha=0.5)
+
+    if n_grp:
+        _plot_temporal_lines_on_ax(ax_bot, grp)
+    ax_bot.set_title("Agrupado — incidência por visita (linha = biomarcador)", fontsize=9)
+
+    meta = ind.iloc[0] if n_ind else grp.iloc[0]
+    if title is None:
+        title = (
+            f"{meta['task']} | {meta['modality']} | {meta['model_key']} | "
+            f"{meta['combat_label']} | n={meta['n_runs']}"
+        )
+    fig.suptitle(title, fontsize=10, y=1.01)
+    plt.tight_layout()
+    if out_path is not None:
+        fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    return fig
+
+
 def summary_with_pooled(df: pd.DataFrame) -> pd.DataFrame:
     """Resumo por configuração com AUC média dos folds e AUC pooled."""
     df = prepare_ablation_df(df)
@@ -261,6 +751,49 @@ if __name__ == "__main__":
             )
     demo = pd.DataFrame(demo_rows)
     freq = feature_freq_table(demo)
+    grp = feature_freq_table_grouped(demo)
     assert freq.loc[freq["feature"] == "hippocampus_L_T1_gm_norm", "pct"].iloc[0] == 100
+    assert grp.loc[grp["feature_group"] == "hippocampus_L_gm_norm", "coverage_pct"].iloc[0] == 100
+    assert grp.loc[grp["feature_group"] == "hippocampus_L_gm_norm", "pct_T1"].iloc[0] == 100
+    assert grp.loc[grp["feature_group"] == "hippocampus_L_gm_norm", "pct_T3"].iloc[0] == 50
     assert pooled_auc(demo) == 1.0
+    demo_grp = pd.DataFrame(
+        [
+            {"feature_short": "R | wm_norm", "pct_T1": 12, "pct_T2": 100, "pct_T3": 24},
+            {"feature_short": "L | wm_norm", "pct_T1": 98, "pct_T2": 100, "pct_T3": 92},
+        ]
+    )
+    stable = filter_temporally_stable(demo_grp, min_pct=70, min_timepoints=2)
+    assert len(stable) == 1 and stable.iloc[0]["feature_short"] == "L | wm_norm"
+    kept, removed = estimate_stable_pool_columns(
+        [
+            "hippocampus_R_T1_wm_norm",
+            "hippocampus_R_T2_wm_norm",
+            "hippocampus_L_T1_gm_norm",
+            "hippocampus_L_T2_gm_norm",
+        ],
+        [
+            [
+                "hippocampus_R_T2_wm_norm",
+                "hippocampus_L_T1_gm_norm",
+                "hippocampus_L_T2_gm_norm",
+                "hippocampus_L_T3_gm_norm",
+            ],
+            [
+                "hippocampus_R_T2_wm_norm",
+                "hippocampus_L_T1_gm_norm",
+                "hippocampus_L_T2_gm_norm",
+                "hippocampus_L_T3_gm_norm",
+            ],
+            [
+                "hippocampus_R_T2_wm_norm",
+                "hippocampus_L_T1_gm_norm",
+                "hippocampus_L_T2_gm_norm",
+                "hippocampus_L_T3_gm_norm",
+            ],
+        ],
+        min_pct=70,
+        min_timepoints=2,
+    )
+    assert "hippocampus_L_T1_gm_norm" in kept and "hippocampus_R_T1_wm_norm" in removed
     print("ablation_analysis self-check ok")
