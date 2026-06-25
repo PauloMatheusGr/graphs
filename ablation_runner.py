@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,7 +19,6 @@ from ablation_analysis import (
 )
 from ablation_prep import (
     ROI_FILTER_DEFAULT,
-    block_key_regex,
     modality_wide_columns,
     pivot_long_to_wide,
 )
@@ -131,31 +129,31 @@ SELECTION_MODES = {
 # Estimativa do pool estável (inner CV do outer train)
 STABLE_POOL_MIN_PCT = 70
 STABLE_POOL_MIN_TIMEPOINTS = 2
-STABLE_POOL_K_PER_BLOCK = 2
+STABLE_POOL_N_FEATURES = 50  # mRMR por inner fold p/ avaliar estabilidade temporal
 
 PARAM_GRIDS: dict[str, dict[str, list[Any]]] = {
     "svm": {
-        "preselect__k_per_block": [1, 2, 3, 4],
+        "preselect__n_features_total": [10, 15, 20, 30, 50],
         "clf__C": [0.01, 0.1, 1.0, 10.0],
         "clf__kernel": ["linear", "rbf"],
         "clf__gamma": ["scale"],
         "clf__class_weight": [None, "balanced"],
     },
     "rf": {
-        "preselect__k_per_block": [1, 2, 3, 4],
+        "preselect__n_features_total": [10, 15, 20, 30, 50],
         "clf__n_estimators": [100, 300],
         "clf__max_depth": [None, 5, 10],
         "clf__class_weight": [None, "balanced"],
     },
     "xgb": {
-        "preselect__k_per_block": [1, 2, 3, 4],
+        "preselect__n_features_total": [10, 15, 20, 30, 50],
         "clf__n_estimators": [100, 300],
         "clf__max_depth": [3, 5],
         "clf__learning_rate": [0.05, 0.1],
         "clf__subsample": [0.8, 1.0],
     },
     "mlp": {
-        "preselect__k_per_block": [1, 2, 3, 4],
+        "preselect__n_features_total": [10, 15, 20, 30, 50],
         "clf__hidden_layer_sizes": [(64,), (128, 64)],
         "clf__alpha": [1e-4, 1e-3],
         "clf__max_iter": [2000],
@@ -231,45 +229,38 @@ def var_keep_mask(X: np.ndarray, threshold: float = 0.01) -> np.ndarray:
     return keep
 
 
-def mrmr_by_block(
+def mrmr_global(
     df: pd.DataFrame,
     y: np.ndarray,
     *,
-    block_re: re.Pattern[str],
-    max_per_block: int = 4,
+    max_features: int,
+    random_state: int = 0,
 ) -> list[str]:
+    """mRMR top-K global (relevância - redundância). Mantém ordem de entrada."""
     if not HAS_MRMR:
+        raise RuntimeError("feature-engine ausente — mRMR exigido (pip install feature-engine)")
+    # feature-engine exige max_features < n_colunas; senão nada a cortar
+    if df.shape[1] <= max_features:
         return list(df.columns)
-    selected: list[str] = []
-    blocks: dict[tuple[str, str], list[str]] = {}
-    for col in df.columns:
-        m = block_re.search(col)
-        if m:
-            blocks.setdefault((m.group(1), m.group(2)), []).append(col)
-    for cols in blocks.values():
-        if not cols:
-            continue
-        # ponytail: feature-engine exige max_features < len(variables)
-        if len(cols) <= max_per_block:
-            selected.extend(cols)
-            continue
-        selector = MRMR(
-            variables=cols,
-            regression=False,
-            max_features=max_per_block,
-        )
-        selector.fit(df[cols], y)
-        selected.extend(selector.variables_)
-    return selected
+    selector = MRMR(
+        method="MIQ",
+        regression=False,
+        max_features=max_features,
+        random_state=random_state,
+    )
+    with np.errstate(divide="ignore", invalid="ignore"):  # MIQ: relevance/redundance=0 é benigno
+        selector.fit(df, y)
+    dropped = set(selector.features_to_drop_)  # selecionadas = variables_ - features_to_drop_
+    return [c for c in selector.variables_ if c not in dropped]
 
 
-class CorrVarMRMRByBlock(BaseEstimator, TransformerMixin):
+class CorrVarMRMRSelector(BaseEstimator, TransformerMixin):
     def __init__(
         self,
         *,
         use_mrmr: bool = True,
         use_filters: bool = True,
-        k_per_block: int = 2, #4,
+        n_features_total: int = 20,
         corr_threshold: float = 0.90,
         var_threshold: float = 0.01,
         roi: str = ROI_FILTER_DEFAULT,
@@ -277,12 +268,11 @@ class CorrVarMRMRByBlock(BaseEstimator, TransformerMixin):
     ):
         self.use_mrmr = use_mrmr
         self.use_filters = use_filters
-        self.k_per_block = k_per_block
+        self.n_features_total = n_features_total
         self.corr_threshold = corr_threshold
         self.var_threshold = var_threshold
         self.roi = roi
         self.allowed_columns = allowed_columns
-        self.block_re = block_key_regex(roi)
         self.selected_names_: list[str] = []
         self.selected_indices_: np.ndarray = np.array([], dtype=int)
         self.feature_names_in_: list[str] = []
@@ -328,11 +318,9 @@ class CorrVarMRMRByBlock(BaseEstimator, TransformerMixin):
         if self.use_mrmr and names:
             df_f = pd.DataFrame(X_arr, columns=names)
             before_mrmr = list(names)
-            selected_names = mrmr_by_block(
-                df_f, y, block_re=self.block_re, max_per_block=self.k_per_block
-            )
+            selected_names = mrmr_global(df_f, y, max_features=self.n_features_total)
             if not selected_names:
-                selected_names = names[: min(10, len(names))]
+                selected_names = names[: min(self.n_features_total, len(names))]
             self.removed_by_mrmr_ = [n for n in before_mrmr if n not in set(selected_names)]
         else:
             selected_names = list(names)
@@ -372,7 +360,7 @@ def make_pipeline(selection_mode: str, model_key: str, *, roi: str, seed: int) -
         [
             (
                 "preselect",
-                CorrVarMRMRByBlock(
+                CorrVarMRMRSelector(
                     use_mrmr=cfg["use_mrmr"],
                     use_filters=cfg["use_filters"],
                     roi=roi,
@@ -388,7 +376,7 @@ def param_grid_for(model_key: str, selection_mode: str) -> dict[str, Any]:
     return {
         k: v
         for k, v in PARAM_GRIDS[model_key].items()
-        if k != "preselect__k_per_block" or selection_mode in ("mrmr", "mrmr_stable")
+        if k != "preselect__n_features_total" or selection_mode in ("mrmr", "mrmr_stable")
     }
 
 
@@ -398,15 +386,15 @@ def inner_selections_for_stable_pool(
     *,
     inner_cv: StratifiedKFold,
     roi: str,
-    k_per_block: int = STABLE_POOL_K_PER_BLOCK,
+    n_features: int = STABLE_POOL_N_FEATURES,
 ) -> list[list[str]]:
     """Seleção corr/var/mRMR em cada inner fold (só treino interno)."""
     inner_selected: list[list[str]] = []
     for tr_idx, _ in inner_cv.split(X_train, y_train):
-        pre = CorrVarMRMRByBlock(
+        pre = CorrVarMRMRSelector(
             use_mrmr=True,
             use_filters=True,
-            k_per_block=k_per_block,
+            n_features_total=n_features,
             roi=roi,
         )
         pre.fit(X_train.iloc[tr_idx], y_train[tr_idx])
@@ -422,10 +410,10 @@ def stable_pool_for_outer_train(
     roi: str,
     min_pct: int = STABLE_POOL_MIN_PCT,
     min_timepoints: int = STABLE_POOL_MIN_TIMEPOINTS,
-    k_per_block: int = STABLE_POOL_K_PER_BLOCK,
+    n_features: int = STABLE_POOL_N_FEATURES,
 ) -> tuple[list[str], list[str]]:
     inner_selected = inner_selections_for_stable_pool(
-        X_train, y_train, inner_cv=inner_cv, roi=roi, k_per_block=k_per_block
+        X_train, y_train, inner_cv=inner_cv, roi=roi, n_features=n_features
     )
     return estimate_stable_pool_columns(
         list(X_train.columns),
@@ -496,7 +484,7 @@ def nested_cv_ablation(
     combat_quiet: bool = True,
     stable_pool_min_pct: int = STABLE_POOL_MIN_PCT,
     stable_pool_min_timepoints: int = STABLE_POOL_MIN_TIMEPOINTS,
-    stable_pool_k_per_block: int = STABLE_POOL_K_PER_BLOCK,
+    stable_pool_n_features: int = STABLE_POOL_N_FEATURES,
     verbose: bool = False,
 ) -> pd.DataFrame:
     pt = patient_labels_from_long(df_long, task)
@@ -557,7 +545,7 @@ def nested_cv_ablation(
                 roi=roi,
                 min_pct=stable_pool_min_pct,
                 min_timepoints=stable_pool_min_timepoints,
-                k_per_block=stable_pool_k_per_block,
+                n_features=stable_pool_n_features,
             )
             pipeline.set_params(preselect__allowed_columns=allowed_columns)
 
@@ -653,7 +641,7 @@ def run_full_ablation_suite(
     combat_quiet: bool = True,
     stable_pool_min_pct: int = STABLE_POOL_MIN_PCT,
     stable_pool_min_timepoints: int = STABLE_POOL_MIN_TIMEPOINTS,
-    stable_pool_k_per_block: int = STABLE_POOL_K_PER_BLOCK,
+    stable_pool_n_features: int = STABLE_POOL_N_FEATURES,
 ) -> pd.DataFrame:
     if not HAS_MRMR and {"mrmr", "mrmr_stable"} & set(selection_modes):
         raise ImportError("feature-engine necessário para modo mrmr: pip install feature-engine")
@@ -727,7 +715,7 @@ def run_full_ablation_suite(
                                 combat_quiet=combat_quiet,
                                 stable_pool_min_pct=stable_pool_min_pct,
                                 stable_pool_min_timepoints=stable_pool_min_timepoints,
-                                stable_pool_k_per_block=stable_pool_k_per_block,
+                                stable_pool_n_features=stable_pool_n_features,
                                 verbose=verbose,
                             )
                             auc_mean = float(res["auc"].mean()) if "auc" in res.columns else float("nan")

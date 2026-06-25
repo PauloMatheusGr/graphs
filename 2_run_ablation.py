@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+
+# python 2_run_ablation.py --modality vol,shape,texture,disp,all --tasks all \
+#   --selection mrmr_stable --models svm,rf,mlp,xgb --combat false --repeats 10
+
 """Nested CV ablation — CLI (equivalente a 2_ablation.ipynb). Análise em 3_results.ipynb."""
 
 from __future__ import annotations
@@ -19,9 +23,9 @@ from ablation_prep import ROI_FILTER_DEFAULT
 from ablation_runner import (
     MODALITIES,
     SELECTION_MODES,
-    STABLE_POOL_K_PER_BLOCK,
     STABLE_POOL_MIN_PCT,
     STABLE_POOL_MIN_TIMEPOINTS,
+    STABLE_POOL_N_FEATURES,
     TASKS,
     TASK_PRESETS,
     fmt_duration,
@@ -105,8 +109,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--modality",
-        default="vol",
-        help="Modalidade(s): vol|shape|texture|disp|merge|all",
+        default="all",
+        help="Modalidade(s): vol|shape|texture|disp|all|",
     )
     p.add_argument(
         "--tasks",
@@ -131,7 +135,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--stable-pool-min-pct", type=int, default=STABLE_POOL_MIN_PCT)
     p.add_argument("--stable-pool-min-timepoints", type=int, default=STABLE_POOL_MIN_TIMEPOINTS)
-    p.add_argument("--stable-pool-k", type=int, default=STABLE_POOL_K_PER_BLOCK)
+    p.add_argument("--stable-pool-n", type=int, default=STABLE_POOL_N_FEATURES)
     p.add_argument(
         "--log-file",
         type=Path,
@@ -213,7 +217,7 @@ def main(argv: list[str] | None = None) -> int:
             combat_quiet=True,
             stable_pool_min_pct=args.stable_pool_min_pct,
             stable_pool_min_timepoints=args.stable_pool_min_timepoints,
-            stable_pool_k_per_block=args.stable_pool_k,
+            stable_pool_n_features=args.stable_pool_n,
         )
     except Exception:
         elapsed = time.monotonic() - t0

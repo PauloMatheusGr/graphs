@@ -504,7 +504,16 @@ def selection_audit_report(
     return summary
 
 
-def _plot_temporal_lines_on_ax(ax: plt.Axes, freq: pd.DataFrame) -> None:
+def plot_temporal_lines_on_ax(
+    ax: plt.Axes, freq: pd.DataFrame, *, show_legend: bool = True
+) -> None:
+    """Uma linha por biomarcador; eixo X = T1/T2/T3; eixo Y = incidência (%)."""
+    _plot_temporal_lines_on_ax(ax, freq, show_legend=show_legend)
+
+
+def _plot_temporal_lines_on_ax(
+    ax: plt.Axes, freq: pd.DataFrame, *, show_legend: bool = True
+) -> None:
     """Uma linha por biomarcador; eixo X = T1/T2/T3; eixo Y = incidência (%)."""
     x = np.arange(len(TIME_ORDER))
     for i, row in enumerate(freq.itertuples()):
@@ -525,12 +534,13 @@ def _plot_temporal_lines_on_ax(ax: plt.Axes, freq: pd.DataFrame) -> None:
     ax.set_ylabel("Incidência (% das avaliações externas)")
     for y in (20, 40, 60, 80):
         ax.axhline(y, color="gray", ls="--", lw=0.4, alpha=0.45)
-    ax.legend(
-        loc="center left",
-        bbox_to_anchor=(1.02, 0.5),
-        fontsize=8,
-        framealpha=0.9,
-    )
+    if show_legend:
+        ax.legend(
+            loc="center left",
+            bbox_to_anchor=(1.02, 0.5),
+            fontsize=8,
+            framealpha=0.9,
+        )
 
 
 def plot_temporal_stability_lines(

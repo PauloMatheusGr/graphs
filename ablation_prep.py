@@ -9,6 +9,16 @@ import pandas as pd
 
 ROI_FILTER_DEFAULT = "hippocampus"
 
+# ComBat: fabricante + Tesla (sem MFG_MODEL — evita micro-batches no ADNI)
+BATCH_COLS = ("MANUFACTURER", "FIELD_STRENGTH")
+
+
+def assign_scanner_batch(df: pd.DataFrame) -> pd.Series:
+    missing = [c for c in BATCH_COLS if c not in df.columns]
+    if missing:
+        raise ValueError(f"Colunas batch ausentes: {missing}")
+    return df[list(BATCH_COLS)].astype(str).agg("_".join, axis=1)
+
 SLOT_ORDER = {"baseline": 0, "m12": 1, "m24": 2, "t0": 0, "t1": 1, "t2": 2}
 
 META_COLS_WIDE = {

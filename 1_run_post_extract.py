@@ -6,7 +6,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
-from ablation_prep import export_ablation_long_only
+from ablation_prep import assign_scanner_batch, export_ablation_long_only
 
 BASE = Path("csvs/longitudinal_4_groups")
 LONGITUDINAL = Path("csvs/adnimerged_longitudinal.csv")
@@ -103,8 +103,7 @@ def add_cohort_meta(radiomics_merge: pd.DataFrame) -> pd.DataFrame:
         .drop_duplicates(subset=["ID_IMG"], keep="last")
     )
     merge = out.merge(meta_sub, on="ID_IMG", how="left", validate="many_to_one")
-    batch_cols = ["MANUFACTURER", "MFG_MODEL", "FIELD_STRENGTH"]
-    merge["batch"] = merge[batch_cols].astype(str).agg("_".join, axis=1)
+    merge["batch"] = assign_scanner_batch(merge)
 
     meta_order = [
         "ID_IMG", "roi", "side", "label",
@@ -144,8 +143,7 @@ def build_feat_disp_all() -> pd.DataFrame:
     overlap = [c for c in meta_sub.columns if c in df_disp.columns and c != "ID_IMG"]
     df_disp = df_disp.drop(columns=overlap, errors="ignore")
     df_all = df_disp.merge(meta_sub, on="ID_IMG", how="left", validate="many_to_one")
-    batch_cols = ["MANUFACTURER", "MFG_MODEL", "FIELD_STRENGTH"]
-    df_all["batch"] = df_all[batch_cols].astype(str).agg("_".join, axis=1)
+    df_all["batch"] = assign_scanner_batch(df_all)
     meta_order = [
         "ID_IMG", "roi", "side", "label",
         "ID_PT", "GROUP", "SEX", "AGE", "MRI_DATE", "DIAG", "slot", "ref_tag",

@@ -16,7 +16,33 @@ import pandas as pd
 from neuroCombat import neuroCombat
 from neuroCombat.neuroCombat import neuroCombatFromTraining
 
-MIN_BATCH_SAMPLES = 3
+MIN_BATCH_SAMPLES = 5
+
+
+def pool_small_batches(
+    cov: pd.DataFrame,
+    train_ids: list[str],
+    *,
+    min_n: int = MIN_BATCH_SAMPLES,
+) -> tuple[pd.DataFrame, dict[str, str]]:
+    """Funde batches raros no treino em OTHER_<tesla> para EB estável."""
+    out = cov.copy()
+    batches = out["batch"].astype(str)
+    train_counts = batches.loc[train_ids].value_counts()
+    small = {str(b) for b, n in train_counts.items() if n < min_n}
+    if not small:
+        return out, {}
+
+    def _remap(batch: str) -> str:
+        if batch not in small:
+            return batch
+        # ponytail: pool por FIELD_STRENGTH (último segmento de MANUFACTURER_FIELD)
+        return f"OTHER_{batch.rsplit('_', 1)[-1]}"
+
+    mapping = {b: _remap(b) for b in batches.unique()}
+    merged = {k: v for k, v in mapping.items() if k != v}
+    out["batch"] = batches.map(mapping)
+    return out, merged
 
 
 @contextlib.contextmanager
@@ -252,6 +278,12 @@ def harmonize_long_fold(
         warnings.warn(f"[fold {fold_id}] Nenhuma imagem de treino com dados ComBat; retornando original.")
         return df_out
 
+    cov_all, pooled = pool_small_batches(cov_all, train_ids)
+    if pooled:
+        warnings.warn(
+            f"[fold {fold_id}] batches fundidos (n<{MIN_BATCH_SAMPLES} no treino): {pooled}"
+        )
+
     train_batches = cov_all.loc[train_ids]["batch"].value_counts()
     if len(train_batches) < 2:
         warnings.warn(
@@ -263,9 +295,10 @@ def harmonize_long_fold(
     small = train_batches[train_batches < MIN_BATCH_SAMPLES]
     if not small.empty:
         warnings.warn(
-            f"[fold {fold_id}] batches com <{MIN_BATCH_SAMPLES} amostras no treino: "
-            f"{small.to_dict()}"
+            f"[fold {fold_id}] ComBat ignorado — batch no treino ainda com "
+            f"<{MIN_BATCH_SAMPLES} amostras após merge: {small.to_dict()}"
         )
+        return df_out
 
     transform_ids = sorted(
         img for img in wide_all.index if str(img) in {str(r).strip() for r in transform_id_imgs}
@@ -307,6 +340,15 @@ def image_ids_for_patients(df_long: pd.DataFrame, patient_ids: set[str]) -> set[
 
 if __name__ == "__main__":
     # ponytail: smoke helpers + skip ComBat quando batch único no treino
+    cov_demo = pd.DataFrame(
+        {"batch": ["A_1.5", "A_1.5", "B_3.0", "B_3.0", "B_3.0", "C_1.5"]},
+        index=["i1", "i2", "i3", "i4", "i5", "i6"],
+    )
+    pooled, merged = pool_small_batches(cov_demo, ["i1", "i2", "i6"], min_n=3)
+    assert merged == {"A_1.5": "OTHER_1.5", "C_1.5": "OTHER_1.5"}
+    assert pooled.loc["i1", "batch"] == "OTHER_1.5"
+    assert pooled.loc["i3", "batch"] == "B_3.0"
+
     rng = np.random.default_rng(0)
     rows = []
     for img, pt in [("I1", "P1"), ("I2", "P1"), ("I3", "P2")]:
