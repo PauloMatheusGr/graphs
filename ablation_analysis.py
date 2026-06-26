@@ -13,8 +13,9 @@ import pandas as pd
 from sklearn.metrics import roc_auc_score
 
 CONFIG_COLS = ("task", "modality", "model_key", "with_combat", "selection_mode")
-FEAT_RE = re.compile(r"^hippocampus_([LR])_(T[123])_(.+)$")
+FEAT_RE = re.compile(r"^hippocampus_([LR])_(T[123]|D21|D31|SLOPE)_(.+)$")
 TIME_ORDER = ("T1", "T2", "T3")
+DELTA_TIME_ORDER = ("T1", "D21", "D31", "SLOPE")
 LINE_PALETTE = (
     "#4477AA",
     "#EE6677",
@@ -54,7 +55,7 @@ def parse_feature(name: str) -> tuple[str, str, str] | None:
 
 
 def anatomical_key(name: str) -> str:
-    """Colapsa T1/T2/T3: hippocampus_L_T2_gm_norm → hippocampus_L_gm_norm."""
+    """Colapsa T1/T2/T3/D21/D31/SLOPE: hippocampus_L_T2_gm_norm → hippocampus_L_gm_norm."""
     parsed = parse_feature(name)
     if parsed is None:
         return name
@@ -234,6 +235,12 @@ def feature_freq_table_grouped(
     if n_runs == 0:
         return pd.DataFrame(columns=empty_cols)
 
+    all_feats: list[str] = []
+    for _, row in df.iterrows():
+        all_feats.extend(json.loads(row["selected_features"]))
+    time_order = _time_order_for_names(all_feats)
+    n_slots = len(time_order)
+
     meta = df.iloc[0]
     fold_any: dict[str, int] = {}
     fold_time: dict[str, dict[str, int]] = {}
@@ -254,7 +261,7 @@ def feature_freq_table_grouped(
         for grp, times in by_group.items():
             fold_any[grp] = fold_any.get(grp, 0) + 1
             fold_n_times.setdefault(grp, []).append(len(times))
-            ft = fold_time.setdefault(grp, {"T1": 0, "T2": 0, "T3": 0})
+            ft = fold_time.setdefault(grp, _empty_fold_time(time_order))
             for t in times:
                 if t in ft:
                     ft[t] += 1
@@ -264,32 +271,28 @@ def feature_freq_table_grouped(
         cov = fold_any[grp] / n_runs
         if cov < min_coverage:
             continue
-        ft = fold_time.get(grp, {"T1": 0, "T2": 0, "T3": 0})
+        ft = fold_time.get(grp, _empty_fold_time(time_order))
         amp_vals = fold_n_times.get(grp, [])
-        amplitude = float(np.mean([n / 3 for n in amp_vals])) if amp_vals else 0.0
-        rows.append(
-            {
-                "task": meta.get("task"),
-                "modality": meta.get("modality"),
-                "combat_label": meta.get("combat_label"),
-                "model_key": meta.get("model_key"),
-                "selection_mode": meta.get("selection_mode"),
-                "feature_group": grp,
-                "feature_short": short_anatomical_key(grp),
-                "coverage": cov,
-                "coverage_pct": int(round(100 * cov)),
-                "freq_T1": ft["T1"] / n_runs,
-                "freq_T2": ft["T2"] / n_runs,
-                "freq_T3": ft["T3"] / n_runs,
-                "pct_T1": int(round(100 * ft["T1"] / n_runs)),
-                "pct_T2": int(round(100 * ft["T2"] / n_runs)),
-                "pct_T3": int(round(100 * ft["T3"] / n_runs)),
-                "amplitude": amplitude,
-                "n_folds_any": fold_any[grp],
-                "total_selections": total_sel.get(grp, 0),
-                "n_runs": n_runs,
-            }
-        )
+        amplitude = float(np.mean([n / n_slots for n in amp_vals])) if amp_vals else 0.0
+        row_dict: dict[str, Any] = {
+            "task": meta.get("task"),
+            "modality": meta.get("modality"),
+            "combat_label": meta.get("combat_label"),
+            "model_key": meta.get("model_key"),
+            "selection_mode": meta.get("selection_mode"),
+            "feature_group": grp,
+            "feature_short": short_anatomical_key(grp),
+            "coverage": cov,
+            "coverage_pct": int(round(100 * cov)),
+            "amplitude": amplitude,
+            "n_folds_any": fold_any[grp],
+            "total_selections": total_sel.get(grp, 0),
+            "n_runs": n_runs,
+        }
+        for t in time_order:
+            row_dict[f"freq_{t}"] = ft[t] / n_runs
+            row_dict[f"pct_{t}"] = int(round(100 * ft[t] / n_runs))
+        rows.append(row_dict)
 
     out = pd.DataFrame(rows).sort_values(
         ["coverage", "amplitude", "feature_group"], ascending=[False, False, True]
@@ -299,13 +302,28 @@ def feature_freq_table_grouped(
     return out.reset_index(drop=True)
 
 
+def _time_order_for_names(names: list[str]) -> tuple[str, ...]:
+    tokens = {parse_feature(n)[1] for n in names if parse_feature(n) is not None}
+    if tokens & set(DELTA_TIME_ORDER[1:]):
+        return DELTA_TIME_ORDER
+    return TIME_ORDER
+
+
+def _empty_fold_time(time_order: tuple[str, ...]) -> dict[str, int]:
+    return {t: 0 for t in time_order}
+
+
 def count_stable_timepoints(
     grp: pd.DataFrame,
     *,
     min_pct: int = 70,
+    time_order: tuple[str, ...] = TIME_ORDER,
 ) -> pd.Series:
-    """Quantas visitas (T1/T2/T3) têm incidência >= min_pct."""
-    pcts = grp[["pct_T1", "pct_T2", "pct_T3"]]
+    """Quantas visitas/representações têm incidência >= min_pct."""
+    cols = [f"pct_{t}" for t in time_order if f"pct_{t}" in grp.columns]
+    if not cols:
+        cols = [c for c in grp.columns if c.startswith("pct_")]
+    pcts = grp[cols]
     return (pcts >= min_pct).sum(axis=1)
 
 
@@ -314,11 +332,14 @@ def filter_temporally_stable(
     *,
     min_pct: int = 70,
     min_timepoints: int = 2,
+    time_order: tuple[str, ...] | None = None,
 ) -> pd.DataFrame:
     """Pós-hoc: mantém biomarcadores com >= min_timepoints visitas em >= min_pct%."""
     if grp.empty:
         return grp.copy()
-    n = count_stable_timepoints(grp, min_pct=min_pct)
+    if time_order is None:
+        time_order = DELTA_TIME_ORDER if "pct_D21" in grp.columns else TIME_ORDER
+    n = count_stable_timepoints(grp, min_pct=min_pct, time_order=time_order)
     return grp.loc[n >= min_timepoints].reset_index(drop=True)
 
 
@@ -336,6 +357,7 @@ def estimate_stable_pool_columns(
     if n_inner == 0:
         return list(feature_names), []
 
+    time_order = _time_order_for_names(feature_names)
     fold_any: dict[str, int] = {}
     fold_time: dict[str, dict[str, int]] = {}
     for selected in inner_selected:
@@ -349,7 +371,7 @@ def estimate_stable_pool_columns(
             by_group.setdefault(grp, set()).add(time_pt)
         for grp, times in by_group.items():
             fold_any[grp] = fold_any.get(grp, 0) + 1
-            ft = fold_time.setdefault(grp, {"T1": 0, "T2": 0, "T3": 0})
+            ft = fold_time.setdefault(grp, _empty_fold_time(time_order))
             for t in times:
                 if t in ft:
                     ft[t] += 1
@@ -357,7 +379,7 @@ def estimate_stable_pool_columns(
     passing: set[str] = set()
     for grp in fold_any:
         ft = fold_time[grp]
-        n_pass = sum(1 for t in TIME_ORDER if 100 * ft[t] / n_inner >= min_pct)
+        n_pass = sum(1 for t in time_order if 100 * ft[t] / n_inner >= min_pct)
         if n_pass >= min_timepoints:
             passing.add(grp)
 
@@ -504,6 +526,13 @@ def selection_audit_report(
     return summary
 
 
+def _time_order_from_freq(freq: pd.DataFrame) -> tuple[str, ...]:
+    tokens = [c.removeprefix("pct_") for c in freq.columns if c.startswith("pct_")]
+    if set(tokens) & set(DELTA_TIME_ORDER[1:]):
+        return DELTA_TIME_ORDER
+    return TIME_ORDER
+
+
 def plot_temporal_lines_on_ax(
     ax: plt.Axes, freq: pd.DataFrame, *, show_legend: bool = True
 ) -> None:
@@ -514,10 +543,11 @@ def plot_temporal_lines_on_ax(
 def _plot_temporal_lines_on_ax(
     ax: plt.Axes, freq: pd.DataFrame, *, show_legend: bool = True
 ) -> None:
-    """Uma linha por biomarcador; eixo X = T1/T2/T3; eixo Y = incidência (%)."""
-    x = np.arange(len(TIME_ORDER))
+    """Uma linha por biomarcador; eixo X = visitas ou representações; Y = incidência (%)."""
+    time_order = _time_order_from_freq(freq)
+    x = np.arange(len(time_order))
     for i, row in enumerate(freq.itertuples()):
-        ys = [row.pct_T1, row.pct_T2, row.pct_T3]
+        ys = [getattr(row, f"pct_{t}", 0) for t in time_order]
         ax.plot(
             x,
             ys,
@@ -528,8 +558,8 @@ def _plot_temporal_lines_on_ax(
             label=row.feature_short,
         )
     ax.set_xticks(x)
-    ax.set_xticklabels(TIME_ORDER)
-    ax.set_xlabel("Visita")
+    ax.set_xticklabels(time_order)
+    ax.set_xlabel("Visita" if time_order == TIME_ORDER else "Representação")
     ax.set_ylim(0, 105)
     ax.set_ylabel("Incidência (% das avaliações externas)")
     for y in (20, 40, 60, 80):

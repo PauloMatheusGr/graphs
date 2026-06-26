@@ -17,9 +17,9 @@ from ablation_analysis import (
     estimate_stable_pool_columns,
     summary_with_pooled,
 )
+from ablation_deltas import PROTOCOL_T1_DELTAS, add_delta_columns, modality_wide_columns
 from ablation_prep import (
     ROI_FILTER_DEFAULT,
-    modality_wide_columns,
     pivot_long_to_wide,
 )
 from imblearn.pipeline import Pipeline as ImbPipeline
@@ -35,6 +35,7 @@ from sklearn.metrics import (
     roc_auc_score,
     roc_curve,
 )
+from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import GridSearchCV, StratifiedKFold, cross_val_predict
 from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import StandardScaler
@@ -126,6 +127,10 @@ SELECTION_MODES = {
     "raw": {"use_mrmr": False, "use_filters": False, "label": "sem seleção"},
 }
 
+# Seleção embarcada via penalização L1/ElasticNet — sem estágio preselect.
+EMBEDDED_MODEL_KEYS = frozenset({"logreg_l1", "elasticnet"})
+EMBEDDED_COEF_TOL = 1e-9
+
 # Estimativa do pool estável (inner CV do outer train)
 STABLE_POOL_MIN_PCT = 70
 STABLE_POOL_MIN_TIMEPOINTS = 2
@@ -157,6 +162,15 @@ PARAM_GRIDS: dict[str, dict[str, list[Any]]] = {
         "clf__hidden_layer_sizes": [(64,), (128, 64)],
         "clf__alpha": [1e-4, 1e-3],
         "clf__max_iter": [2000],
+    },
+    "logreg_l1": {
+        "clf__C": [0.01, 0.1, 1.0, 10.0],
+        "clf__class_weight": [None, "balanced"],
+    },
+    "elasticnet": {
+        "clf__C": [0.01, 0.1, 1.0, 10.0],
+        "clf__l1_ratio": [0.1, 0.5, 0.9],
+        "clf__class_weight": [None, "balanced"],
     },
 }
 
@@ -346,8 +360,11 @@ class CorrVarMRMRSelector(BaseEstimator, TransformerMixin):
         return X_arr[:, self.selected_indices_]
 
 
-def make_pipeline(selection_mode: str, model_key: str, *, roi: str, seed: int) -> ImbPipeline:
-    cfg = SELECTION_MODES[selection_mode]
+def is_embedded_model(model_key: str) -> bool:
+    return model_key in EMBEDDED_MODEL_KEYS
+
+
+def make_classifier(model_key: str, *, seed: int):
     clf_map = {
         "svm": SVC(probability=True, random_state=seed),
         "rf": RandomForestClassifier(random_state=seed),
@@ -355,9 +372,89 @@ def make_pipeline(selection_mode: str, model_key: str, *, roi: str, seed: int) -
         "mlp": MLPClassifier(
             activation="relu", alpha=1e-3, batch_size=32, random_state=seed, max_iter=500
         ),
+        "logreg_l1": LogisticRegression(
+            penalty="l1",
+            solver="saga",
+            max_iter=5000,
+            random_state=seed,
+        ),
+        "elasticnet": LogisticRegression(
+            penalty="elasticnet",
+            solver="saga",
+            l1_ratio=0.5,
+            max_iter=5000,
+            random_state=seed,
+        ),
     }
-    return ImbPipeline(
-        [
+    if model_key not in clf_map:
+        raise ValueError(f"modelo desconhecido: {model_key!r}")
+    return clf_map[model_key]
+
+
+def embedded_selected_names(
+    clf: LogisticRegression,
+    feature_names: list[str],
+    *,
+    coef_tol: float = EMBEDDED_COEF_TOL,
+) -> list[str]:
+    """Features com coeficiente ≠ 0 após fit (seleção embarcada L1/ElasticNet)."""
+    coef = np.ravel(clf.coef_)
+    if len(coef) != len(feature_names):
+        return list(feature_names)
+    return [n for n, c in zip(feature_names, coef) if abs(c) > coef_tol]
+
+
+def fold_selection_audit(
+    best: ImbPipeline,
+    X_train: pd.DataFrame,
+    feature_cols: list[str],
+    *,
+    model_key: str,
+    selection_mode: str,
+) -> dict[str, Any]:
+    """Métricas de seleção por fold (filter/mRMR ou embarcada)."""
+    raw_names = list(feature_cols)
+    if is_embedded_model(model_key):
+        clf = best.named_steps["clf"]
+        selected = embedded_selected_names(clf, raw_names)
+        selected_set = set(selected)
+        return {
+            "after_stable_pool_names_": raw_names,
+            "after_filter_names_": raw_names,
+            "selected_names_": selected,
+            "removed_by_stable_pool_": [],
+            "removed_by_filters_": [],
+            "removed_by_mrmr_": [n for n in raw_names if n not in selected_set],
+            "n_features_selected": len(selected),
+        }
+
+    preselect = best.named_steps["preselect"]
+    if selection_mode == "raw":
+        return {
+            "after_stable_pool_names_": raw_names,
+            "after_filter_names_": raw_names,
+            "selected_names_": raw_names,
+            "removed_by_stable_pool_": [],
+            "removed_by_filters_": [],
+            "removed_by_mrmr_": [],
+            "n_features_selected": len(raw_names),
+        }
+    return {
+        "after_stable_pool_names_": list(preselect.after_stable_pool_names_),
+        "after_filter_names_": list(preselect.after_filter_names_),
+        "selected_names_": list(preselect.selected_names_),
+        "removed_by_stable_pool_": list(preselect.removed_by_stable_pool_),
+        "removed_by_filters_": list(preselect.removed_by_filters_),
+        "removed_by_mrmr_": list(preselect.removed_by_mrmr_),
+        "n_features_selected": int(preselect.transform(X_train).shape[1]),
+    }
+
+
+def make_pipeline(selection_mode: str, model_key: str, *, roi: str, seed: int) -> ImbPipeline:
+    cfg = SELECTION_MODES[selection_mode]
+    steps: list[tuple[str, Any]] = []
+    if not is_embedded_model(model_key):
+        steps.append(
             (
                 "preselect",
                 CorrVarMRMRSelector(
@@ -365,17 +462,24 @@ def make_pipeline(selection_mode: str, model_key: str, *, roi: str, seed: int) -
                     use_filters=cfg["use_filters"],
                     roi=roi,
                 ),
-            ),
+            )
+        )
+    steps.extend(
+        [
             ("scaler", StandardScaler()),
-            ("clf", clf_map[model_key]),
+            ("clf", make_classifier(model_key, seed=seed)),
         ]
     )
+    return ImbPipeline(steps)
 
 
 def param_grid_for(model_key: str, selection_mode: str) -> dict[str, Any]:
+    grid = PARAM_GRIDS[model_key]
+    if is_embedded_model(model_key):
+        return dict(grid)
     return {
         k: v
-        for k, v in PARAM_GRIDS[model_key].items()
+        for k, v in grid.items()
         if k != "preselect__n_features_total" or selection_mode in ("mrmr", "mrmr_stable")
     }
 
@@ -486,6 +590,7 @@ def nested_cv_ablation(
     stable_pool_min_timepoints: int = STABLE_POOL_MIN_TIMEPOINTS,
     stable_pool_n_features: int = STABLE_POOL_N_FEATURES,
     verbose: bool = False,
+    use_deltas: bool = False,
 ) -> pd.DataFrame:
     pt = patient_labels_from_long(df_long, task)
     y = pt["y"].to_numpy(dtype=int)
@@ -514,11 +619,15 @@ def nested_cv_ablation(
             fold_id=fold,
             combat_quiet=combat_quiet,
         )
+        if use_deltas:
+            wide = add_delta_columns(wide, roi)
         wide = wide[wide["GROUP"].astype(str).isin(task.groups)].copy()
         wide["y"] = wide["GROUP"].map(task.label_map).astype(int)
 
         meta = {"ID_PT", "GROUP", "SEX", "y"}
-        feature_cols = modality_wide_columns(wide.columns, modality, roi=roi)
+        feature_cols = modality_wide_columns(
+            wide.columns, modality, roi=roi, use_deltas=use_deltas
+        )
         if not feature_cols:
             raise ValueError(
                 f"Nenhuma coluna de feature para modalidade={modality!r} roi={roi!r}"
@@ -536,8 +645,10 @@ def nested_cv_ablation(
 
         pipeline = make_pipeline(selection_mode, model_key, roi=roi, seed=seed)
         inner_cv = StratifiedKFold(k_in, shuffle=True, random_state=seed + fold)
-        allowed_columns: list[str] | None = None
-        if SELECTION_MODES[selection_mode].get("use_stable_pool"):
+        if (
+            not is_embedded_model(model_key)
+            and SELECTION_MODES[selection_mode].get("use_stable_pool")
+        ):
             allowed_columns, _ = stable_pool_for_outer_train(
                 X_train,
                 y_train,
@@ -574,9 +685,16 @@ def nested_cv_ablation(
         test_preds = (test_scores >= threshold).astype(int)
         test_id_pts = wide.iloc[test_idx]["ID_PT"].astype(str).tolist()
 
-        preselect = best.named_steps["preselect"]
+        audit = fold_selection_audit(
+            best,
+            X_train,
+            feature_cols,
+            model_key=model_key,
+            selection_mode=selection_mode,
+        )
         row = {
             "task": task.task_id,
+            "protocol": PROTOCOL_T1_DELTAS if use_deltas else "absolute",
             "with_combat": with_combat,
             "selection_mode": selection_mode,
             "modality": modality,
@@ -589,13 +707,13 @@ def nested_cv_ablation(
             "best_params": json.dumps(grid.best_params_, default=str),
             "threshold": threshold,
             "n_features_raw": X.shape[1],
-            "n_features_after_stable_pool": len(preselect.after_stable_pool_names_),
-            "n_features_after_filters": len(preselect.after_filter_names_),
-            "n_features_selected": int(best.named_steps["preselect"].transform(X_train).shape[1]),
-            "removed_by_stable_pool": json.dumps(preselect.removed_by_stable_pool_),
-            "removed_by_filters": json.dumps(preselect.removed_by_filters_),
-            "removed_by_mrmr": json.dumps(preselect.removed_by_mrmr_),
-            "selected_features": json.dumps(list(preselect.selected_names_)),
+            "n_features_after_stable_pool": len(audit["after_stable_pool_names_"]),
+            "n_features_after_filters": len(audit["after_filter_names_"]),
+            "n_features_selected": audit["n_features_selected"],
+            "removed_by_stable_pool": json.dumps(audit["removed_by_stable_pool_"]),
+            "removed_by_filters": json.dumps(audit["removed_by_filters_"]),
+            "removed_by_mrmr": json.dumps(audit["removed_by_mrmr_"]),
+            "selected_features": json.dumps(list(audit["selected_names_"])),
             "test_id_pts": json.dumps(test_id_pts),
             "test_y_true": json.dumps(y_test.tolist()),
             "test_scores": json.dumps(test_scores.tolist()),
@@ -619,10 +737,13 @@ def _results_dir_for_modality(
     base: Path,
     modality: str,
     results_dir: Path | str | None,
+    *,
+    use_deltas: bool = False,
 ) -> Path:
     if results_dir is not None:
         return Path(results_dir)
-    return base.parent.parent / "ablation_results" / modality
+    sub = "ablation_results_deltas" if use_deltas else "ablation_results"
+    return base.parent.parent / sub / modality
 
 
 def run_full_ablation_suite(
@@ -642,6 +763,7 @@ def run_full_ablation_suite(
     stable_pool_min_pct: int = STABLE_POOL_MIN_PCT,
     stable_pool_min_timepoints: int = STABLE_POOL_MIN_TIMEPOINTS,
     stable_pool_n_features: int = STABLE_POOL_N_FEATURES,
+    use_deltas: bool = False,
 ) -> pd.DataFrame:
     if not HAS_MRMR and {"mrmr", "mrmr_stable"} & set(selection_modes):
         raise ImportError("feature-engine necessário para modo mrmr: pip install feature-engine")
@@ -661,7 +783,9 @@ def run_full_ablation_suite(
     t0 = time.monotonic()
 
     for modality in modalities:
-        out_dir = _results_dir_for_modality(base, modality, results_dir)
+        out_dir = _results_dir_for_modality(
+            base, modality, results_dir, use_deltas=use_deltas
+        )
         out_dir.mkdir(parents=True, exist_ok=True)
         modality_results: list[pd.DataFrame] = []
 
@@ -717,6 +841,7 @@ def run_full_ablation_suite(
                                 stable_pool_min_timepoints=stable_pool_min_timepoints,
                                 stable_pool_n_features=stable_pool_n_features,
                                 verbose=verbose,
+                                use_deltas=use_deltas,
                             )
                             auc_mean = float(res["auc"].mean()) if "auc" in res.columns else float("nan")
                             log.info(
@@ -778,4 +903,10 @@ if __name__ == "__main__":
     mask = corr_keep_mask(X, 0.90, feature_names=names)
     assert mask[:3].all(), "visitas T1/T2/T3 devem sobreviver"
     assert mask.sum() == 3, "wm_norm redundante com gm_norm deve cair"
+    pipe = make_pipeline("raw", "logreg_l1", roi="hippocampus", seed=0)
+    y = (rng.random(n) > 0.5).astype(int)
+    pipe.fit(X, y)
+    sel = embedded_selected_names(pipe.named_steps["clf"], names)
+    assert 1 <= len(sel) <= len(names)
+    assert "preselect" not in pipe.named_steps
     print("ablation_runner self-check ok")
