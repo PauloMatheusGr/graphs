@@ -19,13 +19,9 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import GridSearchCV, StratifiedKFold, cross_val_predict
-from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
-from sklearn.svm import SVC
-from xgboost import XGBClassifier
 
 from ablation_analysis import prepare_ablation_df, summary_with_pooled
 from ablation_prep import ROI_FILTER_DEFAULT, modality_wide_columns
@@ -33,10 +29,17 @@ from ablation_runner import (
     MODALITIES,
     PARAM_GRIDS,
     SELECTION_MODES,
+    STABLE_POOL_MIN_PCT,
+    STABLE_POOL_MIN_TIMEPOINTS,
+    STABLE_POOL_N_FEATURES,
     TASKS,
     TASK_PRESETS,
+    embedded_selected_names,
     fold_metrics,
     fmt_duration,
+    gridsearch_n_jobs,
+    is_embedded_model,
+    make_classifier,
     make_pipeline,
     param_grid_for,
     patient_labels_from_long,
@@ -48,7 +51,7 @@ from ablation_runner import (
 
 log = logging.getLogger("baseline_comparison")
 
-CLINICAL_COLS = ("SEX", "AGE", "MMSE_SCORE", "ADAS_SCORE", "FAQ_SCORE", "CDR_GLOBAL")
+CLINICAL_COLS = ("SEX", "AGE", "MMSE_SCORE", "ADAS_SCORE", "FAQ_SCORE") #, "CDR_GLOBAL")
 
 
 def _split_csv(value: str) -> tuple[str, ...]:
@@ -63,6 +66,31 @@ def _parse_tasks(value: str) -> tuple[str, ...]:
     if unknown:
         raise argparse.ArgumentTypeError(f"Tasks desconhecidas: {sorted(unknown)}")
     return tasks
+
+
+def _parse_modalities(value: str) -> tuple[str, ...]:
+    mods = _split_csv(value)
+    unknown = set(mods) - set(MODALITIES)
+    if unknown:
+        raise argparse.ArgumentTypeError(f"Modalidades desconhecidas: {sorted(unknown)}")
+    return mods
+
+
+def _write_outputs(out_dir: Path, tag: str, rows: list[pd.DataFrame]) -> None:
+    df = prepare_ablation_df(pd.concat(rows, ignore_index=True))
+    summary = summary_with_pooled(df)
+    raw_path = out_dir / f"{tag}_results_all.csv"
+    sum_path = out_dir / f"{tag}_summary.csv"
+    df.to_csv(raw_path, index=False)
+    summary.to_csv(sum_path, index=False)
+    log.info("salvo: %s", raw_path)
+    log.info("salvo: %s", sum_path)
+    cols = [
+        "task", "modality", "model_key", "with_combat", "selection_mode",
+        "auc_mean", "auc_std", "auc_pooled", "n_features_mean",
+    ]
+    cols = [c for c in cols if c in summary.columns]
+    log.info("\n%s", summary[cols].to_string(index=False))
 
 
 def baseline_clinical_table(df_long: pd.DataFrame) -> pd.DataFrame:
@@ -91,21 +119,49 @@ def attach_clinical(wide: pd.DataFrame, clinical: pd.DataFrame) -> pd.DataFrame:
     return wide
 
 
-CLINICAL_MODELS = ("svm", "rf", "xgb", "mlp")
+CLINICAL_MODELS = ("svm", "rf", "xgb", "mlp", "logreg_l1", "elasticnet")
 
 
 def _clinical_pipeline(model_key: str, seed: int) -> Pipeline:
-    clf_map = {
-        "svm": SVC(probability=True, random_state=seed),
-        "rf": RandomForestClassifier(random_state=seed),
-        "xgb": XGBClassifier(eval_metric="logloss", random_state=seed),
-        "mlp": MLPClassifier(
-            activation="relu", alpha=1e-3, batch_size=32, random_state=seed, max_iter=500,
-        ),
-    }
-    if model_key not in clf_map:
+    if model_key not in CLINICAL_MODELS:
         raise ValueError(f"modelo clínico suportado: {CLINICAL_MODELS}")
-    return Pipeline([("scaler", StandardScaler()), ("clf", clf_map[model_key])])
+    return Pipeline([("scaler", StandardScaler()), ("clf", make_classifier(model_key, seed=seed))])
+
+
+def _clinical_selected_names(model_key: str, clf, feature_cols: list[str]) -> list[str]:
+    if is_embedded_model(model_key):
+        return embedded_selected_names(clf, feature_cols)
+    return list(feature_cols)
+
+
+def _fusion_image_arrays(
+    best: Pipeline,
+    img_train: pd.DataFrame,
+    img_test: pd.DataFrame,
+    *,
+    model_key: str,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Imagem → preselect (se houver) → scaler do pipeline tunado na imagem."""
+    if is_embedded_model(model_key):
+        img_train_t, img_test_t = img_train, img_test
+    else:
+        pre = best.named_steps["preselect"]
+        img_train_t = pre.transform(img_train)
+        img_test_t = pre.transform(img_test)
+    scaler = best.named_steps["scaler"]
+    return scaler.transform(img_train_t), scaler.transform(img_test_t)
+
+
+def _fusion_selected_names(
+    model_key: str,
+    clf,
+    preselect,
+    image_cols: list[str],
+) -> list[str]:
+    fusion_names = list(CLINICAL_COLS) + list(image_cols)
+    if is_embedded_model(model_key):
+        return embedded_selected_names(clf, fusion_names)
+    return list(CLINICAL_COLS) + list(preselect.selected_names_)
 
 
 def _clinical_param_grid(model_key: str) -> dict[str, list[Any]]:
@@ -164,7 +220,7 @@ def nested_cv_clinical(
             _clinical_param_grid(model_key),
             cv=inner_cv,
             scoring="roc_auc",
-            n_jobs=-1,
+            n_jobs=gridsearch_n_jobs(model_key),
             refit=True,
         )
         grid.fit(X_train, y_train)
@@ -173,6 +229,9 @@ def nested_cv_clinical(
         threshold = tune_youden_threshold(y_train, train_scores)
         test_scores = best.predict_proba(X_test)[:, 1]
         test_preds = (test_scores >= threshold).astype(int)
+        selected = _clinical_selected_names(
+            model_key, best.named_steps["clf"], feature_cols,
+        )
 
         rows.append({
             "feature_set": "clinical",
@@ -189,8 +248,8 @@ def nested_cv_clinical(
             "best_params": json.dumps(grid.best_params_, default=str),
             "threshold": threshold,
             "n_features_raw": len(feature_cols),
-            "n_features_selected": len(feature_cols),
-            "selected_features": json.dumps(feature_cols),
+            "n_features_selected": len(selected),
+            "selected_features": json.dumps(selected),
             "test_id_pts": json.dumps(wide.iloc[test_idx]["ID_PT"].astype(str).tolist()),
             "test_y_true": json.dumps(y_test.tolist()),
             "test_scores": json.dumps(test_scores.tolist()),
@@ -212,6 +271,9 @@ def nested_cv_fusion(
     repeat_id: int = 0,
     k_out: int = 5,
     k_in: int = 5,
+    stable_pool_min_pct: int = STABLE_POOL_MIN_PCT,
+    stable_pool_min_timepoints: int = STABLE_POOL_MIN_TIMEPOINTS,
+    stable_pool_n_features: int = STABLE_POOL_N_FEATURES,
 ) -> pd.DataFrame:
     """Imagem (com seleção) + clínico baseline concatenados."""
     task = TASKS[task_id]
@@ -267,9 +329,18 @@ def nested_cv_fusion(
         pipeline = make_pipeline(selection_mode, model_key, roi=roi, seed=seed)
         inner_cv = StratifiedKFold(k_in, shuffle=True, random_state=seed + fold)
 
-        if SELECTION_MODES[selection_mode].get("use_stable_pool"):
+        if (
+            not is_embedded_model(model_key)
+            and SELECTION_MODES[selection_mode].get("use_stable_pool")
+        ):
             allowed, _ = stable_pool_for_outer_train(
-                img_train, y_train, inner_cv=inner_cv, roi=roi,
+                img_train,
+                y_train,
+                inner_cv=inner_cv,
+                roi=roi,
+                min_pct=stable_pool_min_pct,
+                min_timepoints=stable_pool_min_timepoints,
+                n_features=stable_pool_n_features,
             )
             pipeline.set_params(preselect__allowed_columns=allowed)
 
@@ -278,7 +349,7 @@ def nested_cv_fusion(
             param_grid_for(model_key, selection_mode),
             cv=inner_cv,
             scoring="roc_auc",
-            n_jobs=-1,
+            n_jobs=gridsearch_n_jobs(model_key),
             refit=True,
         )
         grid.fit(img_train, y_train)
@@ -288,10 +359,9 @@ def nested_cv_fusion(
         clin_train_s = scaler.fit_transform(clin_train)
         clin_test_s = scaler.transform(clin_test)
 
-        img_train_t = best.named_steps["preselect"].transform(img_train)
-        img_test_t = best.named_steps["preselect"].transform(img_test)
-        img_train_s = best.named_steps["scaler"].transform(img_train_t)
-        img_test_s = best.named_steps["scaler"].transform(img_test_t)
+        img_train_s, img_test_s = _fusion_image_arrays(
+            best, img_train, img_test, model_key=model_key,
+        )
 
         X_train_f = np.hstack([clin_train_s, img_train_s])
         X_test_f = np.hstack([clin_test_s, img_test_s])
@@ -304,8 +374,8 @@ def nested_cv_fusion(
         test_scores = clf.predict_proba(X_test_f)[:, 1]
         test_preds = (test_scores >= threshold).astype(int)
 
-        preselect = best.named_steps["preselect"]
-        selected = list(CLINICAL_COLS) + list(preselect.selected_names_)
+        preselect = best.named_steps.get("preselect")
+        selected = _fusion_selected_names(model_key, clf, preselect, image_cols)
         rows.append({
             "feature_set": "fusion",
             "task": task.task_id,
@@ -335,17 +405,28 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Baseline clínico vs fusão (imagem+clínico).")
     p.add_argument("--feature-set", choices=["clinical", "fusion"], required=True)
     p.add_argument("--tasks", default="smci_pmci")
-    p.add_argument("--modality", default="disp", help="Só para fusion: disp|vol|all|...")
-    p.add_argument("--models", default="svm,rf,xgb,mlp")
+    p.add_argument(
+        "--modality",
+        default="disp",
+        help="Só para fusion: lista vol,shape,texture,disp,all (1 arquivo/modalidade)",
+    )
+    p.add_argument("--models", default="svm,rf,xgb,mlp,logreg_l1,elasticnet")
     p.add_argument("--selection", default="mrmr_stable")
     p.add_argument("--combat", choices=["false", "true"], default="false")
     p.add_argument("--repeats", "-r", type=int, default=10)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--roi", default=ROI_FILTER_DEFAULT)
+    p.add_argument("--stable-pool-min-pct", type=int, default=STABLE_POOL_MIN_PCT)
+    p.add_argument("--stable-pool-min-timepoints", type=int, default=STABLE_POOL_MIN_TIMEPOINTS)
+    p.add_argument("--stable-pool-n", type=int, default=STABLE_POOL_N_FEATURES)
     p.add_argument(
         "--results-dir",
         type=Path,
-        default=Path("csvs/longitudinal_4_groups/ablation_results/baseline_comparison"),
+        default=None,
+        help=(
+            "Override saída (default: ablation_results_clinic/ p/ clinical, "
+            "ablation_results_clinic_img/ p/ fusion)"
+        ),
     )
     return p
 
@@ -356,73 +437,79 @@ def main(argv: list[str] | None = None) -> int:
 
     tasks = _parse_tasks(args.tasks)
     models = _split_csv(args.models)
+    modalities = _parse_modalities(args.modality)
     with_combat = args.combat == "true"
     base = Path(f"csvs/longitudinal_4_groups/ablation/{args.roi}")
-    out_dir = args.results_dir
+    if args.results_dir is not None:
+        out_dir = args.results_dir
+    elif args.feature_set == "clinical":
+        out_dir = Path("csvs/longitudinal_4_groups/ablation_results_clinic")
+    else:
+        out_dir = Path("csvs/longitudinal_4_groups/ablation_results_clinic_img")
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    t0 = time.monotonic()
+    combat_tag = "combat" if with_combat else "nocombat"
 
     if args.feature_set == "clinical":
         df_long = pd.read_csv(base / "merge_long.csv")
-    else:
-        long_path = base / MODALITIES[args.modality]["long"]
-        df_long = pd.read_csv(long_path)
-
-    all_rows: list[pd.DataFrame] = []
-    t0 = time.monotonic()
-
-    for task_id in tasks:
-        for model_key in models:
-            for repeat_id in repeat_ids(args.repeats):
-                seed_rep = args.seed + repeat_id * 1000
-                log.info(
-                    "%s | task=%s | model=%s | rep=%s",
-                    args.feature_set, task_id, model_key, repeat_id,
-                )
-                if args.feature_set == "clinical":
-                    res = nested_cv_clinical(
+        rows: list[pd.DataFrame] = []
+        for task_id in tasks:
+            for model_key in models:
+                for repeat_id in repeat_ids(args.repeats):
+                    log.info("clinical | task=%s | model=%s | rep=%s", task_id, model_key, repeat_id)
+                    rows.append(nested_cv_clinical(
                         df_long,
                         task_id=task_id,
                         model_key=model_key,
-                        seed=seed_rep,
+                        seed=args.seed + repeat_id * 1000,
                         repeat_id=repeat_id,
+                    ))
+        _write_outputs(out_dir, "clinical", rows)
+        log.info("tempo: %s", fmt_duration(time.monotonic() - t0))
+        return 0
+
+    # fusion: um arquivo de saída por modalidade (long CSV difere por modalidade)
+    for modality in modalities:
+        df_long = pd.read_csv(base / MODALITIES[modality]["long"])
+        rows = []
+        for task_id in tasks:
+            for model_key in models:
+                for repeat_id in repeat_ids(args.repeats):
+                    log.info(
+                        "fusion | mod=%s | task=%s | model=%s | rep=%s",
+                        modality, task_id, model_key, repeat_id,
                     )
-                else:
-                    res = nested_cv_fusion(
+                    rows.append(nested_cv_fusion(
                         df_long,
                         task_id=task_id,
-                        modality=args.modality,
+                        modality=modality,
                         model_key=model_key,
                         selection_mode=args.selection,
                         with_combat=with_combat,
                         roi=args.roi,
-                        seed=seed_rep,
+                        seed=args.seed + repeat_id * 1000,
                         repeat_id=repeat_id,
-                    )
-                all_rows.append(res)
-
-    df = prepare_ablation_df(pd.concat(all_rows, ignore_index=True))
-    summary = summary_with_pooled(df)
-
-    tag = f"{args.feature_set}"
-    if args.feature_set == "fusion":
-        tag += f"_{args.modality}_{args.selection}_{'combat' if with_combat else 'nocombat'}"
-
-    raw_path = out_dir / f"{tag}_results_all.csv"
-    sum_path = out_dir / f"{tag}_summary.csv"
-    df.to_csv(raw_path, index=False)
-    summary.to_csv(sum_path, index=False)
+                        stable_pool_min_pct=args.stable_pool_min_pct,
+                        stable_pool_min_timepoints=args.stable_pool_min_timepoints,
+                        stable_pool_n_features=args.stable_pool_n,
+                    ))
+        _write_outputs(out_dir, f"fusion_{modality}_{args.selection}_{combat_tag}", rows)
 
     log.info("tempo: %s", fmt_duration(time.monotonic() - t0))
-    log.info("salvo: %s", raw_path)
-    log.info("salvo: %s", sum_path)
-    cols = [
-        "task", "modality", "model_key", "with_combat", "selection_mode",
-        "auc_mean", "auc_std", "auc_pooled", "n_features_mean",
-    ]
-    cols = [c for c in cols if c in summary.columns]
-    log.info("\n%s", summary[cols].to_string(index=False))
     return 0
 
 
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "--self-check":
+        pipe = _clinical_pipeline("logreg_l1", 0)
+        assert "clf" in pipe.named_steps
+        rng = np.random.default_rng(0)
+        X = rng.normal(size=(20, 6))
+        y = (rng.random(20) > 0.5).astype(int)
+        pipe.fit(X, y)
+        names = _clinical_selected_names("logreg_l1", pipe.named_steps["clf"], list(CLINICAL_COLS))
+        assert 1 <= len(names) <= len(CLINICAL_COLS)
+        print("OK baseline_comparison self-check")
+        sys.exit(0)
     sys.exit(main())

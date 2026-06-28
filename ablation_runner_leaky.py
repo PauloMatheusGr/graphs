@@ -18,12 +18,8 @@ import numpy as np
 import pandas as pd
 from imblearn.pipeline import Pipeline as ImbPipeline
 from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_selection import SelectKBest, f_classif, mutual_info_classif
 from sklearn.model_selection import GridSearchCV, StratifiedKFold, cross_val_predict
-from sklearn.neural_network import MLPClassifier
-from sklearn.svm import SVC
-from xgboost import XGBClassifier
 
 import re
 
@@ -52,7 +48,11 @@ from ablation_runner import (
     CorrVarMRMRSelector,
     TaskConfig,
     fold_metrics,
+    fold_selection_audit,
     fmt_duration,
+    gridsearch_n_jobs,
+    is_embedded_model,
+    make_classifier,
     param_grid_for,
     patient_labels_from_long,
     repeat_ids,
@@ -356,6 +356,8 @@ class LeakyUnivariatePreselector(BaseEstimator, TransformerMixin):
 
 def param_grid_leaky_univariate(model_key: str) -> dict[str, list[Any]]:
     """Grid: top-K univariado + hiperparâmetros do classificador (sem mRMR)."""
+    if is_embedded_model(model_key):
+        return param_grid_for(model_key, "raw")
     grid = {
         k: v
         for k, v in PARAM_GRIDS[model_key].items()
@@ -379,16 +381,9 @@ def make_leaky_pipeline(
     stable_pool_n_features: int,
     univariate_global: bool = False,
 ) -> ImbPipeline:
-    clf_map = {
-        "svm": SVC(probability=True, random_state=seed),
-        "rf": RandomForestClassifier(random_state=seed),
-        "xgb": XGBClassifier(eval_metric="logloss", random_state=seed),
-        "mlp": MLPClassifier(
-            activation="relu", alpha=1e-3, batch_size=32, random_state=seed, max_iter=500
-        ),
-    }
     steps: list[tuple[str, Any]] = []
-    if univariate_global:
+    embedded = is_embedded_model(model_key)
+    if univariate_global and not embedded:
         steps.append(
             (
                 "preselect",
@@ -400,7 +395,7 @@ def make_leaky_pipeline(
                 ),
             )
         )
-    elif selection_mode != "raw":
+    elif selection_mode != "raw" and not embedded:
         steps.append(
             (
                 "preselect",
@@ -415,7 +410,7 @@ def make_leaky_pipeline(
                 ),
             )
         )
-    steps.append(("clf", clf_map[model_key]))
+    steps.append(("clf", make_classifier(model_key, seed=seed)))
     return ImbPipeline(steps)
 
 
@@ -500,7 +495,7 @@ def nested_cv_ablation_leaky(
             pgrid,
             cv=inner_cv,
             scoring="roc_auc",
-            n_jobs=-1,
+            n_jobs=gridsearch_n_jobs(model_key),
             refit=True,
             verbose=0,
         )
@@ -525,8 +520,25 @@ def nested_cv_ablation_leaky(
         test_preds = (test_scores >= threshold).astype(int)
         test_id_pts = id_pts[te_idx].tolist()
 
-        if selection_mode == "raw" and not univariate_global:
-            n_raw = X_all.shape[1]
+        n_raw = X_all.shape[1]
+        if is_embedded_model(model_key):
+            audit = fold_selection_audit(
+                best,
+                X_train,
+                list(X_all.columns),
+                model_key=model_key,
+                selection_mode=selection_mode,
+            )
+            n_sel = audit["n_features_selected"]
+            pre_attrs = SimpleNamespace(
+                after_stable_pool_names_=audit["after_stable_pool_names_"],
+                after_filter_names_=audit["after_filter_names_"],
+                selected_names_=audit["selected_names_"],
+                removed_by_stable_pool_=audit["removed_by_stable_pool_"],
+                removed_by_filters_=audit["removed_by_filters_"],
+                removed_by_mrmr_=audit["removed_by_mrmr_"],
+            )
+        elif selection_mode == "raw" and not univariate_global:
             n_sel = n_raw
             pre_attrs = SimpleNamespace(
                 after_stable_pool_names_=list(X_all.columns),
@@ -538,7 +550,6 @@ def nested_cv_ablation_leaky(
             )
         else:
             pre = best.named_steps["preselect"]
-            n_raw = X_all.shape[1]
             n_sel = int(pre.transform(X_train).shape[1])
             pre_attrs = pre
 
@@ -758,4 +769,17 @@ if __name__ == "__main__":
     uni.fit(Xz.iloc[:10], y[:10])
     assert 1 <= len(uni.selected_names_) <= 3
     assert len(param_grid_leaky_univariate("svm")["preselect__k"]) == len(UNIVARIATE_K_GRID)
+    emb_pipe = make_leaky_pipeline(
+        "mrmr_stable",
+        "logreg_l1",
+        roi="hippocampus",
+        seed=0,
+        X_global=Xz,
+        y_global=y,
+        stable_pool_min_pct=70,
+        stable_pool_min_timepoints=2,
+        stable_pool_n_features=50,
+    )
+    assert "preselect" not in emb_pipe.named_steps
+    assert emb_pipe.named_steps["clf"].__class__.__name__ == "LogisticRegression"
     print("OK leaky self-check")

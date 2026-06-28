@@ -364,11 +364,18 @@ def is_embedded_model(model_key: str) -> bool:
     return model_key in EMBEDDED_MODEL_KEYS
 
 
+def gridsearch_n_jobs(model_key: str) -> int:
+    """XGB trava dentro do loky do GridSearchCV; roda serial e paraleliza por thread."""
+    return 1 if model_key == "xgb" else -1
+
+
 def make_classifier(model_key: str, *, seed: int):
     clf_map = {
         "svm": SVC(probability=True, random_state=seed),
         "rf": RandomForestClassifier(random_state=seed),
-        "xgb": XGBClassifier(eval_metric="logloss", random_state=seed),
+        # XGB paraleliza por threads internas; o GridSearchCV roda com n_jobs=1 p/ xgb
+        # (ver gridsearch_n_jobs). XGB dentro do loky do GridSearch trava (deadlock).
+        "xgb": XGBClassifier(eval_metric="logloss", n_jobs=-1, random_state=seed),
         "mlp": MLPClassifier(
             activation="relu", alpha=1e-3, batch_size=32, random_state=seed, max_iter=500
         ),
@@ -665,7 +672,7 @@ def nested_cv_ablation(
             param_grid_for(model_key, selection_mode),
             cv=inner_cv,
             scoring="roc_auc",
-            n_jobs=-1,
+            n_jobs=gridsearch_n_jobs(model_key),
             refit=True,
             verbose=0,
         )
