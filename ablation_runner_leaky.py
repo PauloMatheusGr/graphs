@@ -41,6 +41,8 @@ from ablation_runner import (
     MODALITIES,
     PARAM_GRIDS,
     SELECTION_MODES,
+    STABLE_POOL_BOOTSTRAP,
+    STABLE_POOL_L1_C,
     STABLE_POOL_MIN_PCT,
     STABLE_POOL_MIN_TIMEPOINTS,
     STABLE_POOL_N_FEATURES,
@@ -58,6 +60,8 @@ from ablation_runner import (
     repeat_ids,
     tune_youden_threshold,
 )
+
+from ablation_stable import inner_selections_l1_bootstrap
 
 log = logging.getLogger(__name__)
 
@@ -197,22 +201,36 @@ def leaky_stable_pool_columns(
     X_full: pd.DataFrame,
     y_full: np.ndarray,
     *,
+    selection_mode: str,
     roi: str,
     n_features: int,
     min_pct: int,
     min_timepoints: int,
+    n_bootstrap: int = STABLE_POOL_BOOTSTRAP,
+    l1_c: float = STABLE_POOL_L1_C,
+    seed: int = 0,
 ) -> list[str]:
-    """Stable pool com 'inner folds' todos ajustados no dataset inteiro (leakage)."""
-    inner_selected: list[list[str]] = []
-    for _ in range(LEAKY_INNER_FOLDS):
-        pre = CorrVarMRMRSelector(
-            use_mrmr=True,
-            use_filters=True,
-            n_features_total=n_features,
-            roi=roi,
+    """Stable pool leaky: L1 bootstrap (l1_stable) ou mRMR repetido (mrmr_stable)."""
+    cfg = SELECTION_MODES[selection_mode]
+    if cfg.get("use_l1_stable_pool"):
+        inner_selected = inner_selections_l1_bootstrap(
+            X_full,
+            y_full,
+            n_bootstrap=n_bootstrap,
+            l1_c=l1_c,
+            seed=seed,
         )
-        pre.fit(X_full, y_full)
-        inner_selected.append(list(pre.selected_names_))
+    else:
+        inner_selected = []
+        for _ in range(LEAKY_INNER_FOLDS):
+            pre = CorrVarMRMRSelector(
+                use_mrmr=True,
+                use_filters=True,
+                n_features_total=n_features,
+                roi=roi,
+            )
+            pre.fit(X_full, y_full)
+            inner_selected.append(list(pre.selected_names_))
     allowed, _ = estimate_stable_pool_columns(
         list(X_full.columns),
         inner_selected,
@@ -234,6 +252,8 @@ class LeakyGlobalPreselector(BaseEstimator, TransformerMixin):
         stable_pool_min_pct: int = STABLE_POOL_MIN_PCT,
         stable_pool_min_timepoints: int = STABLE_POOL_MIN_TIMEPOINTS,
         stable_pool_n_features: int = STABLE_POOL_N_FEATURES,
+        stable_pool_bootstrap: int = STABLE_POOL_BOOTSTRAP,
+        stable_pool_l1_c: float = STABLE_POOL_L1_C,
         X_global: pd.DataFrame | None = None,
         y_global: np.ndarray | None = None,
     ):
@@ -243,6 +263,8 @@ class LeakyGlobalPreselector(BaseEstimator, TransformerMixin):
         self.stable_pool_min_pct = stable_pool_min_pct
         self.stable_pool_min_timepoints = stable_pool_min_timepoints
         self.stable_pool_n_features = stable_pool_n_features
+        self.stable_pool_bootstrap = stable_pool_bootstrap
+        self.stable_pool_l1_c = stable_pool_l1_c
         self.X_global = X_global
         self.y_global = y_global
         self._pre = CorrVarMRMRSelector(use_mrmr=False, use_filters=False, roi=roi)
@@ -279,10 +301,13 @@ class LeakyGlobalPreselector(BaseEstimator, TransformerMixin):
             allowed = leaky_stable_pool_columns(
                 self.X_global,
                 self.y_global,
+                selection_mode=self.selection_mode,
                 roi=self.roi,
                 n_features=self.stable_pool_n_features,
                 min_pct=self.stable_pool_min_pct,
                 min_timepoints=self.stable_pool_min_timepoints,
+                n_bootstrap=self.stable_pool_bootstrap,
+                l1_c=self.stable_pool_l1_c,
             )
             pre.allowed_columns = allowed
         pre.fit(self.X_global, self.y_global)
@@ -379,6 +404,8 @@ def make_leaky_pipeline(
     stable_pool_min_pct: int,
     stable_pool_min_timepoints: int,
     stable_pool_n_features: int,
+    stable_pool_bootstrap: int = STABLE_POOL_BOOTSTRAP,
+    stable_pool_l1_c: float = STABLE_POOL_L1_C,
     univariate_global: bool = False,
 ) -> ImbPipeline:
     steps: list[tuple[str, Any]] = []
@@ -407,6 +434,8 @@ def make_leaky_pipeline(
                     stable_pool_min_pct=stable_pool_min_pct,
                     stable_pool_min_timepoints=stable_pool_min_timepoints,
                     stable_pool_n_features=stable_pool_n_features,
+                    stable_pool_bootstrap=stable_pool_bootstrap,
+                    stable_pool_l1_c=stable_pool_l1_c,
                 ),
             )
         )
@@ -431,10 +460,14 @@ def nested_cv_ablation_leaky(
     stable_pool_min_pct: int = STABLE_POOL_MIN_PCT,
     stable_pool_min_timepoints: int = STABLE_POOL_MIN_TIMEPOINTS,
     stable_pool_n_features: int = STABLE_POOL_N_FEATURES,
+    stable_pool_bootstrap: int = STABLE_POOL_BOOTSTRAP,
+    stable_pool_l1_c: float = STABLE_POOL_L1_C,
     pseudo_replication: bool = False,
     tune_on_full: bool = False,
     threshold_on_test: bool = False,
     univariate_global: bool = False,
+    tuner: str = "grid",
+    optuna_trials: int = 30,
     verbose: bool = False,
 ) -> pd.DataFrame:
     if pseudo_replication:
@@ -482,26 +515,30 @@ def nested_cv_ablation_leaky(
             stable_pool_min_pct=stable_pool_min_pct,
             stable_pool_min_timepoints=stable_pool_min_timepoints,
             stable_pool_n_features=stable_pool_n_features,
+            stable_pool_bootstrap=stable_pool_bootstrap,
+            stable_pool_l1_c=stable_pool_l1_c,
             univariate_global=univariate_global,
         )
         inner_cv = StratifiedKFold(k_in, shuffle=True, random_state=seed + fold)
-        pgrid = (
-            param_grid_leaky_univariate(model_key)
-            if univariate_global
-            else param_grid_for(model_key, selection_mode)
-        )
-        grid = GridSearchCV(
+        X_tune = X_all if tune_on_full else X_train
+        y_tune = y_all if tune_on_full else y_train
+
+        from ablation_optuna import tune_pipeline
+
+        tune_res = tune_pipeline(
             pipeline,
-            pgrid,
-            cv=inner_cv,
-            scoring="roc_auc",
+            X_tune,
+            y_tune,
+            inner_cv,
+            model_key=model_key,
+            selection_mode=selection_mode,
+            tuner=tuner,  # type: ignore[arg-type]
+            n_trials=optuna_trials,
+            seed=seed + fold,
             n_jobs=gridsearch_n_jobs(model_key),
-            refit=True,
-            verbose=0,
+            leaky_univariate=univariate_global,
         )
-        # LEAK tune_on_full: hiperparâmetros escolhidos vendo o dataset inteiro.
-        grid.fit(X_all if tune_on_full else X_train, y_all if tune_on_full else y_train)
-        best = grid.best_estimator_
+        best = tune_res.estimator
         clf = best.named_steps["clf"]
         method = "predict_proba" if hasattr(clf, "predict_proba") else "decision_function"
         test_scores = (
@@ -570,12 +607,13 @@ def nested_cv_ablation_leaky(
             "modality": modality,
             "modality_label": MODALITIES[modality]["label"],
             "model_key": model_key,
+            "tuner": tune_res.tuner,
             "repeat_id": repeat_id,
             "fold": fold,
             "protocol": "+".join(protocol_tags),
             "best_model": clf.__class__.__name__,
-            "best_inner_auc": float(grid.best_score_),
-            "best_params": json.dumps(grid.best_params_, default=str),
+            "best_inner_auc": tune_res.best_inner_auc,
+            "best_params": json.dumps(tune_res.best_params, default=str),
             "threshold": threshold,
             "n_features_raw": n_raw,
             "n_features_after_stable_pool": len(pre_attrs.after_stable_pool_names_),
@@ -621,7 +659,7 @@ def run_full_ablation_suite_leaky(
     tasks: tuple[str, ...] = ("cn_ad", "smci_pmci"),
     modalities: tuple[str, ...] = ("vol", "shape", "texture", "disp", "all"),
     models: tuple[str, ...] = ("svm", "rf", "mlp"),
-    selection_modes: tuple[str, ...] = ("mrmr_stable",),
+    selection_modes: tuple[str, ...] = ("l1_stable",),
     with_combat_flags: tuple[bool, ...] = (False,),
     results_dir: Path | str | None = None,
     seed: int = 42,
@@ -631,10 +669,14 @@ def run_full_ablation_suite_leaky(
     stable_pool_min_pct: int = STABLE_POOL_MIN_PCT,
     stable_pool_min_timepoints: int = STABLE_POOL_MIN_TIMEPOINTS,
     stable_pool_n_features: int = STABLE_POOL_N_FEATURES,
+    stable_pool_bootstrap: int = STABLE_POOL_BOOTSTRAP,
+    stable_pool_l1_c: float = STABLE_POOL_L1_C,
     pseudo_replication: bool = False,
     tune_on_full: bool = False,
     threshold_on_test: bool = False,
     univariate_global: bool = False,
+    tuner: str = "grid",
+    optuna_trials: int = 30,
 ) -> pd.DataFrame:
     from ablation_runner import HAS_MRMR
 
@@ -715,10 +757,14 @@ def run_full_ablation_suite_leaky(
                                 stable_pool_min_pct=stable_pool_min_pct,
                                 stable_pool_min_timepoints=stable_pool_min_timepoints,
                                 stable_pool_n_features=stable_pool_n_features,
+                                stable_pool_bootstrap=stable_pool_bootstrap,
+                                stable_pool_l1_c=stable_pool_l1_c,
                                 pseudo_replication=pseudo_replication,
                                 tune_on_full=tune_on_full,
                                 threshold_on_test=threshold_on_test,
                                 univariate_global=univariate_global,
+                                tuner=tuner,
+                                optuna_trials=optuna_trials,
                                 verbose=verbose,
                             )
                             auc_mean = float(res["auc"].mean()) if "auc" in res.columns else float("nan")

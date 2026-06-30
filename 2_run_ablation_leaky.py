@@ -38,6 +38,8 @@ from ablation_runner import (
     STABLE_POOL_MIN_PCT,
     STABLE_POOL_MIN_TIMEPOINTS,
     STABLE_POOL_N_FEATURES,
+    STABLE_POOL_BOOTSTRAP,
+    STABLE_POOL_L1_C,
     TASKS,
     TASK_PRESETS,
     fmt_duration,
@@ -121,7 +123,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--modality", default="all", help="vol|shape|texture|disp|all")
     p.add_argument("--tasks", default="all", help="Preset core|cross|all ou lista")
-    p.add_argument("--selection", default="mrmr_stable", help=f"Modos: {','.join(SELECTION_MODES)}")
+    p.add_argument("--selection", default="l1_stable", help=f"Modos: {','.join(SELECTION_MODES)}")
     p.add_argument("--models", default="svm,rf,mlp", help="Modelos separados por vírgula")
     p.add_argument("--combat", default="false", type=_parse_combat, help="false | true | both")
     p.add_argument("--repeats", "-r", type=int, default=10)
@@ -136,6 +138,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--stable-pool-min-pct", type=int, default=STABLE_POOL_MIN_PCT)
     p.add_argument("--stable-pool-min-timepoints", type=int, default=STABLE_POOL_MIN_TIMEPOINTS)
     p.add_argument("--stable-pool-n", type=int, default=STABLE_POOL_N_FEATURES)
+    p.add_argument("--stable-bootstrap", type=int, default=STABLE_POOL_BOOTSTRAP)
+    p.add_argument("--stable-l1-c", type=float, default=STABLE_POOL_L1_C)
+    p.add_argument("--tuner", choices=["grid", "optuna"], default="grid")
+    p.add_argument("--optuna-trials", type=int, default=30)
     p.add_argument(
         "--inflate",
         default="",
@@ -234,6 +240,10 @@ def main(argv: list[str] | None = None) -> int:
             stable_pool_min_pct=args.stable_pool_min_pct,
             stable_pool_min_timepoints=args.stable_pool_min_timepoints,
             stable_pool_n_features=args.stable_pool_n,
+            stable_pool_bootstrap=args.stable_bootstrap,
+            stable_pool_l1_c=args.stable_l1_c,
+            tuner=args.tuner,
+            optuna_trials=args.optuna_trials,
             **inflate,
         )
     except Exception:

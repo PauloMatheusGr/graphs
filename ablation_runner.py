@@ -12,14 +12,15 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from ablation_harmonize import harmonize_long_fold, image_ids_for_patients
-from ablation_analysis import (
-    anatomical_key,
-    estimate_stable_pool_columns,
-    summary_with_pooled,
+from ablation_analysis import anatomical_key, summary_with_pooled
+from ablation_stable import (
+    STABLE_POOL_BOOTSTRAP,
+    STABLE_POOL_L1_C,
+    stable_pool_for_outer_train,
 )
-from ablation_deltas import PROTOCOL_T1_DELTAS, add_delta_columns, modality_wide_columns
 from ablation_prep import (
     ROI_FILTER_DEFAULT,
+    modality_wide_columns,
     pivot_long_to_wide,
 )
 from imblearn.pipeline import Pipeline as ImbPipeline
@@ -121,20 +122,26 @@ SELECTION_MODES = {
         "use_mrmr": True,
         "use_filters": True,
         "use_stable_pool": True,
-        "label": "stable pool + corr + var + MRMR",
+        "label": "stable pool (mRMR CV) + corr + var + MRMR",
+    },
+    "l1_stable": {
+        "use_mrmr": False,
+        "use_filters": True,
+        "use_stable_pool": True,
+        "use_l1_stable_pool": True,
+        "label": "stable pool (L1 bootstrap) + corr + var",
     },
     "filters": {"use_mrmr": False, "use_filters": True, "label": "corr + var (sem MRMR)"},
     "raw": {"use_mrmr": False, "use_filters": False, "label": "sem seleção"},
 }
 
-# Seleção embarcada via penalização L1/ElasticNet — sem estágio preselect.
 EMBEDDED_MODEL_KEYS = frozenset({"logreg_l1", "elasticnet"})
 EMBEDDED_COEF_TOL = 1e-9
 
-# Estimativa do pool estável (inner CV do outer train)
+# Estimativa do pool estável
 STABLE_POOL_MIN_PCT = 70
 STABLE_POOL_MIN_TIMEPOINTS = 2
-STABLE_POOL_N_FEATURES = 50  # mRMR por inner fold p/ avaliar estabilidade temporal
+STABLE_POOL_N_FEATURES = 50  # mRMR por inner fold (só mrmr_stable legado)
 
 PARAM_GRIDS: dict[str, dict[str, list[Any]]] = {
     "svm": {
@@ -360,21 +367,22 @@ class CorrVarMRMRSelector(BaseEstimator, TransformerMixin):
         return X_arr[:, self.selected_indices_]
 
 
-def is_embedded_model(model_key: str) -> bool:
-    return model_key in EMBEDDED_MODEL_KEYS
-
-
-def gridsearch_n_jobs(model_key: str) -> int:
-    """XGB trava dentro do loky do GridSearchCV; roda serial e paraleliza por thread."""
-    return 1 if model_key == "xgb" else -1
+def embedded_selected_names(
+    clf: LogisticRegression,
+    feature_names: list[str],
+    *,
+    coef_tol: float = EMBEDDED_COEF_TOL,
+) -> list[str]:
+    coef = np.ravel(clf.coef_)
+    if len(coef) != len(feature_names):
+        return list(feature_names)
+    return [n for n, c in zip(feature_names, coef) if abs(c) > coef_tol]
 
 
 def make_classifier(model_key: str, *, seed: int):
     clf_map = {
         "svm": SVC(probability=True, random_state=seed),
         "rf": RandomForestClassifier(random_state=seed),
-        # XGB paraleliza por threads internas; o GridSearchCV roda com n_jobs=1 p/ xgb
-        # (ver gridsearch_n_jobs). XGB dentro do loky do GridSearch trava (deadlock).
         "xgb": XGBClassifier(eval_metric="logloss", n_jobs=-1, random_state=seed),
         "mlp": MLPClassifier(
             activation="relu", alpha=1e-3, batch_size=32, random_state=seed, max_iter=500
@@ -398,17 +406,12 @@ def make_classifier(model_key: str, *, seed: int):
     return clf_map[model_key]
 
 
-def embedded_selected_names(
-    clf: LogisticRegression,
-    feature_names: list[str],
-    *,
-    coef_tol: float = EMBEDDED_COEF_TOL,
-) -> list[str]:
-    """Features com coeficiente ≠ 0 após fit (seleção embarcada L1/ElasticNet)."""
-    coef = np.ravel(clf.coef_)
-    if len(coef) != len(feature_names):
-        return list(feature_names)
-    return [n for n, c in zip(feature_names, coef) if abs(c) > coef_tol]
+def is_embedded_model(model_key: str) -> bool:
+    return model_key in EMBEDDED_MODEL_KEYS
+
+
+def gridsearch_n_jobs(model_key: str) -> int:
+    return 1 if model_key == "xgb" else -1
 
 
 def fold_selection_audit(
@@ -419,7 +422,6 @@ def fold_selection_audit(
     model_key: str,
     selection_mode: str,
 ) -> dict[str, Any]:
-    """Métricas de seleção por fold (filter/mRMR ou embarcada)."""
     raw_names = list(feature_cols)
     if is_embedded_model(model_key):
         clf = best.named_steps["clf"]
@@ -435,8 +437,8 @@ def fold_selection_audit(
             "n_features_selected": len(selected),
         }
 
-    preselect = best.named_steps["preselect"]
-    if selection_mode == "raw":
+    preselect = best.named_steps.get("preselect")
+    if preselect is None or selection_mode == "raw":
         return {
             "after_stable_pool_names_": raw_names,
             "after_filter_names_": raw_names,
@@ -487,51 +489,9 @@ def param_grid_for(model_key: str, selection_mode: str) -> dict[str, Any]:
     return {
         k: v
         for k, v in grid.items()
-        if k != "preselect__n_features_total" or selection_mode in ("mrmr", "mrmr_stable")
+        if k != "preselect__n_features_total"
+        or selection_mode in ("mrmr", "mrmr_stable")
     }
-
-
-def inner_selections_for_stable_pool(
-    X_train: pd.DataFrame,
-    y_train: np.ndarray,
-    *,
-    inner_cv: StratifiedKFold,
-    roi: str,
-    n_features: int = STABLE_POOL_N_FEATURES,
-) -> list[list[str]]:
-    """Seleção corr/var/mRMR em cada inner fold (só treino interno)."""
-    inner_selected: list[list[str]] = []
-    for tr_idx, _ in inner_cv.split(X_train, y_train):
-        pre = CorrVarMRMRSelector(
-            use_mrmr=True,
-            use_filters=True,
-            n_features_total=n_features,
-            roi=roi,
-        )
-        pre.fit(X_train.iloc[tr_idx], y_train[tr_idx])
-        inner_selected.append(list(pre.selected_names_))
-    return inner_selected
-
-
-def stable_pool_for_outer_train(
-    X_train: pd.DataFrame,
-    y_train: np.ndarray,
-    *,
-    inner_cv: StratifiedKFold,
-    roi: str,
-    min_pct: int = STABLE_POOL_MIN_PCT,
-    min_timepoints: int = STABLE_POOL_MIN_TIMEPOINTS,
-    n_features: int = STABLE_POOL_N_FEATURES,
-) -> tuple[list[str], list[str]]:
-    inner_selected = inner_selections_for_stable_pool(
-        X_train, y_train, inner_cv=inner_cv, roi=roi, n_features=n_features
-    )
-    return estimate_stable_pool_columns(
-        list(X_train.columns),
-        inner_selected,
-        min_pct=min_pct,
-        min_timepoints=min_timepoints,
-    )
 
 
 def patient_labels_from_long(df_long: pd.DataFrame, task: TaskConfig) -> pd.DataFrame:
@@ -596,8 +556,11 @@ def nested_cv_ablation(
     stable_pool_min_pct: int = STABLE_POOL_MIN_PCT,
     stable_pool_min_timepoints: int = STABLE_POOL_MIN_TIMEPOINTS,
     stable_pool_n_features: int = STABLE_POOL_N_FEATURES,
+    stable_pool_bootstrap: int = STABLE_POOL_BOOTSTRAP,
+    stable_pool_l1_c: float = STABLE_POOL_L1_C,
+    tuner: str = "grid",
+    optuna_trials: int = 30,
     verbose: bool = False,
-    use_deltas: bool = False,
 ) -> pd.DataFrame:
     pt = patient_labels_from_long(df_long, task)
     y = pt["y"].to_numpy(dtype=int)
@@ -626,15 +589,11 @@ def nested_cv_ablation(
             fold_id=fold,
             combat_quiet=combat_quiet,
         )
-        if use_deltas:
-            wide = add_delta_columns(wide, roi)
         wide = wide[wide["GROUP"].astype(str).isin(task.groups)].copy()
         wide["y"] = wide["GROUP"].map(task.label_map).astype(int)
 
         meta = {"ID_PT", "GROUP", "SEX", "y"}
-        feature_cols = modality_wide_columns(
-            wide.columns, modality, roi=roi, use_deltas=use_deltas
-        )
+        feature_cols = modality_wide_columns(wide.columns, modality, roi=roi)
         if not feature_cols:
             raise ValueError(
                 f"Nenhuma coluna de feature para modalidade={modality!r} roi={roi!r}"
@@ -652,32 +611,42 @@ def nested_cv_ablation(
 
         pipeline = make_pipeline(selection_mode, model_key, roi=roi, seed=seed)
         inner_cv = StratifiedKFold(k_in, shuffle=True, random_state=seed + fold)
-        if (
-            not is_embedded_model(model_key)
-            and SELECTION_MODES[selection_mode].get("use_stable_pool")
-        ):
+        allowed_columns: list[str] | None = None
+        if SELECTION_MODES[selection_mode].get("use_stable_pool"):
             allowed_columns, _ = stable_pool_for_outer_train(
                 X_train,
                 y_train,
+                selection_mode=selection_mode,
                 inner_cv=inner_cv,
                 roi=roi,
                 min_pct=stable_pool_min_pct,
                 min_timepoints=stable_pool_min_timepoints,
                 n_features=stable_pool_n_features,
+                n_bootstrap=stable_pool_bootstrap,
+                l1_c=stable_pool_l1_c,
+                seed=seed + fold,
             )
-            pipeline.set_params(preselect__allowed_columns=allowed_columns)
+            if is_embedded_model(model_key):
+                X_train = X_train[allowed_columns].copy()
+                X_test = X_test[allowed_columns].copy()
+            else:
+                pipeline.set_params(preselect__allowed_columns=allowed_columns)
 
-        grid = GridSearchCV(
+        from ablation_optuna import tune_pipeline
+
+        tune_res = tune_pipeline(
             pipeline,
-            param_grid_for(model_key, selection_mode),
-            cv=inner_cv,
-            scoring="roc_auc",
+            X_train,
+            y_train,
+            inner_cv,
+            model_key=model_key,
+            selection_mode=selection_mode,
+            tuner=tuner,  # type: ignore[arg-type]
+            n_trials=optuna_trials,
+            seed=seed + fold,
             n_jobs=gridsearch_n_jobs(model_key),
-            refit=True,
-            verbose=0,
         )
-        grid.fit(X_train, y_train)
-        best = grid.best_estimator_
+        best = tune_res.estimator
         clf = best.named_steps["clf"]
         method = "predict_proba" if hasattr(clf, "predict_proba") else "decision_function"
         train_scores = cross_val_predict(best, X_train, y_train, cv=inner_cv, method=method)
@@ -695,23 +664,23 @@ def nested_cv_ablation(
         audit = fold_selection_audit(
             best,
             X_train,
-            feature_cols,
+            list(X_train.columns),
             model_key=model_key,
             selection_mode=selection_mode,
         )
         row = {
             "task": task.task_id,
-            "protocol": PROTOCOL_T1_DELTAS if use_deltas else "absolute",
             "with_combat": with_combat,
             "selection_mode": selection_mode,
             "modality": modality,
             "modality_label": MODALITIES[modality]["label"],
             "model_key": model_key,
+            "tuner": tune_res.tuner,
             "repeat_id": repeat_id,
             "fold": fold,
             "best_model": clf.__class__.__name__,
-            "best_inner_auc": float(grid.best_score_),
-            "best_params": json.dumps(grid.best_params_, default=str),
+            "best_inner_auc": tune_res.best_inner_auc,
+            "best_params": json.dumps(tune_res.best_params, default=str),
             "threshold": threshold,
             "n_features_raw": X.shape[1],
             "n_features_after_stable_pool": len(audit["after_stable_pool_names_"]),
@@ -720,7 +689,7 @@ def nested_cv_ablation(
             "removed_by_stable_pool": json.dumps(audit["removed_by_stable_pool_"]),
             "removed_by_filters": json.dumps(audit["removed_by_filters_"]),
             "removed_by_mrmr": json.dumps(audit["removed_by_mrmr_"]),
-            "selected_features": json.dumps(list(audit["selected_names_"])),
+            "selected_features": json.dumps(audit["selected_names_"]),
             "test_id_pts": json.dumps(test_id_pts),
             "test_y_true": json.dumps(y_test.tolist()),
             "test_scores": json.dumps(test_scores.tolist()),
@@ -744,13 +713,10 @@ def _results_dir_for_modality(
     base: Path,
     modality: str,
     results_dir: Path | str | None,
-    *,
-    use_deltas: bool = False,
 ) -> Path:
     if results_dir is not None:
         return Path(results_dir)
-    sub = "ablation_results_deltas" if use_deltas else "ablation_results"
-    return base.parent.parent / sub / modality
+    return base.parent.parent / "ablation_results" / modality
 
 
 def run_full_ablation_suite(
@@ -770,7 +736,10 @@ def run_full_ablation_suite(
     stable_pool_min_pct: int = STABLE_POOL_MIN_PCT,
     stable_pool_min_timepoints: int = STABLE_POOL_MIN_TIMEPOINTS,
     stable_pool_n_features: int = STABLE_POOL_N_FEATURES,
-    use_deltas: bool = False,
+    stable_pool_bootstrap: int = STABLE_POOL_BOOTSTRAP,
+    stable_pool_l1_c: float = STABLE_POOL_L1_C,
+    tuner: str = "grid",
+    optuna_trials: int = 30,
 ) -> pd.DataFrame:
     if not HAS_MRMR and {"mrmr", "mrmr_stable"} & set(selection_modes):
         raise ImportError("feature-engine necessário para modo mrmr: pip install feature-engine")
@@ -790,9 +759,7 @@ def run_full_ablation_suite(
     t0 = time.monotonic()
 
     for modality in modalities:
-        out_dir = _results_dir_for_modality(
-            base, modality, results_dir, use_deltas=use_deltas
-        )
+        out_dir = _results_dir_for_modality(base, modality, results_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
         modality_results: list[pd.DataFrame] = []
 
@@ -847,8 +814,11 @@ def run_full_ablation_suite(
                                 stable_pool_min_pct=stable_pool_min_pct,
                                 stable_pool_min_timepoints=stable_pool_min_timepoints,
                                 stable_pool_n_features=stable_pool_n_features,
+                                stable_pool_bootstrap=stable_pool_bootstrap,
+                                stable_pool_l1_c=stable_pool_l1_c,
+                                tuner=tuner,
+                                optuna_trials=optuna_trials,
                                 verbose=verbose,
-                                use_deltas=use_deltas,
                             )
                             auc_mean = float(res["auc"].mean()) if "auc" in res.columns else float("nan")
                             log.info(
@@ -910,10 +880,4 @@ if __name__ == "__main__":
     mask = corr_keep_mask(X, 0.90, feature_names=names)
     assert mask[:3].all(), "visitas T1/T2/T3 devem sobreviver"
     assert mask.sum() == 3, "wm_norm redundante com gm_norm deve cair"
-    pipe = make_pipeline("raw", "logreg_l1", roi="hippocampus", seed=0)
-    y = (rng.random(n) > 0.5).astype(int)
-    pipe.fit(X, y)
-    sel = embedded_selected_names(pipe.named_steps["clf"], names)
-    assert 1 <= len(sel) <= len(names)
-    assert "preselect" not in pipe.named_steps
     print("ablation_runner self-check ok")

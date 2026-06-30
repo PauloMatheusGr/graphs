@@ -29,6 +29,8 @@ from ablation_runner import (
     MODALITIES,
     PARAM_GRIDS,
     SELECTION_MODES,
+    STABLE_POOL_BOOTSTRAP,
+    STABLE_POOL_L1_C,
     STABLE_POOL_MIN_PCT,
     STABLE_POOL_MIN_TIMEPOINTS,
     STABLE_POOL_N_FEATURES,
@@ -179,6 +181,8 @@ def nested_cv_clinical(
     repeat_id: int = 0,
     k_out: int = 5,
     k_in: int = 5,
+    tuner: str = "grid",
+    optuna_trials: int = 30,
 ) -> pd.DataFrame:
     task = TASKS[task_id]
     clinical = baseline_clinical_table(df_long)
@@ -215,16 +219,22 @@ def nested_cv_clinical(
         y_train, y_test = y_wide[train_idx], y_wide[test_idx]
 
         inner_cv = StratifiedKFold(k_in, shuffle=True, random_state=seed + fold)
-        grid = GridSearchCV(
+        from ablation_optuna import tune_pipeline
+
+        tune_res = tune_pipeline(
             _clinical_pipeline(model_key, seed),
-            _clinical_param_grid(model_key),
-            cv=inner_cv,
-            scoring="roc_auc",
+            X_train,
+            y_train,
+            inner_cv,
+            model_key=model_key,
+            selection_mode="raw",
+            tuner=tuner,  # type: ignore[arg-type]
+            n_trials=optuna_trials,
+            seed=seed + fold,
             n_jobs=gridsearch_n_jobs(model_key),
-            refit=True,
+            param_grid=_clinical_param_grid(model_key),
         )
-        grid.fit(X_train, y_train)
-        best = grid.best_estimator_
+        best = tune_res.estimator
         train_scores = cross_val_predict(best, X_train, y_train, cv=inner_cv, method="predict_proba")[:, 1]
         threshold = tune_youden_threshold(y_train, train_scores)
         test_scores = best.predict_proba(X_test)[:, 1]
@@ -239,13 +249,14 @@ def nested_cv_clinical(
             "modality": "clinical",
             "modality_label": "clínico baseline",
             "model_key": model_key,
+            "tuner": tune_res.tuner,
             "with_combat": False,
             "selection_mode": "none",
             "repeat_id": repeat_id,
             "fold": fold,
             "best_model": best.named_steps["clf"].__class__.__name__,
-            "best_inner_auc": float(grid.best_score_),
-            "best_params": json.dumps(grid.best_params_, default=str),
+            "best_inner_auc": tune_res.best_inner_auc,
+            "best_params": json.dumps(tune_res.best_params, default=str),
             "threshold": threshold,
             "n_features_raw": len(feature_cols),
             "n_features_selected": len(selected),
@@ -274,6 +285,10 @@ def nested_cv_fusion(
     stable_pool_min_pct: int = STABLE_POOL_MIN_PCT,
     stable_pool_min_timepoints: int = STABLE_POOL_MIN_TIMEPOINTS,
     stable_pool_n_features: int = STABLE_POOL_N_FEATURES,
+    stable_pool_bootstrap: int = STABLE_POOL_BOOTSTRAP,
+    stable_pool_l1_c: float = STABLE_POOL_L1_C,
+    tuner: str = "grid",
+    optuna_trials: int = 30,
 ) -> pd.DataFrame:
     """Imagem (com seleção) + clínico baseline concatenados."""
     task = TASKS[task_id]
@@ -336,24 +351,52 @@ def nested_cv_fusion(
             allowed, _ = stable_pool_for_outer_train(
                 img_train,
                 y_train,
+                selection_mode=selection_mode,
                 inner_cv=inner_cv,
                 roi=roi,
                 min_pct=stable_pool_min_pct,
                 min_timepoints=stable_pool_min_timepoints,
                 n_features=stable_pool_n_features,
+                n_bootstrap=stable_pool_bootstrap,
+                l1_c=stable_pool_l1_c,
+                seed=seed + fold,
             )
             pipeline.set_params(preselect__allowed_columns=allowed)
+        elif (
+            is_embedded_model(model_key)
+            and SELECTION_MODES[selection_mode].get("use_stable_pool")
+        ):
+            allowed, _ = stable_pool_for_outer_train(
+                img_train,
+                y_train,
+                selection_mode=selection_mode,
+                inner_cv=inner_cv,
+                roi=roi,
+                min_pct=stable_pool_min_pct,
+                min_timepoints=stable_pool_min_timepoints,
+                n_features=stable_pool_n_features,
+                n_bootstrap=stable_pool_bootstrap,
+                l1_c=stable_pool_l1_c,
+                seed=seed + fold,
+            )
+            img_train = img_train[allowed].copy()
+            img_test = img_test[allowed].copy()
 
-        grid = GridSearchCV(
+        from ablation_optuna import tune_pipeline
+
+        tune_res = tune_pipeline(
             pipeline,
-            param_grid_for(model_key, selection_mode),
-            cv=inner_cv,
-            scoring="roc_auc",
+            img_train,
+            y_train,
+            inner_cv,
+            model_key=model_key,
+            selection_mode=selection_mode,
+            tuner=tuner,  # type: ignore[arg-type]
+            n_trials=optuna_trials,
+            seed=seed + fold,
             n_jobs=gridsearch_n_jobs(model_key),
-            refit=True,
         )
-        grid.fit(img_train, y_train)
-        best = grid.best_estimator_
+        best = tune_res.estimator
 
         scaler = StandardScaler()
         clin_train_s = scaler.fit_transform(clin_train)
@@ -382,13 +425,14 @@ def nested_cv_fusion(
             "modality": modality,
             "modality_label": f"fusion ({MODALITIES[modality]['label']} + clínico)",
             "model_key": model_key,
+            "tuner": tune_res.tuner,
             "with_combat": with_combat,
             "selection_mode": selection_mode,
             "repeat_id": repeat_id,
             "fold": fold,
             "best_model": clf.__class__.__name__,
-            "best_inner_auc": float(grid.best_score_),
-            "best_params": json.dumps(grid.best_params_, default=str),
+            "best_inner_auc": tune_res.best_inner_auc,
+            "best_params": json.dumps(tune_res.best_params, default=str),
             "threshold": threshold,
             "n_features_raw": len(feature_cols),
             "n_features_selected": len(selected),
@@ -411,14 +455,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="Só para fusion: lista vol,shape,texture,disp,all (1 arquivo/modalidade)",
     )
     p.add_argument("--models", default="svm,rf,xgb,mlp,logreg_l1,elasticnet")
-    p.add_argument("--selection", default="mrmr_stable")
+    p.add_argument("--selection", default="l1_stable")
     p.add_argument("--combat", choices=["false", "true"], default="false")
     p.add_argument("--repeats", "-r", type=int, default=10)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--roi", default=ROI_FILTER_DEFAULT)
     p.add_argument("--stable-pool-min-pct", type=int, default=STABLE_POOL_MIN_PCT)
-    p.add_argument("--stable-pool-min-timepoints", type=int, default=STABLE_POOL_MIN_TIMEPOINTS)
+    p.add_argument("--stable-pool-min-timepoints", type=int, default=STABLE_POOL_MIN_TIMEPOINTS,
+                   help="0 = sem filtro temporal no pool")
     p.add_argument("--stable-pool-n", type=int, default=STABLE_POOL_N_FEATURES)
+    p.add_argument("--stable-bootstrap", type=int, default=STABLE_POOL_BOOTSTRAP)
+    p.add_argument("--stable-l1-c", type=float, default=STABLE_POOL_L1_C)
+    p.add_argument("--tuner", choices=["grid", "optuna"], default="grid",
+                   help="Tuning inner CV: grid (default) ou optuna TPE")
+    p.add_argument("--optuna-trials", type=int, default=30,
+                   help="Trials Optuna por fold (só com --tuner optuna)")
     p.add_argument(
         "--results-dir",
         type=Path,
@@ -464,6 +515,8 @@ def main(argv: list[str] | None = None) -> int:
                         model_key=model_key,
                         seed=args.seed + repeat_id * 1000,
                         repeat_id=repeat_id,
+                        tuner=args.tuner,
+                        optuna_trials=args.optuna_trials,
                     ))
         _write_outputs(out_dir, "clinical", rows)
         log.info("tempo: %s", fmt_duration(time.monotonic() - t0))
@@ -493,6 +546,10 @@ def main(argv: list[str] | None = None) -> int:
                         stable_pool_min_pct=args.stable_pool_min_pct,
                         stable_pool_min_timepoints=args.stable_pool_min_timepoints,
                         stable_pool_n_features=args.stable_pool_n,
+                        stable_pool_bootstrap=args.stable_bootstrap,
+                        stable_pool_l1_c=args.stable_l1_c,
+                        tuner=args.tuner,
+                        optuna_trials=args.optuna_trials,
                     ))
         _write_outputs(out_dir, f"fusion_{modality}_{args.selection}_{combat_tag}", rows)
 

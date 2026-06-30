@@ -161,6 +161,63 @@ def pooled_auc(df: pd.DataFrame) -> float:
     return float(roc_auc_score(y, s))
 
 
+def explode_patient_predictions(df: pd.DataFrame) -> pd.DataFrame:
+    """Uma linha por (paciente, fold, repeat) com score de teste externo."""
+    required = {"test_id_pts", "test_y_true", "test_scores"}
+    missing = required - set(df.columns)
+    if missing:
+        raise KeyError(f"Colunas ausentes: {sorted(missing)}")
+    df = prepare_ablation_df(df)
+    meta_cols = [
+        "task",
+        "modality",
+        "model_key",
+        "with_combat",
+        "selection_mode",
+        "fold",
+        "repeat_id",
+    ]
+    rows: list[dict[str, Any]] = []
+    for _, r in df.iterrows():
+        meta = {c: r[c] for c in meta_cols if c in df.columns}
+        for pid, y, s in zip(
+            json.loads(r["test_id_pts"]),
+            json.loads(r["test_y_true"]),
+            json.loads(r["test_scores"]),
+        ):
+            rows.append(
+                {
+                    "ID_PT": str(pid),
+                    "y": int(y),
+                    "score": float(s),
+                    **meta,
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def rank_patients_by_discordance(pat: pd.DataFrame) -> pd.DataFrame:
+    """Agrega scores por paciente; discordance = distância ao rótulo (0/1)."""
+    empty = pd.DataFrame(
+        columns=["ID_PT", "y", "score_mean", "score_std", "n_test", "discordance"]
+    )
+    if pat.empty:
+        return empty
+    rank = pat.groupby("ID_PT", as_index=False).agg(
+        y=("y", "first"),
+        score_mean=("score", "mean"),
+        score_std=("score", "std"),
+        n_test=("score", "count"),
+    )
+    rank["score_std"] = rank["score_std"].fillna(0.0)
+    rank["discordance"] = np.where(
+        rank["y"] == 1,
+        1.0 - rank["score_mean"],
+        rank["score_mean"],
+    )
+    return rank.sort_values("discordance", ascending=False).reset_index(drop=True)
+
+
 def feature_freq_table(
     df: pd.DataFrame,
     *,
@@ -378,6 +435,10 @@ def estimate_stable_pool_columns(
 
     passing: set[str] = set()
     for grp in fold_any:
+        if min_timepoints < 1:
+            if 100 * fold_any[grp] / n_inner >= min_pct:
+                passing.add(grp)
+            continue
         ft = fold_time[grp]
         n_pass = sum(1 for t in time_order if 100 * ft[t] / n_inner >= min_pct)
         if n_pass >= min_timepoints:
@@ -480,10 +541,10 @@ def selection_audit_report(
         print(f"\n{'=' * 60}")
         print(f"[{mode}] {task} | {mod_label} | {model} | combat={with_combat}")
         print(f"  wide (inicial):     {n_inicial} colunas")
-        if mode == "mrmr_stable" and "n_features_after_stable_pool" in part.columns:
+        if mode in ("mrmr_stable", "l1_stable") and "n_features_after_stable_pool" in part.columns:
             n_pool = float(_col_or(part, "n_features_after_stable_pool", part["n_features_raw"]).mean())
             print(f"  após pool estável:  {n_pool:.1f} (média folds)")
-        if mode in ("mrmr", "mrmr_stable", "filters") and "n_features_after_filters" in part.columns:
+        if mode in ("mrmr", "mrmr_stable", "l1_stable", "filters") and "n_features_after_filters" in part.columns:
             n_filt = float(_col_or(part, "n_features_after_filters", part["n_features_selected"]).mean())
             print(f"  após corr/var:      {n_filt:.1f} (média folds)")
         print(
@@ -491,7 +552,7 @@ def selection_audit_report(
             f"min={part['n_features_selected'].min()} max={part['n_features_selected'].max()}"
         )
 
-        if mode == "mrmr_stable" and "removed_by_stable_pool" in part.columns:
+        if mode in ("mrmr_stable", "l1_stable") and "removed_by_stable_pool" in part.columns:
             stable_rm = union_removed(part, "removed_by_stable_pool")
             print(f"  removidos pool estável ({len(stable_rm)}): {[feature_short_name(x) for x in stable_rm[:12]]}")
 
@@ -785,6 +846,7 @@ if __name__ == "__main__":
                     "selected_features": json.dumps(feats),
                     "test_y_true": json.dumps(y_true),
                     "test_scores": json.dumps(scores),
+                    "test_id_pts": json.dumps([f"P{fold}{i}" for i in range(len(y_true))]),
                     "auc": 0.5,
                     "n_features_selected": len(feats),
                 }
@@ -836,4 +898,8 @@ if __name__ == "__main__":
         min_timepoints=2,
     )
     assert "hippocampus_L_T1_gm_norm" in kept and "hippocampus_R_T1_wm_norm" in removed
+    pat = explode_patient_predictions(demo)
+    rank = rank_patients_by_discordance(pat)
+    assert len(pat) == 8 and len(rank) == 4
+    assert rank.iloc[0]["discordance"] >= rank.iloc[-1]["discordance"]
     print("ablation_analysis self-check ok")

@@ -26,6 +26,8 @@ from ablation_runner import (
     STABLE_POOL_MIN_PCT,
     STABLE_POOL_MIN_TIMEPOINTS,
     STABLE_POOL_N_FEATURES,
+    STABLE_POOL_BOOTSTRAP,
+    STABLE_POOL_L1_C,
     TASKS,
     TASK_PRESETS,
     fmt_duration,
@@ -119,7 +121,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--selection",
-        default="raw,mrmr_stable",
+        default="raw,l1_stable",
         help=f"Modos: {','.join(SELECTION_MODES)}",
     )
     p.add_argument("--models", default="svm,rf,mlp", help="Modelos separados por vírgula")
@@ -134,8 +136,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Override pasta de saída (default: ablation_results/{modality})",
     )
     p.add_argument("--stable-pool-min-pct", type=int, default=STABLE_POOL_MIN_PCT)
-    p.add_argument("--stable-pool-min-timepoints", type=int, default=STABLE_POOL_MIN_TIMEPOINTS)
+    p.add_argument("--stable-pool-min-timepoints", type=int, default=STABLE_POOL_MIN_TIMEPOINTS,
+                   help="Mín. visitas T1/T2/T3 estáveis no pool (0=desliga filtro temporal)")
     p.add_argument("--stable-pool-n", type=int, default=STABLE_POOL_N_FEATURES)
+    p.add_argument("--stable-bootstrap", type=int, default=STABLE_POOL_BOOTSTRAP,
+                     help="Bootstraps para l1_stable (stable pool)")
+    p.add_argument("--stable-l1-c", type=float, default=STABLE_POOL_L1_C,
+                     help="C da L1 no bootstrap do l1_stable")
+    p.add_argument("--tuner", choices=["grid", "optuna"], default="grid",
+                   help="Tuning inner CV: grid ou optuna TPE (sem pruning)")
+    p.add_argument("--optuna-trials", type=int, default=30,
+                   help="Trials Optuna por fold (--tuner optuna)")
     p.add_argument(
         "--log-file",
         type=Path,
@@ -193,6 +204,9 @@ def main(argv: list[str] | None = None) -> int:
     log.info("seleção:      %s", selection_modes)
     log.info("modelos:      %s", models)
     log.info("combat:       %s", args.combat)
+    log.info("tuner:        %s", args.tuner)
+    if args.tuner == "optuna":
+        log.info("optuna trials:%d", args.optuna_trials)
     log.info("repetições:   %s", args.repeats)
     log.info("jobs totais:  %d", total_jobs)
     log.info("base:         %s", base_dir)
@@ -218,6 +232,10 @@ def main(argv: list[str] | None = None) -> int:
             stable_pool_min_pct=args.stable_pool_min_pct,
             stable_pool_min_timepoints=args.stable_pool_min_timepoints,
             stable_pool_n_features=args.stable_pool_n,
+            stable_pool_bootstrap=args.stable_bootstrap,
+            stable_pool_l1_c=args.stable_l1_c,
+            tuner=args.tuner,
+            optuna_trials=args.optuna_trials,
         )
     except Exception:
         elapsed = time.monotonic() - t0
