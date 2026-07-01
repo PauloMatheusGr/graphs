@@ -284,54 +284,122 @@ def harmonize_long_fold(
             f"[fold {fold_id}] batches fundidos (n<{MIN_BATCH_SAMPLES} no treino): {pooled}"
         )
 
-    train_batches = cov_all.loc[train_ids]["batch"].value_counts()
-    if len(train_batches) < 2:
-        warnings.warn(
-            f"[fold {fold_id}] ComBat precisa de >=2 batches no treino; "
-            f"encontrados {len(train_batches)}. Retornando original."
-        )
-        return df_out
+    # train_batches = cov_all.loc[train_ids]["batch"].value_counts()
+    # if len(train_batches) < 2:
+    #     warnings.warn(
+    #         f"[fold {fold_id}] ComBat precisa de >=2 batches no treino; "
+    #         f"encontrados {len(train_batches)}. Retornando original."
+    #     )
+    #     return df_out
 
+    # small = train_batches[train_batches < MIN_BATCH_SAMPLES]
+    # if not small.empty:
+    #     warnings.warn(
+    #         f"[fold {fold_id}] ComBat ignorado — batch no treino ainda com "
+    #         f"<{MIN_BATCH_SAMPLES} amostras após merge: {small.to_dict()}"
+    #     )
+    #     return df_out
+
+    # transform_ids = sorted(
+    #     img for img in wide_all.index if str(img) in {str(r).strip() for r in transform_id_imgs}
+    # )
+    # test_only_batches = set(cov_all.loc[transform_ids, "batch"]) - set(
+    #     cov_all.loc[train_ids, "batch"]
+    # )
+    # if test_only_batches:
+    #     warnings.warn(
+    #         f"[fold {fold_id}] batches só no teste (não harmonizados): {sorted(test_only_batches)}"
+    #     )
+
+    # wide_train = wide_all.loc[train_ids]
+    # cov_train = cov_all.loc[train_ids]
+    # wide_h_train, estimates = _run_neurocombat_train(
+    #     wide_train, cov_train, train_ids, quiet=quiet
+    # )
+
+    # harmonized_parts: list[pd.DataFrame] = [wide_h_train]
+    # apply_ids = [i for i in transform_ids if i not in train_ids]
+    # if apply_ids:
+    #     apply_ok = [i for i in apply_ids if cov_all.loc[i, "batch"] in train_batches.index]
+    #     if apply_ok:
+    #         wide_h_apply = _run_neurocombat_apply(
+    #             wide_all, cov_all, apply_ok, estimates, quiet=quiet
+    #         )
+    #         harmonized_parts.append(wide_h_apply)
+
+    # wide_harmonized = pd.concat(harmonized_parts)
+    # harmonized_ids = set(wide_harmonized.index.astype(str))
+    # _write_wide_back(df_out, wide_harmonized, combat_feats, harmonized_ids)
+    # return df_out
+    train_batches = cov_all.loc[train_ids]["batch"].value_counts()
+
+    # Batches com amostras suficientes no treino para fit estável
+    good_batches = {str(b) for b, n in train_batches.items() if n >= MIN_BATCH_SAMPLES}
     small = train_batches[train_batches < MIN_BATCH_SAMPLES]
     if not small.empty:
         warnings.warn(
-            f"[fold {fold_id}] ComBat ignorado — batch no treino ainda com "
-            f"<{MIN_BATCH_SAMPLES} amostras após merge: {small.to_dict()}"
+            f"[fold {fold_id}] batches excluídos do ComBat "
+            f"(<{MIN_BATCH_SAMPLES} imgs no treino): {small.to_dict()}"
+        )
+
+    if len(good_batches) < 2:
+        warnings.warn(
+            f"[fold {fold_id}] ComBat precisa de >=2 batches 'grandes' no treino; "
+            f"encontrados {len(good_batches)} (de {len(train_batches)} no total). "
+            f"Retornando original."
         )
         return df_out
 
     transform_ids = sorted(
-        img for img in wide_all.index if str(img) in {str(r).strip() for r in transform_id_imgs}
+        img for img in wide_all.index
+        if str(img) in {str(r).strip() for r in transform_id_imgs}
     )
-    test_only_batches = set(cov_all.loc[transform_ids, "batch"]) - set(
-        cov_all.loc[train_ids, "batch"]
-    )
-    if test_only_batches:
+
+    def _batch(img: str) -> str:
+        return str(cov_all.loc[img, "batch"])
+
+    # Imagens harmonizáveis = batch ∈ good_batches
+    known_ids = [img for img in transform_ids if _batch(img) in good_batches]
+    train_known = [img for img in train_ids if img in set(known_ids)]
+
+    unknown_imgs = [img for img in transform_ids if img not in set(known_ids)]
+    if unknown_imgs:
         warnings.warn(
-            f"[fold {fold_id}] batches só no teste (não harmonizados): {sorted(test_only_batches)}"
+            f"[fold {fold_id}] {len(unknown_imgs)} imagem(ns) sem harmonização "
+            f"(batch pequeno no treino ou batch só no teste)."
         )
 
-    wide_train = wide_all.loc[train_ids]
-    cov_train = cov_all.loc[train_ids]
+    if len(known_ids) < 2:
+        warnings.warn(
+            f"[fold {fold_id}] ComBat ignorado (<2 imagens harmonizáveis). "
+            f"Retornando original."
+        )
+        return df_out
+
+    if len(train_known) < 2:
+        warnings.warn(
+            f"[fold {fold_id}] ComBat ignorado (<2 imagens no treino harmonizável). "
+            f"Retornando original."
+        )
+        return df_out
+
+    wide_train = wide_all.loc[train_known]
+    cov_train = cov_all.loc[train_known]
     wide_h_train, estimates = _run_neurocombat_train(
-        wide_train, cov_train, train_ids, quiet=quiet
+        wide_train, cov_train, train_known, quiet=quiet
     )
 
+    test_only = [img for img in known_ids if img not in set(train_known)]
     harmonized_parts: list[pd.DataFrame] = [wide_h_train]
-    apply_ids = [i for i in transform_ids if i not in train_ids]
-    if apply_ids:
-        apply_ok = [i for i in apply_ids if cov_all.loc[i, "batch"] in train_batches.index]
-        if apply_ok:
-            wide_h_apply = _run_neurocombat_apply(
-                wide_all, cov_all, apply_ok, estimates, quiet=quiet
-            )
-            harmonized_parts.append(wide_h_apply)
+    if test_only:
+        wide_h_apply = _run_neurocombat_apply(
+            wide_all, cov_all, test_only, estimates, quiet=quiet
+        )
+        harmonized_parts.append(wide_h_apply)
 
     wide_harmonized = pd.concat(harmonized_parts)
-    harmonized_ids = set(wide_harmonized.index.astype(str))
-    _write_wide_back(df_out, wide_harmonized, combat_feats, harmonized_ids)
+    _write_wide_back(df_out, wide_harmonized, combat_feats, set(known_ids))
     return df_out
-
 
 def image_ids_for_patients(df_long: pd.DataFrame, patient_ids: set[str]) -> set[str]:
     mask = df_long["ID_PT"].astype(str).str.strip().isin({str(p).strip() for p in patient_ids})
