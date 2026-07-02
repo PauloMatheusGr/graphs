@@ -32,6 +32,7 @@ from sklearn.exceptions import ConvergenceWarning
 
 from ablation_analysis import prepare_ablation_df, summary_with_pooled
 from ablation_prep import ROI_FILTER_DEFAULT
+from ablation_representation import REPRESENTATIONS, default_results_dir
 from ablation_runner import (
     MODALITIES,
     SELECTION_MODES,
@@ -143,6 +144,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--tuner", choices=["grid", "optuna"], default="grid")
     p.add_argument("--optuna-trials", type=int, default=30)
     p.add_argument(
+        "--representation",
+        choices=REPRESENTATIONS,
+        default="wide",
+        help="wide=T1+T2+T3 | t1_only | t1_deltas=T1+D21+D31+D32 | deltas_only | t1_deltas_rel",
+    )
+    p.add_argument(
         "--inflate",
         default="",
         help=(
@@ -186,9 +193,12 @@ def main(argv: list[str] | None = None) -> int:
     inflate = _parse_inflate(args.inflate)
 
     base_dir = Path(f"csvs/longitudinal_4_groups/ablation/{args.roi}")
+    representation = args.representation
 
-    if len(modalities) == 1 and args.results_dir is None:
-        results_dir = Path(f"csvs/longitudinal_4_groups/ablation_results_leaky/{modalities[0]}")
+    if args.results_dir is None and len(modalities) == 1:
+        results_dir = default_results_dir(
+            base_dir, modalities[0], representation, protocol="leaky",
+        )
     else:
         results_dir = args.results_dir
 
@@ -210,6 +220,7 @@ def main(argv: list[str] | None = None) -> int:
     active_inflate = [k for k, v in inflate.items() if v] or ["nenhum (só leaky_global)"]
     log.warning("=== ablação LEAKY (pré-processamento global antes do CV) ===")
     log.warning("infladores:   %s", ", ".join(active_inflate))
+    log.info("representação:%s", representation)
     log.info("modalidades:  %s", modalities)
     log.info("tasks:        %s", tasks)
     log.info("seleção:      %s", selection_modes)
@@ -244,6 +255,7 @@ def main(argv: list[str] | None = None) -> int:
             stable_pool_l1_c=args.stable_l1_c,
             tuner=args.tuner,
             optuna_trials=args.optuna_trials,
+            representation=representation,
             **inflate,
         )
     except Exception:
@@ -255,7 +267,8 @@ def main(argv: list[str] | None = None) -> int:
     summary = summary_with_pooled(df)
 
     out_dirs = {results_dir} if results_dir else {
-        Path(f"csvs/longitudinal_4_groups/ablation_results_leaky/{m}") for m in modalities
+        default_results_dir(base_dir, m, representation, protocol="leaky")
+        for m in modalities
     }
     for d in sorted(out_dirs, key=str):
         log.info("csv: %s", d / "ablation_results_all.csv")

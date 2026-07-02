@@ -34,7 +34,6 @@ from ablation_prep import (
     SLOT_ORDER,
     TEXTURE_RE,
     VOL_FEATURE_SUFFIXES,
-    modality_wide_columns,
     pivot_long_to_wide,
 )
 from ablation_runner import (
@@ -59,6 +58,12 @@ from ablation_runner import (
     patient_labels_from_long,
     repeat_ids,
     tune_youden_threshold,
+)
+from ablation_representation import (
+    apply_representation_wide,
+    default_results_dir,
+    feature_columns_for_representation,
+    resolve_stable_pool_min_timepoints,
 )
 
 from ablation_stable import inner_selections_l1_bootstrap
@@ -179,6 +184,8 @@ def wide_leaky_task(
     task: TaskConfig,
     with_combat: bool,
     combat_quiet: bool = True,
+    representation: str = "wide",
+    roi: str = ROI_FILTER_DEFAULT,
 ) -> pd.DataFrame:
     """Wide de todos os pacientes da task; ComBat fit+transform no dataset inteiro."""
     sub = df_long[df_long["GROUP"].astype(str).isin(task.groups)].copy()
@@ -193,6 +200,7 @@ def wide_leaky_task(
             quiet=combat_quiet,
         )
     wide = pivot_long_to_wide(sub)
+    wide = apply_representation_wide(wide, representation, roi=roi)
     wide["y"] = wide["GROUP"].map(task.label_map).astype(int)
     return wide
 
@@ -469,17 +477,27 @@ def nested_cv_ablation_leaky(
     tuner: str = "grid",
     optuna_trials: int = 30,
     verbose: bool = False,
+    representation: str = "wide",
 ) -> pd.DataFrame:
     if pseudo_replication:
         wide = wide_per_visit_task(
             df_long, task=task, with_combat=with_combat, combat_quiet=combat_quiet
         )
+        if representation == "t1_only":
+            wide = wide[wide["_visit"] == SLOT_ORDER["baseline"]].copy()
         feature_cols = modality_collapsed_columns(list(wide.columns), modality, roi=roi)
     else:
         wide = wide_leaky_task(
-            df_long, task=task, with_combat=with_combat, combat_quiet=combat_quiet
+            df_long,
+            task=task,
+            with_combat=with_combat,
+            combat_quiet=combat_quiet,
+            representation=representation,
+            roi=roi,
         )
-        feature_cols = modality_wide_columns(wide.columns, modality, roi=roi)
+        feature_cols = feature_columns_for_representation(
+            wide.columns, modality, roi=roi, representation=representation,
+        )
     if not feature_cols:
         raise ValueError(f"Nenhuma coluna de feature para modalidade={modality!r} roi={roi!r}")
 
@@ -601,6 +619,7 @@ def nested_cv_ablation_leaky(
             protocol_tags.append("testthr")
 
         row = {
+            "representation": representation,
             "task": task.task_id,
             "with_combat": with_combat,
             "selection_mode": selection_mode,
@@ -646,10 +665,11 @@ def _results_dir_for_modality(
     base: Path,
     modality: str,
     results_dir: Path | str | None,
+    representation: str = "wide",
 ) -> Path:
-    if results_dir is not None:
-        return Path(results_dir)
-    return base.parent.parent / "ablation_results_leaky" / modality
+    return default_results_dir(
+        base, modality, representation, protocol="leaky", results_dir=results_dir,
+    )
 
 
 def run_full_ablation_suite_leaky(
@@ -677,6 +697,7 @@ def run_full_ablation_suite_leaky(
     univariate_global: bool = False,
     tuner: str = "grid",
     optuna_trials: int = 30,
+    representation: str = "wide",
 ) -> pd.DataFrame:
     from ablation_runner import HAS_MRMR
 
@@ -686,6 +707,10 @@ def run_full_ablation_suite_leaky(
         and {"mrmr", "mrmr_stable"} & set(selection_modes)
     ):
         raise ImportError("feature-engine necessário para modo mrmr: pip install feature-engine")
+
+    stable_pool_min_timepoints = resolve_stable_pool_min_timepoints(
+        representation, stable_pool_min_timepoints, log=log,
+    )
 
     base = Path(base_dir)
     all_results: list[pd.DataFrame] = []
@@ -707,7 +732,9 @@ def run_full_ablation_suite_leaky(
     )
 
     for modality in modalities:
-        out_dir = _results_dir_for_modality(base, modality, results_dir)
+        out_dir = _results_dir_for_modality(
+            base, modality, results_dir, representation=representation,
+        )
         out_dir.mkdir(parents=True, exist_ok=True)
         modality_results: list[pd.DataFrame] = []
 
@@ -766,6 +793,7 @@ def run_full_ablation_suite_leaky(
                                 tuner=tuner,
                                 optuna_trials=optuna_trials,
                                 verbose=verbose,
+                                representation=representation,
                             )
                             auc_mean = float(res["auc"].mean()) if "auc" in res.columns else float("nan")
                             log.info(

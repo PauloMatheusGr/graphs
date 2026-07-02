@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exporta CSV wide T1 + deltas relativos para inspeção (ablation_deltas/{roi}/)."""
+"""Exporta CSV wide T1 + deltas absolutos para inspeção (ablation_deltas/{roi}/)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,13 @@ from pathlib import Path
 
 import pandas as pd
 
-from ablation_deltas import PROTOCOL_T1_DELTAS, add_delta_columns, modality_wide_columns
+from ablation_deltas import (
+    PROTOCOL_T1_DELTAS,
+    add_delta_columns,
+    delta_kwargs_for_representation,
+    feature_tokens_for_delta_representation,
+    modality_wide_columns,
+)
 from ablation_prep import (
     ROI_FILTER_DEFAULT,
     pivot_long_to_wide,
@@ -43,8 +49,9 @@ def export_delta_wide(
             raise FileNotFoundError(f"Long CSV ausente: {long_path}")
         df_long = pd.read_csv(long_path)
         wide = pivot_long_to_wide(df_long)
-        wide = add_delta_columns(wide, roi)
-        cols = modality_wide_columns(wide.columns, mod, roi=roi, use_deltas=True)
+        wide = add_delta_columns(wide, roi, **delta_kwargs_for_representation("t1_deltas"))
+        tokens = feature_tokens_for_delta_representation("t1_deltas")
+        cols = modality_wide_columns(wide.columns, mod, roi=roi, use_deltas=True, feature_tokens=tokens)
         out = wide[meta + cols].copy()
         p = dest / f"{mod}_wide.csv"
         out.to_csv(p, index=False)

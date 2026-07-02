@@ -24,7 +24,13 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 from ablation_analysis import prepare_ablation_df, summary_with_pooled
-from ablation_prep import ROI_FILTER_DEFAULT, modality_wide_columns
+from ablation_prep import ROI_FILTER_DEFAULT
+from ablation_representation import (
+    REPRESENTATIONS,
+    default_fusion_results_dir,
+    feature_columns_for_representation,
+    resolve_stable_pool_min_timepoints,
+)
 from ablation_runner import (
     MODALITIES,
     PARAM_GRIDS,
@@ -289,6 +295,7 @@ def nested_cv_fusion(
     stable_pool_l1_c: float = STABLE_POOL_L1_C,
     tuner: str = "grid",
     optuna_trials: int = 30,
+    representation: str = "wide",
 ) -> pd.DataFrame:
     """Imagem (com seleção) + clínico baseline concatenados."""
     task = TASKS[task_id]
@@ -311,6 +318,8 @@ def nested_cv_fusion(
             with_combat=with_combat,
             fold_id=fold,
             combat_quiet=True,
+            representation=representation,
+            roi=roi,
         )
         wide = wide[wide["GROUP"].astype(str).isin(task.groups)].copy()
         wide = attach_clinical(wide, clinical)
@@ -321,7 +330,9 @@ def nested_cv_fusion(
                 f"verifique MMSE/ADAS/FAQ/CDR em merge_long"
             )
 
-        image_cols = modality_wide_columns(wide.columns, modality, roi=roi)
+        image_cols = feature_columns_for_representation(
+            wide.columns, modality, roi=roi, representation=representation,
+        )
         feature_cols = list(CLINICAL_COLS) + image_cols
         X = wide[feature_cols].astype(float)
         y_wide = wide["y"].to_numpy(dtype=int)
@@ -421,6 +432,7 @@ def nested_cv_fusion(
         selected = _fusion_selected_names(model_key, clf, preselect, image_cols)
         rows.append({
             "feature_set": "fusion",
+            "representation": representation,
             "task": task.task_id,
             "modality": modality,
             "modality_label": f"fusion ({MODALITIES[modality]['label']} + clínico)",
@@ -471,6 +483,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--optuna-trials", type=int, default=30,
                    help="Trials Optuna por fold (só com --tuner optuna)")
     p.add_argument(
+        "--representation",
+        choices=REPRESENTATIONS,
+        default="wide",
+        help="Só fusion: wide | t1_only | t1_deltas | deltas_only | t1_deltas_rel",
+    )
+    p.add_argument(
         "--results-dir",
         type=Path,
         default=None,
@@ -490,13 +508,17 @@ def main(argv: list[str] | None = None) -> int:
     models = _split_csv(args.models)
     modalities = _parse_modalities(args.modality)
     with_combat = args.combat == "true"
+    representation = args.representation
     base = Path(f"csvs/longitudinal_4_groups/ablation/{args.roi}")
+    stable_pool_min_timepoints = resolve_stable_pool_min_timepoints(
+        representation, args.stable_pool_min_timepoints, log=log,
+    )
     if args.results_dir is not None:
         out_dir = args.results_dir
     elif args.feature_set == "clinical":
         out_dir = Path("csvs/longitudinal_4_groups/ablation_results_clinic")
     else:
-        out_dir = Path("csvs/longitudinal_4_groups/ablation_results_clinic_img")
+        out_dir = default_fusion_results_dir(base, representation, results_dir=args.results_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     t0 = time.monotonic()
@@ -544,14 +566,18 @@ def main(argv: list[str] | None = None) -> int:
                         seed=args.seed + repeat_id * 1000,
                         repeat_id=repeat_id,
                         stable_pool_min_pct=args.stable_pool_min_pct,
-                        stable_pool_min_timepoints=args.stable_pool_min_timepoints,
+                        stable_pool_min_timepoints=stable_pool_min_timepoints,
                         stable_pool_n_features=args.stable_pool_n,
                         stable_pool_bootstrap=args.stable_bootstrap,
                         stable_pool_l1_c=args.stable_l1_c,
                         tuner=args.tuner,
                         optuna_trials=args.optuna_trials,
+                        representation=representation,
                     ))
-        _write_outputs(out_dir, f"fusion_{modality}_{args.selection}_{combat_tag}", rows)
+        tag = f"fusion_{modality}_{args.selection}_{combat_tag}"
+        if representation != "wide":
+            tag = f"{tag}_{representation}"
+        _write_outputs(out_dir, tag, rows)
 
     log.info("tempo: %s", fmt_duration(time.monotonic() - t0))
     return 0

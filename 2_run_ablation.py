@@ -20,6 +20,10 @@ from sklearn.exceptions import ConvergenceWarning
 
 from ablation_analysis import prepare_ablation_df, summary_with_pooled
 from ablation_prep import ROI_FILTER_DEFAULT
+from ablation_representation import (
+    REPRESENTATIONS,
+    default_results_dir,
+)
 from ablation_runner import (
     MODALITIES,
     SELECTION_MODES,
@@ -148,6 +152,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--optuna-trials", type=int, default=30,
                    help="Trials Optuna por fold (--tuner optuna)")
     p.add_argument(
+        "--representation",
+        choices=REPRESENTATIONS,
+        default="wide",
+        help="wide=T1+T2+T3 | t1_only=só baseline | t1_deltas=T1+D21+D31+D32 | deltas_only | t1_deltas_rel",
+    )
+    p.add_argument(
         "--log-file",
         type=Path,
         default=None,
@@ -175,9 +185,12 @@ def main(argv: list[str] | None = None) -> int:
     models = _split_csv(args.models)
 
     base_dir = Path(f"csvs/longitudinal_4_groups/ablation/{args.roi}")
+    representation = args.representation
 
-    if len(modalities) == 1 and args.results_dir is None:
-        results_dir = Path(f"csvs/longitudinal_4_groups/ablation_results/{modalities[0]}")
+    if args.results_dir is None and len(modalities) == 1:
+        results_dir = default_results_dir(
+            base_dir, modalities[0], representation, protocol="abs",
+        )
     else:
         results_dir = args.results_dir
 
@@ -199,6 +212,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     log.info("=== ablação nested CV ===")
+    log.info("representação:%s", representation)
     log.info("modalidades:  %s", modalities)
     log.info("tasks:        %s", tasks)
     log.info("seleção:      %s", selection_modes)
@@ -236,6 +250,7 @@ def main(argv: list[str] | None = None) -> int:
             stable_pool_l1_c=args.stable_l1_c,
             tuner=args.tuner,
             optuna_trials=args.optuna_trials,
+            representation=representation,
         )
     except Exception:
         elapsed = time.monotonic() - t0
@@ -247,7 +262,8 @@ def main(argv: list[str] | None = None) -> int:
     summary = summary_with_pooled(df)
 
     out_dirs = {results_dir} if results_dir else {
-        Path(f"csvs/longitudinal_4_groups/ablation_results/{m}") for m in modalities
+        default_results_dir(base_dir, m, representation, protocol="abs")
+        for m in modalities
     }
     for d in sorted(out_dirs, key=str):
         log.info("csv: %s", d / "ablation_results_all.csv")

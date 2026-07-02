@@ -13,9 +13,10 @@ import pandas as pd
 from sklearn.metrics import roc_auc_score
 
 CONFIG_COLS = ("task", "modality", "model_key", "with_combat", "selection_mode")
-FEAT_RE = re.compile(r"^hippocampus_([LR])_(T[123]|D21|D31|SLOPE)_(.+)$")
+FEAT_RE = re.compile(r"^hippocampus_([LR])_(T[123]|D21|D31|D32|SLOPE)_(.+)$")
 TIME_ORDER = ("T1", "T2", "T3")
-DELTA_TIME_ORDER = ("T1", "D21", "D31", "SLOPE")
+DELTA_TIME_ORDER = ("T1", "D21", "D31", "D32")
+DELTA_TIME_ORDER_LEGACY = ("T1", "D21", "D31", "SLOPE")
 LINE_PALETTE = (
     "#4477AA",
     "#EE6677",
@@ -55,7 +56,7 @@ def parse_feature(name: str) -> tuple[str, str, str] | None:
 
 
 def anatomical_key(name: str) -> str:
-    """Colapsa T1/T2/T3/D21/D31/SLOPE: hippocampus_L_T2_gm_norm → hippocampus_L_gm_norm."""
+    """Colapsa T1/T2/T3/D21/D31/D32/SLOPE: hippocampus_L_T2_gm_norm → hippocampus_L_gm_norm."""
     parsed = parse_feature(name)
     if parsed is None:
         return name
@@ -361,8 +362,8 @@ def feature_freq_table_grouped(
 
 def _time_order_for_names(names: list[str]) -> tuple[str, ...]:
     tokens = {parse_feature(n)[1] for n in names if parse_feature(n) is not None}
-    if tokens & set(DELTA_TIME_ORDER[1:]):
-        return DELTA_TIME_ORDER
+    if tokens & (set(DELTA_TIME_ORDER[1:]) | set(DELTA_TIME_ORDER_LEGACY[1:])):
+        return DELTA_TIME_ORDER if "D32" in tokens else DELTA_TIME_ORDER_LEGACY
     return TIME_ORDER
 
 
@@ -395,7 +396,9 @@ def filter_temporally_stable(
     if grp.empty:
         return grp.copy()
     if time_order is None:
-        time_order = DELTA_TIME_ORDER if "pct_D21" in grp.columns else TIME_ORDER
+        time_order = DELTA_TIME_ORDER if "pct_D32" in grp.columns else (
+            DELTA_TIME_ORDER_LEGACY if "pct_SLOPE" in grp.columns else TIME_ORDER
+        )
     n = count_stable_timepoints(grp, min_pct=min_pct, time_order=time_order)
     return grp.loc[n >= min_timepoints].reset_index(drop=True)
 
@@ -589,8 +592,8 @@ def selection_audit_report(
 
 def _time_order_from_freq(freq: pd.DataFrame) -> tuple[str, ...]:
     tokens = [c.removeprefix("pct_") for c in freq.columns if c.startswith("pct_")]
-    if set(tokens) & set(DELTA_TIME_ORDER[1:]):
-        return DELTA_TIME_ORDER
+    if set(tokens) & (set(DELTA_TIME_ORDER[1:]) | set(DELTA_TIME_ORDER_LEGACY[1:])):
+        return DELTA_TIME_ORDER if "D32" in tokens else DELTA_TIME_ORDER_LEGACY
     return TIME_ORDER
 
 

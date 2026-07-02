@@ -23,6 +23,12 @@ from ablation_prep import (
     modality_wide_columns,
     pivot_long_to_wide,
 )
+from ablation_representation import (
+    apply_representation_wide,
+    default_results_dir,
+    feature_columns_for_representation,
+    resolve_stable_pool_min_timepoints,
+)
 from imblearn.pipeline import Pipeline as ImbPipeline
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.ensemble import RandomForestClassifier
@@ -515,6 +521,8 @@ def wide_for_fold(
     with_combat: bool,
     fold_id: int,
     combat_quiet: bool = True,
+    representation: str = "wide",
+    roi: str = ROI_FILTER_DEFAULT,
 ) -> pd.DataFrame:
     pts = train_pts | test_pts
     sub = df_long[df_long["ID_PT"].astype(str).isin(pts)].copy()
@@ -528,7 +536,8 @@ def wide_for_fold(
             fold_id=fold_id,
             quiet=combat_quiet,
         )
-    return pivot_long_to_wide(sub)
+    wide = pivot_long_to_wide(sub)
+    return apply_representation_wide(wide, representation, roi=roi)
 
 
 def repeat_ids(r_repeats: int) -> range:
@@ -561,6 +570,7 @@ def nested_cv_ablation(
     tuner: str = "grid",
     optuna_trials: int = 30,
     verbose: bool = False,
+    representation: str = "wide",
 ) -> pd.DataFrame:
     pt = patient_labels_from_long(df_long, task)
     y = pt["y"].to_numpy(dtype=int)
@@ -588,12 +598,16 @@ def nested_cv_ablation(
             with_combat=with_combat,
             fold_id=fold,
             combat_quiet=combat_quiet,
+            representation=representation,
+            roi=roi,
         )
         wide = wide[wide["GROUP"].astype(str).isin(task.groups)].copy()
         wide["y"] = wide["GROUP"].map(task.label_map).astype(int)
 
         meta = {"ID_PT", "GROUP", "SEX", "y"}
-        feature_cols = modality_wide_columns(wide.columns, modality, roi=roi)
+        feature_cols = feature_columns_for_representation(
+            wide.columns, modality, roi=roi, representation=representation,
+        )
         if not feature_cols:
             raise ValueError(
                 f"Nenhuma coluna de feature para modalidade={modality!r} roi={roi!r}"
@@ -669,6 +683,7 @@ def nested_cv_ablation(
             selection_mode=selection_mode,
         )
         row = {
+            "representation": representation,
             "task": task.task_id,
             "with_combat": with_combat,
             "selection_mode": selection_mode,
@@ -713,10 +728,11 @@ def _results_dir_for_modality(
     base: Path,
     modality: str,
     results_dir: Path | str | None,
+    representation: str = "wide",
 ) -> Path:
-    if results_dir is not None:
-        return Path(results_dir)
-    return base.parent.parent / "ablation_results" / modality
+    return default_results_dir(
+        base, modality, representation, protocol="abs", results_dir=results_dir,
+    )
 
 
 def run_full_ablation_suite(
@@ -740,9 +756,14 @@ def run_full_ablation_suite(
     stable_pool_l1_c: float = STABLE_POOL_L1_C,
     tuner: str = "grid",
     optuna_trials: int = 30,
+    representation: str = "wide",
 ) -> pd.DataFrame:
     if not HAS_MRMR and {"mrmr", "mrmr_stable"} & set(selection_modes):
         raise ImportError("feature-engine necessário para modo mrmr: pip install feature-engine")
+
+    stable_pool_min_timepoints = resolve_stable_pool_min_timepoints(
+        representation, stable_pool_min_timepoints, log=log,
+    )
 
     base = Path(base_dir)
     all_results: list[pd.DataFrame] = []
@@ -759,7 +780,9 @@ def run_full_ablation_suite(
     t0 = time.monotonic()
 
     for modality in modalities:
-        out_dir = _results_dir_for_modality(base, modality, results_dir)
+        out_dir = _results_dir_for_modality(
+            base, modality, results_dir, representation=representation,
+        )
         out_dir.mkdir(parents=True, exist_ok=True)
         modality_results: list[pd.DataFrame] = []
 
@@ -819,6 +842,7 @@ def run_full_ablation_suite(
                                 tuner=tuner,
                                 optuna_trials=optuna_trials,
                                 verbose=verbose,
+                                representation=representation,
                             )
                             auc_mean = float(res["auc"].mean()) if "auc" in res.columns else float("nan")
                             log.info(

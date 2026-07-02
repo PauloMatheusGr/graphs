@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 
-# python 2_run_ablation_deltas.py --modality vol,shape,texture,all --tasks smci_pmci \
-#   --selection raw --models svm,logreg_l1,elasticnet --combat false --repeats 10
+# python 2_run_ablation_deltas.py --modality disp,vol --tasks smci_pmci \
+#   --representation t1_deltas --selection l1_stable --models logreg_l1,elasticnet \
+#   --combat false --repeats 10 --tuner optuna --optuna-trials 30
 #
-# Seleção embarcada (L1/ElasticNet): --selection raw --models logreg_l1 ou elasticnet
-# (preselect ignorado; coef ≠ 0 = features selecionadas)
+# Dinâmica pura (sem T1): --representation deltas_only
+# Legado relativo+SLOPE: --representation t1_deltas_rel
 
-
-
-"""Nested CV ablation com T1 + deltas relativos (D21, D31, SLOPE)."""
+"""Nested CV ablation: T1 + deltas absolutos D21/D31/D32 (default) ou só dinâmica."""
 
 from __future__ import annotations
 
@@ -25,6 +24,11 @@ from sklearn.exceptions import ConvergenceWarning
 from ablation_analysis import prepare_ablation_df, summary_with_pooled
 from ablation_deltas import PROTOCOL_T1_DELTAS
 from ablation_prep import ROI_FILTER_DEFAULT
+from ablation_representation import (
+    DELTA_REPRESENTATIONS,
+    default_results_dir,
+    resolve_stable_pool_min_timepoints,
+)
 from ablation_runner import (
     MODALITIES,
     SELECTION_MODES,
@@ -110,14 +114,19 @@ def setup_logging(*, log_file: Path | None, verbose: bool) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    delta_repr = tuple(sorted(DELTA_REPRESENTATIONS))
     p = argparse.ArgumentParser(
-        description="Ablação nested CV com T1 + deltas relativos (D21, D31, SLOPE).",
+        description="Ablação nested CV com deltas absolutos D21/D31/D32 (+T1 opcional).",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    p.add_argument("--modality", default="all")
-    p.add_argument("--tasks", default="all")
+    p.add_argument("--modality", default="disp,vol")
+    p.add_argument("--tasks", default="smci_pmci")
     p.add_argument("--selection", default="l1_stable")
-    p.add_argument("--models", default="svm,logreg_l1,elasticnet", help="svm,rf,mlp,logreg_l1,elasticnet,...")
+    p.add_argument(
+        "--models",
+        default="logreg_l1,elasticnet,svm",
+        help="logreg_l1/elasticnet recomendados para deltas",
+    )
     p.add_argument("--combat", default="false", type=_parse_combat)
     p.add_argument("--repeats", "-r", type=int, default=10)
     p.add_argument("--seed", type=int, default=42)
@@ -129,13 +138,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="Override pasta de saída (default: ablation_results_deltas/{modality})",
     )
     p.add_argument("--stable-pool-min-pct", type=int, default=STABLE_POOL_MIN_PCT)
-    p.add_argument("--stable-pool-min-timepoints", type=int, default=STABLE_POOL_MIN_TIMEPOINTS,
-                   help="0 = sem filtro temporal no pool")
+    p.add_argument(
+        "--stable-pool-min-timepoints",
+        type=int,
+        default=0,
+        help="0 recomendado para deltas (default); legado abs=2",
+    )
     p.add_argument("--stable-pool-n", type=int, default=STABLE_POOL_N_FEATURES)
     p.add_argument("--stable-bootstrap", type=int, default=STABLE_POOL_BOOTSTRAP)
     p.add_argument("--stable-l1-c", type=float, default=STABLE_POOL_L1_C)
-    p.add_argument("--tuner", choices=["grid", "optuna"], default="grid")
+    p.add_argument("--tuner", choices=["grid", "optuna"], default="optuna")
     p.add_argument("--optuna-trials", type=int, default=30)
+    p.add_argument(
+        "--representation",
+        choices=delta_repr,
+        default="t1_deltas",
+        help="t1_deltas=T1+D21+D31+D32 (abs) | deltas_only | t1_deltas_rel (legado)",
+    )
     p.add_argument("--log-file", type=Path, default=None)
     p.add_argument("--no-log-file", action="store_true")
     p.add_argument("-v", "--verbose", action="store_true")
@@ -150,9 +169,15 @@ def main(argv: list[str] | None = None) -> int:
     models = _split_csv(args.models)
 
     base_dir = Path(f"csvs/longitudinal_4_groups/ablation/{args.roi}")
+    representation = args.representation
+    stable_pool_min_timepoints = resolve_stable_pool_min_timepoints(
+        representation, args.stable_pool_min_timepoints, log=log,
+    )
 
-    if len(modalities) == 1 and args.results_dir is None:
-        results_dir = Path(f"csvs/longitudinal_4_groups/ablation_results_deltas/{modalities[0]}")
+    if args.results_dir is None and len(modalities) == 1:
+        results_dir = default_results_dir(
+            base_dir, modalities[0], representation, protocol="abs",
+        )
     else:
         results_dir = args.results_dir
 
@@ -174,11 +199,13 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     log.info("=== ablação nested CV (%s) ===", PROTOCOL_T1_DELTAS)
+    log.info("representação:%s", representation)
     log.info("modalidades:  %s", modalities)
     log.info("tasks:        %s", tasks)
     log.info("seleção:      %s", selection_modes)
     log.info("modelos:      %s", models)
     log.info("combat:       %s", args.combat)
+    log.info("pool min_tp:  %s", stable_pool_min_timepoints)
     log.info("repetições:   %s", args.repeats)
     log.info("jobs totais:  %d", total_jobs)
     log.info("base:         %s", base_dir)
@@ -202,12 +229,13 @@ def main(argv: list[str] | None = None) -> int:
             verbose=args.verbose,
             combat_quiet=True,
             stable_pool_min_pct=args.stable_pool_min_pct,
-            stable_pool_min_timepoints=args.stable_pool_min_timepoints,
+            stable_pool_min_timepoints=stable_pool_min_timepoints,
             stable_pool_n_features=args.stable_pool_n,
             stable_pool_bootstrap=args.stable_bootstrap,
             stable_pool_l1_c=args.stable_l1_c,
             tuner=args.tuner,
             optuna_trials=args.optuna_trials,
+            representation=representation,
         )
     except Exception:
         elapsed = time.monotonic() - t0
@@ -219,15 +247,24 @@ def main(argv: list[str] | None = None) -> int:
     summary = summary_with_pooled(df)
 
     out_dirs = {results_dir} if results_dir else {
-        Path(f"csvs/longitudinal_4_groups/ablation_results_deltas/{m}") for m in modalities
+        default_results_dir(base_dir, m, representation, protocol="abs")
+        for m in modalities
     }
     for d in sorted(out_dirs, key=str):
         log.info("csv: %s", d / "ablation_results_all.csv")
         log.info("csv: %s", d / "ablation_summary.csv")
 
     cols = [
-        "selection_mode", "task", "modality", "model_key", "with_combat",
-        "n_features_mean", "auc_mean", "auc_std", "auc_pooled",
+        "representation",
+        "selection_mode",
+        "task",
+        "modality",
+        "model_key",
+        "with_combat",
+        "n_features_mean",
+        "auc_mean",
+        "auc_std",
+        "auc_pooled",
     ]
     cols = [c for c in cols if c in summary.columns]
     avg_job = elapsed / total_jobs if total_jobs else 0
@@ -239,7 +276,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     log.info("%d linhas | %d configs", len(df), len(summary))
     log.info("\n%s", summary[cols].to_string(index=False))
-    log.info("análise: 3_results.ipynb (RESULTS_ROOT=ablation_results_deltas)")
+    log.info("análise: 3_results.ipynb")
     return 0
 
 

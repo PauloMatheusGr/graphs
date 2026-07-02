@@ -171,7 +171,7 @@ def _select_texture_wide_columns(columns: list[str], roi: str) -> list[str]:
 
 
 def _select_disp_wide_columns(columns: list[str], roi: str) -> list[str]:
-    pat = wide_feat_regex(roi)
+    pat = re.compile(rf"^{re.escape(roi)}_[LR]_T[123]_(.+)$")
 
     def keep(feat: str) -> bool:
         if any(feat.startswith(p) for p in DISP_PREFIX_DROP):
@@ -188,29 +188,45 @@ def _select_disp_wide_columns(columns: list[str], roi: str) -> list[str]:
     return out
 
 
+def _filter_timepoint_columns(
+    columns: list[str],
+    *,
+    roi: str,
+    timepoints: tuple[str, ...],
+) -> list[str]:
+    if timepoints == ("T1", "T2", "T3"):
+        return columns
+    tp_pat = "|".join(re.escape(t) for t in timepoints)
+    pat = re.compile(rf"^{re.escape(roi)}_[LR]_({tp_pat})_")
+    return [c for c in columns if pat.match(c)]
+
+
 def modality_wide_columns(
     columns: list[str] | pd.Index,
     modality: str,
     *,
     roi: str = ROI_FILTER_DEFAULT,
+    timepoints: tuple[str, ...] = ("T1", "T2", "T3"),
 ) -> list[str]:
     """Mesmas colunas de feature que export_ablation_datasets grava em *_wide.csv."""
     cols = list(columns)
     if modality == "vol":
-        return _select_vol_wide_columns(cols, roi)
-    if modality == "shape":
-        return _select_shape_wide_columns(cols, roi)
-    if modality == "texture":
-        return _select_texture_wide_columns(cols, roi)
-    if modality == "disp":
-        return _select_disp_wide_columns(cols, roi)
-    if modality == "all":
+        out = _select_vol_wide_columns(cols, roi)
+    elif modality == "shape":
+        out = _select_shape_wide_columns(cols, roi)
+    elif modality == "texture":
+        out = _select_texture_wide_columns(cols, roi)
+    elif modality == "disp":
+        out = _select_disp_wide_columns(cols, roi)
+    elif modality == "all":
         out = _select_vol_wide_columns(cols, roi)
         out += _select_shape_wide_columns(cols, roi)
         out += _select_texture_wide_columns(cols, roi)
         out += _select_disp_wide_columns(cols, roi)
-        return list(dict.fromkeys(out))
-    raise ValueError(f"modalidade desconhecida: {modality}")
+        out = list(dict.fromkeys(out))
+    else:
+        raise ValueError(f"modalidade desconhecida: {modality}")
+    return _filter_timepoint_columns(out, roi=roi, timepoints=timepoints)
 
 
 def shape_long_from_rad_long(df_rad_long: pd.DataFrame) -> pd.DataFrame:
