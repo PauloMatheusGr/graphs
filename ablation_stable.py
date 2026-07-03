@@ -59,7 +59,8 @@ def l1_selected_feature_names(
         penalty="l1",
         solver="saga",
         C=float(C),
-        max_iter=5000,
+        max_iter=10000,
+        tol=1e-3,
         random_state=seed,
     )
     clf.fit(X_arr, y)

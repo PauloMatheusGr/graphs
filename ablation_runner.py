@@ -403,7 +403,8 @@ def make_classifier(model_key: str, *, seed: int):
             penalty="elasticnet",
             solver="saga",
             l1_ratio=0.5,
-            max_iter=5000,
+            max_iter=10000,
+            tol=1e-3,
             random_state=seed,
         ),
     }

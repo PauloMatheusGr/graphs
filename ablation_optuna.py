@@ -81,7 +81,7 @@ def suggest_sklearn_params(
         )
 
     if model_key == "logreg_l1":
-        params["clf__C"] = trial.suggest_float("clf__C", 1e-4, 1e4, log=True)
+        params["clf__C"] = trial.suggest_float("clf__C", 1e-3, 1e2, log=True)
         params["clf__class_weight"] = trial.suggest_categorical(
             "clf__class_weight", [None, "balanced"]
         )

@@ -155,12 +155,7 @@ Saída: `csvs/longitudinal_4_groups/ablation_results_clinic_img/`
 Default do script: `--selection raw,l1_stable` (dois modos numa execução). Nos runs abaixo: só `l1_stable`.
 
 ```bash
-python 2_run_ablation.py --modality vol,shape,texture,disp,all --tasks smci_pmci \
-  --selection l1_stable --models svm,rf,logreg_l1,elasticnet \
-  --combat false --repeats 10 \
-  --tuner optuna --optuna-trials 30 \
-  --stable-pool-n 200 --stable-pool-min-pct 50 --stable-pool-min-timepoints 2 \
-  --stable-bootstrap 50 --stable-l1-c 0.1
+python 2_run_ablation.py --representation wide   --modality vol,shape,texture,disp,all   --tasks cn_ad,cn_pmci,smci_pmci,smci_ad --selection l1_stable --models svm,rf,xgb,elasticnet,logreg_l1 --combat both --repeats 10 --tuner optuna --optuna-trials 20 --stable-pool-n 200 --stable-pool-min-pct 0 --stable-pool-min-timepoints 0 --stable-bootstrap 50 --stable-l1-c 0.1
 ```
 
 Grade fixa (reproduzir runs antigos):
