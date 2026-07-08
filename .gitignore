@@ -11,3 +11,5 @@ colab/logs_*/
 .cursor/
 docs/
 logs/
+artigo/
+output/
