@@ -142,6 +142,14 @@ def filter_ablation_config(
     return out.sort_values(["repeat_id", "fold"]).reset_index(drop=True)
 
 
+def patient_mean_predictions(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
+    """Uma predição por paciente (média entre avaliações externas); alinha com 4_stats."""
+    pat = explode_patient_predictions(df).groupby("ID_PT", as_index=False).agg(
+        y=("y", "first"), score=("score", "mean")
+    )
+    return pat["y"].to_numpy(dtype=int), pat["score"].to_numpy(dtype=float)
+
+
 def pooled_predictions(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
     if "test_y_true" not in df.columns or "test_scores" not in df.columns:
         raise KeyError("Colunas test_y_true / test_scores ausentes — rode ablation_runner atualizado.")
@@ -159,6 +167,14 @@ def pooled_predictions(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
 
 def pooled_auc(df: pd.DataFrame) -> float:
     y, s = pooled_predictions(df)
+    return float(roc_auc_score(y, s))
+
+
+def patient_mean_auc(df: pd.DataFrame) -> float:
+    """AUC após média de escore OOF por paciente (1 linha / ID_PT)."""
+    y, s = patient_mean_predictions(df)
+    if len(np.unique(y)) < 2:
+        raise ValueError("AUC patient-mean requer ambas as classes.")
     return float(roc_auc_score(y, s))
 
 
@@ -752,7 +768,7 @@ def plot_compare_stability(
 
 
 def summary_with_pooled(df: pd.DataFrame) -> pd.DataFrame:
-    """Resumo por configuração com AUC média dos folds e AUC pooled."""
+    """Resumo por configuração: AUC patient-mean (primário), pooled e média por fold."""
     df = prepare_ablation_df(df)
     group_cols = [c for c in CONFIG_COLS if c in df.columns]
     if "modality_label" in df.columns:
@@ -770,6 +786,7 @@ def summary_with_pooled(df: pd.DataFrame) -> pd.DataFrame:
         row["auc_mean"] = float(grp["auc"].mean())
         row["auc_std"] = float(grp["auc"].std(ddof=0))
         row["auc_pooled"] = pooled_auc(grp)
+        row["auc_patient_mean"] = patient_mean_auc(grp)
         row["n_features_mean"] = float(grp["n_features_selected"].mean())
         for col in METRIC_COLS:
             if col in grp.columns and col != "auc":
@@ -778,7 +795,9 @@ def summary_with_pooled(df: pd.DataFrame) -> pd.DataFrame:
         rows.append(row)
 
     out = pd.DataFrame(rows)
-    return out.sort_values("auc_pooled", ascending=False).reset_index(drop=True)
+    # primário alinhado a ROC / 4_stats; pooled permanece como coluna de sensibilidade
+    sort_col = "auc_patient_mean" if "auc_patient_mean" in out.columns else "auc_pooled"
+    return out.sort_values(sort_col, ascending=False).reset_index(drop=True)
 
 
 def plot_feature_stability(
@@ -862,6 +881,7 @@ if __name__ == "__main__":
     assert grp.loc[grp["feature_group"] == "hippocampus_L_gm_norm", "pct_T1"].iloc[0] == 100
     assert grp.loc[grp["feature_group"] == "hippocampus_L_gm_norm", "pct_T3"].iloc[0] == 50
     assert pooled_auc(demo) == 1.0
+    assert patient_mean_auc(demo) == 1.0
     demo_grp = pd.DataFrame(
         [
             {"feature_short": "R | wm_norm", "pct_T1": 12, "pct_T2": 100, "pct_T3": 24},

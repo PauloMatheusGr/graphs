@@ -158,6 +158,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="wide=T1+T2+T3 | t1_only=só baseline | t1_deltas=T1+D21+D31+D32 | deltas_only | t1_deltas_rel",
     )
     p.add_argument(
+        "--exclude-features",
+        default="",
+        help=(
+            "Atributos long a excluir (vírgula). Match exacto ou sufixo wide "
+            "(ex: strain_fro_variance,strain_fro_skewness,strain_fro_kurtosis)"
+        ),
+    )
+    p.add_argument(
         "--log-file",
         type=Path,
         default=None,
@@ -183,6 +191,7 @@ def main(argv: list[str] | None = None) -> int:
     tasks = _parse_tasks(args.tasks)
     selection_modes = _parse_selection(args.selection)
     models = _split_csv(args.models)
+    exclude_features = _split_csv(args.exclude_features)
 
     base_dir = Path(f"csvs/longitudinal_4_groups/ablation/{args.roi}")
     representation = args.representation
@@ -221,6 +230,8 @@ def main(argv: list[str] | None = None) -> int:
     log.info("tuner:        %s", args.tuner)
     if args.tuner == "optuna":
         log.info("optuna trials:%d", args.optuna_trials)
+    if exclude_features:
+        log.info("exclude-feat: %s", exclude_features)
     log.info("repetições:   %s", args.repeats)
     log.info("jobs totais:  %d", total_jobs)
     log.info("base:         %s", base_dir)
@@ -251,6 +262,7 @@ def main(argv: list[str] | None = None) -> int:
             tuner=args.tuner,
             optuna_trials=args.optuna_trials,
             representation=representation,
+            exclude_features=exclude_features,
         )
     except Exception:
         elapsed = time.monotonic() - t0
@@ -271,7 +283,7 @@ def main(argv: list[str] | None = None) -> int:
 
     cols = [
         "selection_mode", "task", "modality", "model_key", "with_combat",
-        "n_features_mean", "auc_mean", "auc_std", "auc_pooled",
+        "n_features_mean", "auc_mean", "auc_std", "auc_patient_mean", "auc_pooled",
     ]
     cols = [c for c in cols if c in summary.columns]
     avg_job = elapsed / total_jobs if total_jobs else 0

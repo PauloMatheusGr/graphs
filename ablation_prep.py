@@ -229,6 +229,37 @@ def modality_wide_columns(
     return _filter_timepoint_columns(out, roi=roi, timepoints=timepoints)
 
 
+def columns_matching_exclude(
+    columns: list[str] | pd.Index,
+    exclude_features: tuple[str, ...] | list[str] | None,
+) -> list[str]:
+    """Match exact long names or wide suffixes (…_token); never meta columns."""
+    if not exclude_features:
+        return []
+    out: list[str] = []
+    for c in columns:
+        if c in META_COLS_WIDE:
+            continue
+        for ex in exclude_features:
+            if not ex:
+                continue
+            if c == ex or c.endswith("_" + ex) or ex.endswith("_" + c):
+                out.append(c)
+                break
+    return out
+
+
+def drop_excluded_feature_columns(
+    df: pd.DataFrame,
+    exclude_features: tuple[str, ...] | list[str] | None,
+) -> tuple[pd.DataFrame, list[str]]:
+    """Drop long/wide feature columns matching exclude tokens. Returns (df, dropped)."""
+    drop = columns_matching_exclude(df.columns, exclude_features)
+    if not drop:
+        return df, []
+    return df.drop(columns=drop), drop
+
+
 def shape_long_from_rad_long(df_rad_long: pd.DataFrame) -> pd.DataFrame:
     meta = [c for c in df_rad_long.columns if c in META_COLS_WIDE or c in ("ID_IMG",)]
     feat = [c for c in df_rad_long.columns if SHAPE_RE.match(c)]
@@ -346,13 +377,41 @@ def export_ablation_datasets(
 
 
 if __name__ == "__main__":
-    # ponytail: smoke — shape long deve ter 14 original_shape_* por ROI hipocampo
+    # ponytail: smoke — shape long + exclude-features matching
     import sys
+
+    demo = pd.DataFrame(
+        columns=[
+            "ID_PT",
+            "strain_fro_mean",
+            "strain_fro_variance",
+            "strain_fro_skewness",
+            "strain_fro_kurtosis",
+            "hippocampus_L_T1_strain_fro_variance",
+        ]
+    )
+    hit = columns_matching_exclude(
+        demo.columns,
+        ("strain_fro_variance", "strain_fro_skewness", "strain_fro_kurtosis"),
+    )
+    assert hit == [
+        "strain_fro_variance",
+        "strain_fro_skewness",
+        "strain_fro_kurtosis",
+        "hippocampus_L_T1_strain_fro_variance",
+    ], hit
+    assert "ID_PT" not in hit
+    dropped_df, dropped = drop_excluded_feature_columns(
+        demo, ("strain_fro_variance", "strain_fro_skewness", "strain_fro_kurtosis"),
+    )
+    assert set(dropped) == set(hit)
+    assert "strain_fro_mean" in dropped_df.columns
+    print(f"ok: exclude-features matched {len(hit)} cols")
 
     base = Path("csvs/longitudinal_4_groups")
     rad_path = base / "ablation" / ROI_FILTER_DEFAULT / "rad_long.csv"
     if not rad_path.is_file():
-        print(f"pulando self-check: {rad_path} ausente (correr run_post_extract.py)")
+        print(f"pulando self-check shape: {rad_path} ausente")
         sys.exit(0)
     rad = pd.read_csv(rad_path, nrows=1)
     n_shape = sum(1 for c in rad.columns if SHAPE_RE.match(c))

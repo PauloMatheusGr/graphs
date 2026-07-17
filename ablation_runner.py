@@ -20,6 +20,7 @@ from ablation_stable import (
 )
 from ablation_prep import (
     ROI_FILTER_DEFAULT,
+    drop_excluded_feature_columns,
     modality_wide_columns,
     pivot_long_to_wide,
 )
@@ -758,6 +759,7 @@ def run_full_ablation_suite(
     tuner: str = "grid",
     optuna_trials: int = 30,
     representation: str = "wide",
+    exclude_features: tuple[str, ...] = (),
 ) -> pd.DataFrame:
     if not HAS_MRMR and {"mrmr", "mrmr_stable"} & set(selection_modes):
         raise ImportError("feature-engine necessário para modo mrmr: pip install feature-engine")
@@ -792,6 +794,20 @@ def run_full_ablation_suite(
             raise FileNotFoundError(f"Long CSV ausente: {long_path}")
         log.info("modalidade %s | long=%s", modality, long_path)
         df_long = pd.read_csv(long_path)
+        if exclude_features:
+            df_long, dropped = drop_excluded_feature_columns(df_long, exclude_features)
+            log.info(
+                "exclude-features: pediu=%s | dropou=%d %s",
+                exclude_features,
+                len(dropped),
+                dropped,
+            )
+            if not dropped:
+                log.warning(
+                    "exclude-features: nenhum match em %s (tokens=%s)",
+                    long_path.name,
+                    exclude_features,
+                )
 
         for task_id in tasks:
             task = TASKS[task_id]
