@@ -21,10 +21,10 @@ import numpy as np
 # CONFIG (edite aqui)
 # =========================
 
-ab = "longitudinal_window_4_groups"
+ab = "longitudinal_optimo_4_groups"
 # ab = "longitudinal_4_groups"
 
-IMAGES_CSV = "csvs/adnimerged_longitudinal_window_extremos.csv"
+IMAGES_CSV = "csvs/adnimerged_longitudinal_optimo.csv"
 # IMAGES_CSV = "csvs/adnimerged_longitudinal.csv"
 REGIONS_DIR = "./images/regions"
 SEG_DIR = "./images/seg"

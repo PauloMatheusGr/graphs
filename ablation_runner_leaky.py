@@ -26,13 +26,12 @@ import re
 from ablation_analysis import estimate_stable_pool_columns, summary_with_pooled
 from ablation_harmonize import harmonize_long_fold, image_ids_for_patients
 from ablation_prep import (
-    DISP_PREFIX_DROP,
-    DISP_STAT_DROP,
+    DISP_FEATURE_SUFFIXES,
     META_COLS_WIDE,
     ROI_FILTER_DEFAULT,
-    SHAPE_RE,
+    SHAPE_FEATURE_SUFFIXES,
     SLOT_ORDER,
-    TEXTURE_RE,
+    TEXTURE_FEATURE_SUFFIXES,
     VOL_FEATURE_SUFFIXES,
     pivot_long_to_wide,
 )
@@ -103,17 +102,13 @@ def modality_collapsed_columns(
         return f in VOL_FEATURE_SUFFIXES
 
     def keep_shape(f: str) -> bool:
-        return bool(SHAPE_RE.match(f))
+        return f in SHAPE_FEATURE_SUFFIXES
 
     def keep_texture(f: str) -> bool:
-        return bool(TEXTURE_RE.search(f))
+        return f in TEXTURE_FEATURE_SUFFIXES
 
     def keep_disp(f: str) -> bool:
-        if any(f.startswith(p) for p in DISP_PREFIX_DROP):
-            return False
-        if any(f.endswith(s) for s in DISP_STAT_DROP):
-            return False
-        return True
+        return f in DISP_FEATURE_SUFFIXES
 
     keepers = {
         "vol": keep_vol,

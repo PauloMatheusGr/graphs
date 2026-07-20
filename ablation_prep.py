@@ -57,16 +57,52 @@ VOL_FEAT_COLS = [
     "tissues_norm",
 ]
 
+# ---------------------------------------------------------------------------
+# Allowlists por modalidade (o que ENTRA no classificador).
+# Ajuste 2026-07: candidatas enxutas (lit. AD/MCI + bloco artigo DVF).
+# O CSV long continua completo; o corte é só em modality_wide_columns / deltas.
+# Antes: shape/texture = regex “tudo”; disp = denylist larga (DISP_*_DROP).
+# ---------------------------------------------------------------------------
+
 VOL_FEATURE_SUFFIXES = {
     "gm_norm",
     "wm_norm",
     "csf_norm",
 }
 
+# Shape: volume/forma clássicos; fora = diâmetros max, eixos menores redundantes.
+SHAPE_FEATURE_SUFFIXES = {
+    "original_shape_MeshVolume",
+    "original_shape_SurfaceArea",
+    "original_shape_SurfaceVolumeRatio",
+    "original_shape_Sphericity",
+    "original_shape_Elongation",
+    "original_shape_Flatness",
+}
+
+# Texture: só GLCM canónico; fora = gldm/glrlm/glszm/ngtdm e resto do GLCM.
+TEXTURE_FEATURE_SUFFIXES = {
+    "original_glcm_Contrast",
+    "original_glcm_Correlation",
+    "original_glcm_Idm",
+    "original_glcm_JointEntropy",
+}
+
+# Disp: momentos logjac + strain_fro (artigo); fora = ux/uy/uz, mag, percentis, etc.
+DISP_FEATURE_SUFFIXES = {
+    "logjac_mean",
+    "logjac_std",
+    "logjac_skewness",
+    "logjac_kurtosis",
+    "strain_fro_mean",
+    "strain_fro_std",
+    "strain_fro_skewness",
+    "strain_fro_kurtosis",
+}
+
+# Legado: ainda usados em shape_long_from_rad_long / smoke; não definem ablação.
 SHAPE_RE = re.compile(r"^original_shape_")
-
 TEXTURE_RE = re.compile(r"original_(glcm|gldm|glrlm|glszm|ngtdm)_")
-
 DISP_PREFIX_DROP = (
     "centroid_",
     "ux_",
@@ -85,7 +121,6 @@ DISP_PREFIX_DROP = (
     "strain_l2_",
     "strain_l3_",
 )
-
 DISP_STAT_DROP = ("_n", "_variance", "_p05", "_p50", "_p95")
 
 
@@ -160,30 +195,27 @@ def _select_shape_wide_columns(columns: list[str], roi: str) -> list[str]:
     out: list[str] = []
     for col in columns:
         m = pat.match(col)
-        if m and SHAPE_RE.match(m.group(1)):
+        if m and m.group(1) in SHAPE_FEATURE_SUFFIXES:
             out.append(col)
     return out
 
 
 def _select_texture_wide_columns(columns: list[str], roi: str) -> list[str]:
-    pat = wide_feat_regex(roi)
-    return [c for c in columns if pat.match(c) and TEXTURE_RE.search(c)]
+    pat = re.compile(rf"^{re.escape(roi)}_[LR]_T[123]_(.+)$")
+    out: list[str] = []
+    for col in columns:
+        m = pat.match(col)
+        if m and m.group(1) in TEXTURE_FEATURE_SUFFIXES:
+            out.append(col)
+    return out
 
 
 def _select_disp_wide_columns(columns: list[str], roi: str) -> list[str]:
     pat = re.compile(rf"^{re.escape(roi)}_[LR]_T[123]_(.+)$")
-
-    def keep(feat: str) -> bool:
-        if any(feat.startswith(p) for p in DISP_PREFIX_DROP):
-            return False
-        if any(feat.endswith(s) for s in DISP_STAT_DROP):
-            return False
-        return True
-
     out: list[str] = []
     for col in columns:
         m = pat.match(col)
-        if m and keep(m.group(1)):
+        if m and m.group(1) in DISP_FEATURE_SUFFIXES:
             out.append(col)
     return out
 
@@ -411,14 +443,43 @@ if __name__ == "__main__":
     base = Path("csvs/longitudinal_4_groups")
     rad_path = base / "ablation" / ROI_FILTER_DEFAULT / "rad_long.csv"
     if not rad_path.is_file():
-        print(f"pulando self-check shape: {rad_path} ausente")
+        print(f"pulando self-check shape/texture: {rad_path} ausente")
         sys.exit(0)
     rad = pd.read_csv(rad_path, nrows=1)
-    n_shape = sum(1 for c in rad.columns if SHAPE_RE.match(c))
-    assert n_shape == 14, f"esperado 14 shape cols, got {n_shape}"
-    wide_n = len(modality_wide_columns(
-        [f"hippocampus_L_T1_{c}" for c in rad.columns if SHAPE_RE.match(c)],
+    n_shape_all = sum(1 for c in rad.columns if SHAPE_RE.match(c))
+    shape_keep = [c for c in rad.columns if c in SHAPE_FEATURE_SUFFIXES]
+    tex_keep = [c for c in rad.columns if c in TEXTURE_FEATURE_SUFFIXES]
+    assert len(shape_keep) == len(SHAPE_FEATURE_SUFFIXES), (
+        f"allowlist shape incompleta no CSV: {shape_keep}"
+    )
+    assert len(tex_keep) == len(TEXTURE_FEATURE_SUFFIXES), (
+        f"allowlist texture incompleta no CSV: {tex_keep}"
+    )
+    shape_wide_n = len(modality_wide_columns(
+        [f"hippocampus_L_T1_{c}" for c in shape_keep],
         "shape",
     ))
-    assert wide_n == 14
-    print(f"ok: {n_shape} shape long, modality_wide_columns shape={wide_n}")
+    tex_wide_n = len(modality_wide_columns(
+        [f"hippocampus_L_T1_{c}" for c in tex_keep],
+        "texture",
+    ))
+    assert shape_wide_n == len(SHAPE_FEATURE_SUFFIXES)
+    assert tex_wide_n == len(TEXTURE_FEATURE_SUFFIXES)
+    # allowlist << set completo no long
+    assert shape_wide_n < n_shape_all
+    print(
+        f"ok: shape long={n_shape_all} → allowlist={shape_wide_n}; "
+        f"texture allowlist={tex_wide_n}"
+    )
+
+    disp_path = base / "ablation" / ROI_FILTER_DEFAULT / "disp_long.csv"
+    if disp_path.is_file():
+        disp = pd.read_csv(disp_path, nrows=1)
+        disp_keep = [c for c in disp.columns if c in DISP_FEATURE_SUFFIXES]
+        assert len(disp_keep) == len(DISP_FEATURE_SUFFIXES), disp_keep
+        disp_wide_n = len(modality_wide_columns(
+            [f"hippocampus_L_T1_{c}" for c in disp_keep],
+            "disp",
+        ))
+        assert disp_wide_n == len(DISP_FEATURE_SUFFIXES)
+        print(f"ok: disp allowlist={disp_wide_n}")

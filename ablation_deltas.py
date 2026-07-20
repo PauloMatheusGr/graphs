@@ -9,11 +9,10 @@ import numpy as np
 import pandas as pd
 
 from ablation_prep import (
-    DISP_PREFIX_DROP,
-    DISP_STAT_DROP,
+    DISP_FEATURE_SUFFIXES,
     ROI_FILTER_DEFAULT,
-    SHAPE_RE,
-    TEXTURE_RE,
+    SHAPE_FEATURE_SUFFIXES,
+    TEXTURE_FEATURE_SUFFIXES,
     VOL_FEATURE_SUFFIXES,
     modality_wide_columns as modality_wide_columns_absolute,
 )
@@ -182,7 +181,7 @@ def _select_shape_delta(
     return _select_delta_columns(
         columns,
         roi,
-        feat_keep=lambda f: bool(SHAPE_RE.match(f)),
+        feat_keep=lambda f: f in SHAPE_FEATURE_SUFFIXES,
         feature_tokens=feature_tokens,
     )
 
@@ -196,7 +195,7 @@ def _select_texture_delta(
     return _select_delta_columns(
         columns,
         roi,
-        feat_keep=lambda f: bool(TEXTURE_RE.search(f)),
+        feat_keep=lambda f: f in TEXTURE_FEATURE_SUFFIXES,
         feature_tokens=feature_tokens,
     )
 
@@ -207,17 +206,10 @@ def _select_disp_delta(
     *,
     feature_tokens: tuple[str, ...],
 ) -> list[str]:
-    def keep(feat: str) -> bool:
-        if any(feat.startswith(p) for p in DISP_PREFIX_DROP):
-            return False
-        if any(feat.endswith(s) for s in DISP_STAT_DROP):
-            return False
-        return True
-
     return _select_delta_columns(
         columns,
         roi,
-        feat_keep=keep,
+        feat_keep=lambda f: f in DISP_FEATURE_SUFFIXES,
         feature_tokens=feature_tokens,
     )
 

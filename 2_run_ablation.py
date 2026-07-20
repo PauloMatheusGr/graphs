@@ -134,6 +134,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--roi", default=ROI_FILTER_DEFAULT)
     p.add_argument(
+        "--base-dir",
+        type=Path,
+        default=None,
+        help="Pasta com *_long.csv (default: csvs/longitudinal_4_groups/ablation/{roi})",
+    )
+    p.add_argument(
         "--results-dir",
         type=Path,
         default=None,
@@ -193,7 +199,7 @@ def main(argv: list[str] | None = None) -> int:
     models = _split_csv(args.models)
     exclude_features = _split_csv(args.exclude_features)
 
-    base_dir = Path(f"csvs/longitudinal_4_groups/ablation/{args.roi}")
+    base_dir = args.base_dir or Path(f"csvs/longitudinal_4_groups/ablation/{args.roi}")
     representation = args.representation
 
     if args.results_dir is None and len(modalities) == 1:
