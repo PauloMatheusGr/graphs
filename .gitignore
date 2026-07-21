@@ -11,4 +11,5 @@ colab/logs_*/
 .cursor/
 docs/
 logs/
-artigo/
+artigo/graphics/
+artigo/tables/

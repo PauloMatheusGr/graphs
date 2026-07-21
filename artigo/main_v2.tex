@@ -1,0 +1,751 @@
+\documentclass[review]{elsarticle}
+%\documentclass[3p,times,twocolumn,authoryear]{elsarticle}
+
+\usepackage{amssymb}
+\usepackage{multirow}
+\usepackage{booktabs}
+\usepackage[colorlinks,urlcolor=blue]{hyperref}
+\usepackage{subfig}
+\usepackage{scalefnt}
+\usepackage[brazilian]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{units}
+\usepackage{url}
+\usepackage{amsbsy}
+\usepackage{amstext}
+\usepackage{graphicx}
+\usepackage{rotating}
+\usepackage{xcolor}
+\usepackage{float}
+\usepackage[section]{placeins} % impede floats de escaparem da seção
+\usepackage{verbatim} %comments
+\usepackage{apalike}
+\restylefloat{figure}
+\restylefloat{table}
+
+% Inserted by pgirardi
+\usepackage{amsmath}
+\usepackage[normalem]{ulem} % Para riscar o texto (\sout). O [normalem] evita que o \emph mude para sublinhado.
+\usepackage{seqsplit}
+\newcommand{\code}[1]{\texttt{\seqsplit{#1}}}
+
+% Define o comando \comentario{Texto do comentário}
+\newcommand{\sugestao}[1]{\textcolor{green!40!black}{#1}}
+
+% Uso: \corrigir{palavra errada}{palavra correta}
+\newcommand{\corrigir}[2]{%
+	\textcolor{red}{\sout{#1}} % Risca o primeiro argumento em vermelho
+	\textcolor{blue}{#2}% Escreve o segundo argumento em um verde visível
+}
+
+%%%%%%%%%%%%%%%
+
+\makeatletter
+
+\journal{Expert Systems with Applications}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% LyX specific LaTeX commands.
+%% Because html converters don't know tabularnewline
+%\providecommand{\tabularnewline}{\\}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% User specified LaTeX commands.
+
+\@ifundefined{showcaptionsetup}{}{%
+	\PassOptionsToPackage{caption=false}{subfig}}
+\usepackage{pdflscape}
+\@ifundefined{showcaptionsetup}{}{%
+	\PassOptionsToPackage{caption=false}{subfig}}
+\makeatother
+
+
+\begin{document}
+	\begin{frontmatter}
+		
+		\title{Longitudinal multi-feature hippocampal analysis for stable versus progressive mild cognitive impairment}
+		
+		\author[ufscar]{Paulo Matheus da Costa Girardi}
+		\ead{paulogirardi@estudante.ufscar.br}
+		
+		\author[ufscar]{Ricardo Jos\'e Ferrari\corref{cor1}}
+		\ead{rferrari@ufscar.br}
+		
+		\cortext[cor1]{Corresponding author}
+		
+		\address[ufscar]{Department of Computing, Federal University of S\~{a}o Carlos, Rod.\ Washington Luis, Km 235, 13565-905, S\~{a}o Carlos, SP, Brazil}
+		
+		\author[]{for the Alzheimer's Disease Neuroimaging Initiative\corref{adni}}
+		\cortext[adni]{Data used in preparation of this article were obtained from the Alzheimer's Disease Neuroimaging Initiative (ADNI) database (\url{adni.loni.usc.edu}). Investigators within ADNI contributed to the design and implementation of ADNI and/or provided data but did not participate in analysis or writing of this report. A complete listing of ADNI investigators is available at \url{http://adni.loni.usc.edu/wp-content/uploads/how_to_apply/ADNI_Acknowledgement_List.pdf}.}
+		
+		\begin{abstract}
+			
+			Distinguishing stable Mild Cognitive Impairment (sMCI) from progressive MCI (pMCI) is clinically relevant but remains challenging when structural Magnetic Resonance Imaging is used alone. We describe and evaluate a longitudinal pipeline for multivariate hippocampal features under a deliberately conservative cohort definition. The primary task used a fixed 36-month clinical observation window with three longitudinally spaced MRI predictors per participant ($T_1$, $T_2$, $T_3$), selected under a minimum inter-scan gap and an extremes-plus-equidistant rule rather than fixed ADNI visit labels. Outcome ascertainment used the same 36-month horizon. In progressive trajectories that would otherwise retain only two MCI-stage scans (MCI--MCI--AD), the first AD acquisition was kept solely in the last predictor slot so that complete triplets were not discarded ($n=52$ of 90 pMCI). Features from the three visits were aggregated in a wide patient-level representation and compared with first-visit-only imaging and clinical baselines. Patient-level nested cross-validation was used, with harmonization, filtering, scaling, feature selection, hyperparameter tuning, and decision-threshold estimation fitted from training data within the validation procedure. Image-wise preprocessing and feature extraction used fixed settings and were performed before cross-validation. In the pre-specified primary configuration (sMCI vs.\ pMCI, $n=243$), patient-level out-of-fold AUC was \textbf{0.680} (permutation $p<0.001$ versus chance). \corrigir{}{The complete wide longitudinal pipeline outperformed the corresponding $T_1$-only pipeline for volume ($\Delta$AUC $=+0.101$, two-sided bootstrap $p=0.012$, FDR $q=0.060$), with weaker two-sided contrasts for displacement ($\Delta$AUC $=+0.111$, $p=0.078$, $q=0.195$) and shape ($\Delta$AUC $=+0.055$, $p=0.128$, $q=0.213$); no modality retained $q<0.05$ after Benjamini--Hochberg correction across five tests. These contrasts compare representation-specific pipelines rather than isolating the causal contribution of follow-up visits under column-wise-identical selection.} Sensitivity analyses with elastic-net and fold-wise ComBat increased image-only AUC modestly (up to approximately 0.71) without changing the overall modality ranking. \corrigir{}{The contribution is an auditable evaluation design that exposes where longitudinal imaging, harmonization, feature families, and clinical fusion do or do not add predictive value under a common patient-level estimand. Besides providing a reproducible benchmark, the results support a decision-support design in which inexpensive clinical variables remain the first-line signal and hippocampal MRI is evaluated as a conditional structural adjunct rather than assumed to improve prediction.}
+			
+		\end{abstract}
+		
+		\begin{keyword}
+			Longitudinal MRI \sep hippocampus \sep Mild Cognitive Impairment \sep Radiomics \sep Machine Learning \sep Nested cross-validation \corrigir{}{\sep Reproducible machine learning \sep Clinical decision support}
+		\end{keyword}
+		
+	\end{frontmatter}
+	
+	% =============================================================================
+	\section{Introduction}
+	\label{sec:Introduction}
+	
+	Alzheimer's Disease (AD) and Mild Cognitive Impairment (MCI) lie on a continuum of cognitive decline \cite{petersen-1999}. Identifying which individuals with MCI will remain stable (sMCI) versus progress toward dementia (pMCI) is clinically relevant for trial enrichment, counselling, and early intervention planning \cite{petersen-2009}. Structural T1-weighted Magnetic Resonance Imaging (MRI) remains central to this problem, and hippocampal atrophy is among the most established imaging markers of neurodegeneration \cite{scheltens-1992}. At the sMCI/pMCI boundary, however, discrimination based on a single anatomical region is intrinsically difficult: group differences are subtle, conversion dynamics are heterogeneous, and structural change overlaps with normal ageing.
+	
+	A large body of work has therefore moved toward richer representations, including whole-brain morphometry, multimodal fusion with cognitive scores, radiomics, and longitudinal deep learning \cite{moradi-2015,ye-2012,zhang-2019,lin-2020,aghajanian-2025}. Reported area under the receiver operating characteristic curve (AUC) values can be high in such settings, but comparability across studies is limited. Cohorts, outcome definitions (e.g., ncMCI/cMCI, MCI-to-AD within a fixed horizon), spatial scale (whole brain versus regional ROI), temporal input (baseline only versus repeated visits), and validation design differ widely. In addition, many published pipelines apply harmonization, feature selection, hyperparameter tuning, or decision thresholds using information from the full dataset or from test partitions, and not all studies enforce strict patient-level splitting. Under these conditions, optimistic AUC estimates are difficult to interpret and may not reflect performance attainable under patient-level validation with fold-wise model fitting.
+	
+	This study addresses that gap with an end-to-end, auditable workflow for hippocampal feature extraction and prognostic classification on ADNI (ADNI-1/2/GO). The hippocampus was chosen deliberately as the most consolidated macroscopic atrophy feature in AD research, providing a focused test bed for longitudinal evaluation rather than claiming whole-brain prognostic coverage. Starting from raw T1 volumes, the pipeline combines preprocessing, quality control, parcellation, template-based registration, and extraction of volumetric, morphometric, textural, and displacement-field features within the hippocampus. Prognostic performance is evaluated under patient-level nested Cross-Validation (CV), with \corrigir{}{bootstrap-derived $\ell_1$ selection-frequency filtering} confined to training data in each outer fold and optional fold-wise ComBat harmonization treated as a sensitivity analysis. \corrigir{}{The methodological novelty lies in the evaluation architecture rather than in a new classifier: temporal eligibility, outcome ascertainment, patient-level splitting, fold-fitted operations, representation-specific selection, probability aggregation, and statistical comparisons are specified as an auditable chain. This design permits like-for-like evaluation of wide longitudinal, first-visit-only, clinical, and fused representations and identifies which apparently useful components remain informative after leakage controls and multiplicity correction.}
+	
+	\corrigir{}{The main contributions to reproducible machine-learning evaluation for longitudinal neuroimaging are:}
+	\begin{itemize}
+		\item \corrigir{}{an auditable protocol that separates MCI-stage predictor visits from outcome ascertainment and documents the fitting boundary of each sample-dependent operation under patient-level nested validation;}
+		
+		\item \corrigir{}{a controlled evaluation matrix spanning four hippocampal feature families, merged features, longitudinal versus first-visit representations, three classifier families, fold-wise harmonization, clinical predictors, and early fusion under a common patient-level AUC estimand;}
+		
+		\item \corrigir{}{an explicit audit of feature-selection frequency and inference beyond point estimates, including patient-level permutation tests, paired bootstrap confidence intervals, and false-discovery-rate correction;}
+		
+		\item \corrigir{}{decision-support evidence showing that clinical variables should remain the first-line prognostic signal in this cohort, while hippocampal MRI should be treated as a structural adjunct whose incremental value must be demonstrated rather than presumed.}
+	\end{itemize}
+	
+	The primary endpoint is binary classification of sMCI versus pMCI. The remainder of the paper is organized as follows: Section~\ref{sec:Material-and-Methods} describes the cohort, feature extraction, and validation protocols; Section~\ref{sec:Results} reports prognostic and comparative results, including literature contextualization; Section~\ref{sec:Discussions} discusses findings and limitations; Section~\ref{sec:Conclusions} concludes.
+	
+	%
+	% =============================================================================
+	\subsection{Related Works}
+	\label{subsec:Related-Works}
+	
+	Automated prediction of MCI stability or conversion has been studied with widely different feature sets, validation schemes, and outcome windows. In ADNI-based prognostic research, stable and progressive MCI are commonly denoted as ncMCI/cMCI or MCInc/MCIc, which are clinically analogous to sMCI and pMCI, respectively. Performance therefore depends not only on the classifier, but also on whether predictors are clinical, structural, multimodal, regional, or whole-brain, and on whether temporal information is limited to baseline or spans multiple follow-up visits.
+	
+	Several studies show that dense cognitive follow-up can be highly informative even without MRI. \citet{bucholc-2023} proposed a hybrid ensemble framework on the National Alzheimer's Coordinating Center (NACC) cohort to predict conversion from MCI to dementia using longitudinal cognitive and functional trajectories. Although classification accuracy reached 85.0--87.5\%, ensemble AUC on held-out testing remained near 0.60, whereas random-forest models reached AUC up to 0.76 when four visits were available. \citet{grassi-2019} predicted 3-year conversion on ADNI using socio-demographic and neuropsychological variables alone and reported AUROC of 0.88 (bootstrap 95\% CI: 0.85--0.91), with sensitivity 77.7\% and specificity 79.9\% at the best balanced-accuracy operating point. These results indicate that clinical screening carries substantial prognostic signal and constitutes a strong comparator for imaging-only models.
+	
+	Structural MRI studies often rely on high-dimensional whole-brain representations or fusion with cognitive scores. \citet{moradi-2015} applied low-density separation to ADNI baseline T1 MRI for early conversion prediction in MCI, reporting AUC 0.766 with voxel-based morphology alone and AUC 0.902 when MRI was combined with a baseline cognitive aggregate. \citet{ye-2012} used a sparse stability-selection framework (Biosignature-15) to predict MCI-to-AD conversion within four years, achieving AUC 0.859 with Leave-One-Out Cross Validation (LOOCV) on baseline ADNI data. \citet{casanova-2013} combined large-scale tissue-based MRI features with cognitive information in a machine-learning risk-assessment framework on ADNI. Such studies demonstrate that high AUC values are most often obtained with whole-brain or multimodal designs and with outcome definitions that may differ from strict short-horizon sMCI/pMCI discrimination.
+	
+	When spatial scope is reduced to a single ROI, performance typically decreases. \citet{cuingnet-2011} compared ten ADNI classification methods and reported that MCI converter versus non-converter discrimination, including hippocampal-volume features, did not significantly exceed chance. \citet{guo-2017a} studied conversion-related cortical-thickness features for sMCI versus cMCI discrimination, reporting 98.84\% accuracy with sensitivity/specificity of 97.5/100 under LOOCV, but without reporting AUC. These findings are consistent with the view that restricting analysis to a focal anatomical region, whether hippocampus or cortex, yields more conservative prognostic performance than whole-brain voxel models.
+	
+	More recent work incorporates temporal MRI information through dictionary learning, deep learning, or radiomics. \citet{zhang-2019} analyzed longitudinal structural MRI for AD/MCI classification, \citet{lin-2020} used longitudinal dictionary learning to predict MCI-to-AD progression, and \citet{aghajanian-2025} combined deep learning with radiomics from longitudinal structural MRI for progression prediction. These approaches highlight growing interest in temporal modeling, but they also vary in cohort definition, leakage control, and benchmarking against clinical baselines.
+	
+	Against this background, the present work does not aim to reproduce whole-brain multimodal state-of-the-art performance. Instead, it specifies and stress-tests a hippocampus-focused prognostic pipeline on ADNI with a pre-registered primary configuration (wide volumetric features, SVM, \corrigir{}{bootstrap-derived L1 selection-frequency filtering}, no ComBat; patient-level AUC 0.680) and systematic ablations across modalities, longitudinal representation, clinical predictors, and multimodal fusion. \corrigir{}{The original contribution is the coordinated evaluation protocol: all candidate representations are assessed under explicit temporal eligibility, patient-level nested validation, fold-wise fitting, a common OOF estimand, and multiplicity-aware comparisons. This turns negative and positive ablations into design evidence for future prognostic decision-support pipelines rather than treating the highest observed AUC as the sole outcome.} Sensitivity analyses with elastic-net logistic regression and fold-wise ComBat reach higher image-only AUC (up to $\approx0.71$), while first-visit clinical scores remain competitive ($\mathrm{AUC}\approx0.76$). Table~\ref{tab:literature_comparison} summarizes representative literature alongside our results under explicitly heterogeneous but clinically analogous task definitions.
+	
+	\section{Material and Methods}
+	\label{sec:Material-and-Methods}
+	
+	Figure~\ref{fig:pipeline} summarizes the framework: \corrigir{}{T1-w} MRI preprocessing, quality control, parcellation, groupwise template construction, displacement-based registration, multimodal feature extraction, optional harmonization, wide tabular aggregation, and nested classification with stable feature selection.
+	
+	\begin{figure}[htbp]
+		\centering
+		\includegraphics[width=1.0\textwidth]{graphics/diagrama.pdf} % Substitua pelo nome do seu arquivo
+		\caption{Pipeline.} 
+		\label{fig:pipeline}
+	\end{figure}
+	
+	
+	\subsection{Dataset and cohort definition}\label{subsec:dataset}
+	
+	The data used in this study were obtained from the Alzheimer's Disease Neuroimaging Initiative (ADNI) database \cite{petersen-2009,jr-2008}. ADNI was launched in 2003 as a public--private partnership to evaluate longitudinal clinical, genetic, biochemical, and neuroimaging markers of Alzheimer's Disease (AD). This study used structural T1-weighted MRI acquired with three-dimensional Magnetization-Prepared Rapid Gradient-Echo (MP-RAGE) sequences from the ADNI-1, ADNI-2, and ADNI-GO phases. Images were collected at sites in the United States and Canada using 1.5~T and 3~T scanners from GE Healthcare, Philips Medical Systems, and Siemens Medical Solutions.
+	
+	\subsection{Quality Control and Outlier Detection}
+	
+	\corrigir{}{Image quality control was applied to all available ADNI T1-weighted volumes before clinical cohort construction. Reference-free Image Quality Metrics (IQMs) were computed with \code{MRQy}~\citep{sadri-2020}. Candidate outliers were screened using 	\code{VRX}, \code{COL}, \code{NUM}, \code{CPP}, \code{PSNR}, \code{SNR7}, \code{CNR}, \code{CVP}, \code{CJV}, \code{EFC}, and \code{FBER}, chosen for relevance to FOV cropping, acquisition geometry, noise, and motion-/artifact-related degradation. For each metric, outliers were defined by Tukey's fences~\citep{tukey-1977},
+		\begin{equation}
+			\left[Q_1 - \alpha\,\mathrm{IQR},\, Q_3 + \alpha\,\mathrm{IQR}\right],
+			\qquad \mathrm{IQR} = Q_3 - Q_1,
+			\label{eq:tukey}
+		\end{equation}
+		with $\alpha = 1.5$ and metric-specific directionality (low-bad, high-bad, or two-sided). 	Each volume received a nonconformity score equal to the number of flagged IQMs; volumes with score $\geq 3$ were shortlisted ($69/15{,}014$; $0.46\%$). The quartiles and IQR limits were estimated once from the complete pool of 15,014 volumes, without diagnostic labels, before cohort construction and cross-validation; they were not recalculated within outer folds. This dataset-level screening step was therefore distinct from fold-fitted modeling. All shortlisted cases were inspected in ITK-SNAP~\citep{yushkevich-2006} (v4.2.0). Visual inspection confirmed 12 acquisition identifiers for exclusion because of incomplete FOV, damaged acquisitions, or structured noise banding.}
+	
+	\corrigir{}{Cohort construction proceeded through sequential image- and participant-level filters. The initial ADNI collection comprised 15,016 images from 1,495 participants. Two images from one participant with an invalid sex designation were excluded, leaving 15,014 images from 1,494 participants. Before image--diagnosis matching, longitudinal diagnostic records were screened for clinically implausible reversions. This screening identified 40 participants with AD-to-MCI or AD-to-CN reversion and, after their removal, 128 additional participants with MCI-to-CN reversion, for 168 unique excluded participants. Of these, 112 were represented in the imaging collection and accounted for 1,325 images. Matching MRI examinations to diagnostic assessments within a $\pm90$-day window excluded a further 666 images, and requiring complete clinical scores excluded another 92, yielding 12,931 labeled images from 1,304 participants.
+		Of the 12 acquisition identifiers rejected by visual quality control, 10 were still present after clinical merging and were removed at this stage; the other two had already been eliminated by the preceding diagnostic filters. The quality-controlled table therefore contained 12,921 images. Removal of 3,757 acquisitions whose ADNI description identified them as repeats reduced the dataset to 9,164 usable longitudinal candidates.}
+	
+	\subsection{Longitudinal eligibility and 36-month window}
+	\label{subsec:longitudinal-window}
+	
+	From the quality-controlled pool, each participant contributed exactly one prognostic set of three MRI predictors ($T_1$, $T_2$, $T_3$). Consecutive selected acquisitions were required to be separated by at least six months. When more than three eligible scans were available inside the clinical horizon, the retained triplet combined the temporal extremes of that interval with an intermediate acquisition chosen to approximate equidistant spacing along calendar time. Clinical outcome was ascertained on a fixed 36-month window anchored at $T_1$: participants who remained MCI through month~36 were labelled sMCI, and participants who converted from MCI to AD within that window were labelled pMCI. The binary outcome $Y_i \in \{0,1\}$ is
+	\begin{equation}
+		Y_i =
+		\begin{cases}
+			0, & \text{MCI diagnosis maintained through month 36 (sMCI)},\\
+			1, & \text{conversion from MCI to AD within the 36-month window (pMCI)}.
+		\end{cases}
+		\label{eq:temporal_outcome}
+	\end{equation}
+	
+	The 36-month horizon was selected primarily from the empirical MCI-to-AD conversion timing in the quality-controlled ADNI pool: among converters, the median time from first MCI to first AD was 19.5~months (mean 25.2~months). A 36-month clinical window therefore covers the bulk of conversions (73.9\% of converters on the cumulative distribution) while remaining a conventional short-to-intermediate prognostic horizon. Extending the window to 48~months captured additional late converters (82.6\%) but also redefined stability more stringently and mixed early with late progression in the pMCI class. Class counts under the same six-month gap and three-image rule were inspected as a secondary design check: a 24-month horizon under-represented converters (177 sMCI vs.\ 52 pMCI), a 48-month horizon enriched late converters and shrank the stable class (96 vs.\ 109), and the 36-month setting yielded 153 sMCI and 90 pMCI. Class balance alone was not used as the selection criterion.
+	
+	For sMCI, all three retained scans were acquired under an MCI diagnosis. For pMCI, whenever three MCI-stage scans could be assembled before conversion, those images filled $T_1$--$T_3$. In progressive trajectories that would otherwise keep only two MCI-stage acquisitions before conversion (pattern MCI--MCI--AD), the first AD scan was retained solely as the last predictor so that the complete three-image set was not discarded. This rule affected 52 of the 90 pMCI participants; the remaining 38 contributed three MCI-stage predictor scans. Post-conversion images beyond that last-slot exception were used only to establish the clinical outcome and were excluded from feature extraction, harmonization, feature selection, model fitting, and prediction.
+	
+	\subsection{Final cohort and baseline balance}
+	These filters produced a longitudinal analysis cohort of 1,614 images from 538 participants aged 55--90~years at $T_1$, assigned to Cognitively Normal (CN), sMCI, pMCI, or AD from longitudinal diagnostic records: 156 CN, 153 sMCI, 90 pMCI, and 139 AD. The primary prognostic task therefore comprised 243 individuals and 729 T1-weighted MRI volumes (exactly three predictors per participant). The secondary CN-versus-AD positive-control analysis included 295 participants and 885 scans. CN images were also used to construct the fixed normative templates described below.
+	
+	Mean inter-scan intervals differed by diagnostic trajectory. In sMCI, the gaps $T_1{\to}T_2$, $T_2{\to}T_3$, and $T_1{\to}T_3$ were $12.68\pm2.61$, $12.32\pm1.77$, and $25.00\pm2.95$~months; in pMCI they were shorter ($8.15\pm2.49$, $9.09\pm2.89$, and $17.24\pm4.28$~months), consistent with earlier conversion within the shared clinical window. At $T_1$, sMCI and pMCI did not differ significantly in sex (99/54 vs.\ 51/39 M/F; $\chi^2$ test, $p=0.268$) or age ($72.75\pm7.09$ vs.\ $74.13\pm7.48$~years; Mann--Whitney $U$, $p=0.136$). Cognitive and functional scores differed as expected (MMSE, ADAS, CDR-SB, and FAQ; all Mann--Whitney $p<0.001$), whereas global CDR was identical (0.50 in both groups).
+	
+	Table~\ref{tab:mci_demographics} summarizes demographic and clinical characteristics of the primary MCI cohort at the three model-input visits. Cognitive measures include the Mini-Mental State Examination (MMSE) \citep{folstein-1975} and the Functional Activities Questionnaire (FAQ) \citep{pfeffer-1982}.
+	
+	\begin{table}[htbp]
+		\centering
+		\footnotesize
+		\caption{Demographic and clinical characteristics of the primary MCI prognostic cohort at the three model-input visits.}
+		\label{tab:mci_demographics}
+		\begin{tabular}{llcccc}
+			\toprule
+			\textbf{Group} &
+			\textbf{Visit} &
+			\textbf{Time from $T_1$ (months)} &
+			\textbf{Age (years)} &
+			\textbf{MMSE} &
+			\textbf{FAQ} \\
+			\midrule
+			\multirow{3}{*}{sMCI}
+			& $T_1$ & $0$
+			& $72.75 \pm 7.09$ & $27.88 \pm 1.70$ & $1.86 \pm 2.92$ \\
+			& $T_2$ & $12.68 \pm 2.61$
+			& $73.81 \pm 7.12$ & $28.02 \pm 1.78$ & $2.51 \pm 3.40$ \\
+			& $T_3$ & $25.00 \pm 2.95$
+			& $74.84 \pm 7.09$ & $27.87 \pm 2.10$ & $2.63 \pm 3.61$ \\
+			\midrule
+			\multirow{3}{*}{pMCI}
+			& $T_1$ & $0$
+			& $74.13 \pm 7.48$ & $26.66 \pm 1.74$ & $5.71 \pm 4.59$ \\
+			& $T_2$ & $8.15 \pm 2.49$
+			& $74.79 \pm 7.41$ & $25.49 \pm 2.27$ & $6.91 \pm 5.00$ \\
+			& $T_3$ & $17.24 \pm 4.28$
+			& $75.53 \pm 7.40$ & $24.53 \pm 2.73$ & $10.49 \pm 5.82$ \\
+			\bottomrule
+		\end{tabular}
+		\begin{flushleft}
+			\footnotesize
+			\textit{Note:} The sMCI group comprised 153 participants (99/54 M/F), and the pMCI group comprised 90 participants (51/39 M/F), of whom 52 retained a first AD acquisition only in the last predictor slot (MCI--MCI--AD triplets) and 38 contributed three MCI-stage scans. Time is measured from $T_1$ under the 36-month clinical window and the $\geq6$-month inter-scan gap; $T_1$--$T_3$ are ordered selected acquisitions, not ADNI visit labels. Continuous variables are reported as mean $\pm$ standard deviation. MMSE: Mini-Mental State Examination; FAQ: Functional Activities Questionnaire.
+		\end{flushleft}
+	\end{table}
+	
+	\subsection{Preprocessing}
+	\label{subsec:Preprocessing}
+	
+	\corrigir{}{After obtaining the raw MRI data from the ADNI database, the volumes were subjected to a custom preprocessing pipeline. These operations were applied independently to each image using fixed software configurations: pretrained models were used for skull stripping and parcellation, denoising and bias-field correction estimated image-specific quantities only, and intensity and spatial normalization used fixed reference images and algorithmic settings. No preprocessing parameters were estimated by pooling sMCI and pMCI images.
+		When an input NIfTI was four-dimensional, a single 3D volume was retained by selecting the first frame along the fourth axis with \code{ants.slice\_image(axis=3, idx=0)}. This conversion affected 4 of 15{,}014 raw acquisitions (0.03\%); all four affected images contained two frames along the fourth axis. In this ADNI T1 cohort the fourth axis corresponded to repeated or extra frames rather than a multi-echo spectroscopic stack; no alternative frame-selection rule was used.}
+	
+	Subsequently, all T1-weighted volumes underwent a fixed preprocessing chain within the ANTsX ecosystem \cite{tustison-2021}, consisting of the following sequential steps:
+	
+	\begin{enumerate}
+		\item \textbf{Skull stripping:} Executed using a T1-trained deep-learning brain-extraction model from the ANTsPyNet library (\code{antspynet.brain\_extraction}, \code{modality="t1"}) \cite{tustison-2021}.
+		
+		\item \textbf{Denoising:} Adaptive non-local means for Rician noise \cite{manjon-2010}, implemented with \code{ants.denoise\_image} using \code{noise\_model="Rician"}, patch radius $p=2$, search radius $r=3$, and \code{mask=None}. The ANTs-specific parameter \code{shrink\_factor=1} disables internal downsampling and is an implementation control rather than part of the original formulation.
+		
+		\item \textbf{Bias-field correction:} N4ITK bias-field correction \cite{tustison-2010} was performed with \code{ants.n4\_bias\_field\_correction}, using \code{shrink\_factor=3}, \code{convergence=\{iters: [50, 50, 50, 50], tol:} \(1\times10^{-7}\)\code{\}} (four multi-resolution levels), \code{spline\_param=200}, \code{rescale\_intensities=True}, and \code{mask=None}.
+		
+		\item \textbf{Histogram matching:} Image intensities were standardized using histogram matching \cite{nyul-2000} to the fixed MNI152 2009c template \cite{fonov-2011}. Matching was implemented with \code{ants.histogram\_match\_image2} using \code{transform\_domain\_size=128} and \code{match\_points=16}, after independent min--max normalization of source and reference images. Brain masks for source and reference were estimated with \code{ants.get\_mask}, and matched intensities were subsequently rescaled using the 99.9th percentile of brain voxels in the reference. This procedure was applied independently to each image; no cohort-level intensity parameters were estimated. Because histogram matching reduces gross intensity heterogeneity but does not explicitly model scanner or vendor batch effects at the feature level, fold-wise NeuroComBat \cite{fortin-2018} remained an optional sensitivity analysis (primary endpoint: no ComBat). Histogram matching itself was not evaluated in an ablation analysis.
+		
+		\item \textbf{Spatial alignment:} Clinical images were rigidly registered to the MNI152 2009c reference space \cite{fonov-2009,fonov-2011} using \code{ants.registration} from ANTsPy \cite{avants-2011a,tustison-2021}, correcting global alignment and standardizing spatial orientation.
+	\end{enumerate}
+	
+	\subsection{Parcellation and Tissue Segmentation}
+	
+	The left and right hippocampi (DKT labels 17 and 53) were parcellated with \code{antspynet.desikan\_killiany\_tourville\_labeling} (\code{modality="t1"}, \code{do\_preprocessing=True}). Tissue-class segmentation comprising cerebrospinal fluid (CSF), gray matter (GM), and white matter (WM) (labels 1, 2, and 3) was obtained with \code{antspynet.deep\_atropos} under the same modality and preprocessing flag.
+	Although the external ANTsX chain already included skull stripping, denoising, N4, histogram matching, and rigid MNI alignment, we retained the library's internal preprocessing to match the domain expected by the pretrained ANTsPyNet weights. This may partially duplicate intensity or spatial normalization. Labels were used only for ROI definition and tissue fractions; internal ANTsPyNet transforms were not treated as an additional trainable stage.
+	
+	\subsection{Stratified Groupwise Templates Construction}
+	\label{sec:groupwise}
+	\textcolor{blue}{To reduce bias from a single reference subject \cite{reuter-2012} and to provide a demographically appropriate normative space, we constructed average volumetric templates from preprocessed T1-weighted images of cognitively normal (CN) individuals. Templates were stratified by sex and age decade (50.9--59.9, 60.9--69.9, \ldots, 90.9--99.9 years) and served as healthy-aging references for visit-wise deformable registration.
+		For each sex--age-decade stratum, up to $N_{\max}=20$ CN acquisitions were retained. When more than 20 eligible CN scans were available, random sampling without replacement was applied with fixed seed \code{RANDOM\_SEED=7} for reproducibility. The choice of $N_{\max}=20$ balances demographic representativeness and computational cost.
+		The CN reference sample was selected once before cross-validation, and the selection was not repeated across outer folds. No sMCI or pMCI participant contributed to template construction. For the primary sMCI/pMCI endpoint, the resulting templates were therefore treated as fixed normative references from a group disjoint from both prognostic classes, rather than as fold-fitted transformations.
+		The groupwise alignment began with global masked pre-registration of each selected image to a common target, applying rigid followed by affine transformations. The initial template $T^{(0)}$ was defined as the arithmetic mean of these pre-aligned images resampled to the target space. This was followed by non-linear refinement using Symmetric Normalization (SyN) \cite{avants-2014} over five iterations: in each iteration, all stratum images were non-linearly registered to the current template under brain masks, and the template was updated by averaging the deformed images. After the final SyN iteration, the groupwise template was post-processed for atlas consistency: a brain mask was recomputed on the averaged template, and intracranial intensities were robustly rescaled by clipping to the 2nd--98th percentiles and linearly mapping that range to $[0,1]$. This step standardizes visual contrast across strata and does not alter the deformable transforms used in the prognostic pipeline.}
+	
+	\subsection{Visit-wise Normative Registration}\label{subsec:deslocamento_longitudinal}
+	
+	\textcolor{blue}{Displacement features were derived from \emph{visit-wise normative registration}, not from inter-visit difference maps. For each participant, the CN groupwise template was fixed by sex and age decade at the first model-input visit ($T_1$), independently of current clinical diagnosis \cite{wyman-2013}. This $T_1$-anchored template assignment was kept constant for $T_2$ and $T_3$, regardless of subsequent clinical progression.
+		At each visit $t \in \{T_1,T_2,T_3\}$, we performed one independent SyN registration in 1.0\,mm space with the preprocessed clinical T1 volume as the \textbf{fixed} image and the assigned CN template as the \textbf{moving} image (\code{ants.registration}). ANTs therefore estimated a template-to-clinical transform $F_t$ (moving $\rightarrow$ fixed) and its inverse $I_t$ (fixed $\rightarrow$ moving). Affine, forward warp, and inverse warp were stored per image.
+		Longitudinal information entered the classifier only through the wide representation: scalar maps from the three separate template-to-clinical registrations were concatenated as $T_1$, $T_2$, and $T_3$ slots. We did \textbf{not} compose warps across visits (e.g., $I_{T_2}\circ F_{T_1}$) and did \textbf{not} compute baseline-to-follow-up displacement fields for the reported prognostic features. Each visit therefore quantifies anatomical deviation from a common CN normative reference at that time point, rather than explicit inter-visit morphological change.}
+	
+	\subsection{Feature Extraction}\label{sec:feature-extraction}
+	
+	Following preprocessing steps, four families of features were extracted for each acquisition: volumetric, morphometric (shape), textural (radiomics), and displacement-derived features. 
+	
+	\subsubsection{Volumetric Features}
+	Extracted features include tissue fractions (i.e., CSF, GM, WM) and mask volumes, alongside their Intracranial Volume (ICV)-normalized variants. For the volumetric ablation experiments, normalized tissue fractions were utilized rather than raw cubic-millimeter volumes, which may differ from classical hippocampal volumetry studies \cite{wyman-2013}.
+	
+	\subsubsection{Radiomic Attributes (PyRadiomics)}\label{sec:radiomics}
+	
+	Radiomic features were extracted using PyRadiomics version
+	\code{3.1.1.dev111+g8ed579383} \cite{griethuysen-2017}. Feature names and
+	definitions followed the IBSI terminology as implemented by PyRadiomics
+	\cite{zwanenburg-2020}; therefore, this description should not be interpreted
+	as an independent IBSI-compliance validation.
+	
+	Extraction was performed independently for each ROI and acquisition using a
+	fixed configuration. The input T1-weighted images and corresponding label maps
+	had previously been rigidly aligned to the MNI152 2009c reference and resampled
+	to a common isotropic 1.0-mm grid. Linear interpolation was used for the MRI
+	volumes and nearest-neighbor interpolation for the label maps during this
+	alignment. PyRadiomics performed no additional resampling
+	(\code{resampledPixelSpacing=None}); consequently, its configured B-spline
+	interpolator was inactive. Image and mask dimensions and affine matrices were
+	verified before extraction, with an absolute affine tolerance of
+	\(10^{-5}\). Automatic mask correction was disabled
+	(\code{correctMask=False}), and each anatomical label was intersected with the
+	brain mask.
+	
+	Only the \code{Original} image type was enabled; no LoG or wavelet filtering
+	was applied. Intensity discretization used a fixed bin width of 25
+	(\code{binWidth=25}, \code{binCount=None}). PyRadiomics intensity
+	normalization was disabled (\code{normalize=False}), no outlier removal or
+	resegmentation was applied, and \code{voxelArrayShift=0}. These settings refer
+	to PyRadiomics itself; intensity standardization had already been performed in
+	the preceding preprocessing pipeline.
+	
+	Texture matrices were computed in 3D (\code{force2D=False}) using a
+	one-voxel distance (\code{distances=[1]}). GLCMs were symmetric
+	(\code{symmetricalGLCM=True}). Directional weighting was disabled
+	(\code{weightingNorm=None}); therefore, GLCM and GLRLM features were computed
+	separately for the available 3D directions and then averaged across
+	directions.
+	
+	For each ROI and visit, 107 descriptors were extracted: 18 first-order,
+	14 shape, 24 GLCM, 16 GLRLM, 16 GLSZM, 5 NGTDM, and 14 GLDM features.
+	The isolated hippocampal ablations retained 14 shape features and 75 texture
+	features per hemisphere and visit. Across two hemispheres and three visits,
+	this corresponded to 84 shape and 450 texture input variables per participant
+	before fold-specific feature selection. The 18 first-order features were
+	stored but excluded from both isolated ablation modalities.
+	
+	ROIs absent after intersection with the brain mask were recorded as missing.
+	PyRadiomics required at least two-dimensional spatial support
+	(\code{minimumROIDimensions=2}) but imposed no explicit minimum voxel count
+	(\code{minimumROISize=None}).
+	
+	\subsubsection{Displacement Field-Derived Features}\label{sec:displacement-features}
+	
+	\textcolor{blue}{For each participant, the normative reference was the CN groupwise atlas for sex and age decade at $T_1$, regardless of diagnosis \cite{wyman-2013}. At each model-input visit, the same $T_1$-matched CN template (moving) was registered to that visit's clinical T1 volume (fixed). Affine, forward warp, and inverse warp were saved per image.
+		Scalar maps were reconstructed in the \textbf{clinical (fixed) image domain}. Following the ANTs convention above, the displacement vector field was built by applying the inverse transform chain $I_t=[\text{affine},\text{inverse warp}]$ to physical coordinates in the clinical volume:
+		\begin{equation}
+			\mathbf{u}_t(y)=I_t(y)-y,\qquad y\in\Omega_t,
+			\label{eq:dvf-clinical}
+		\end{equation}
+		where $\Omega_t$ is the clinical image domain at visit $t$. From $\mathbf{u}_t$ we derived log-Jacobian determinants, displacement magnitude ($\|\mathbf{u}\|$), divergence, directional components $(u_x,u_y,u_z)$, curl magnitude, Green--Lagrange strain tensor scalars, and the Frobenius norm of the infinitesimal strain \cite{bouke-2023}. This fixed$\rightarrow$moving convention was kept consistent across visits to avoid sign inversions in Jacobian, divergence, and directional components.
+		No inter-visit displacement maps (e.g., $T_1\rightarrow T_2$) were used. Features at $T_2$ and $T_3$ measure normative deviation at those visits relative to the same CN template anchor, not explicit longitudinal deformation between consecutive scans.
+		Within each hippocampal ROI (intersected with the brain mask), these scalar maps were summarized using measures of central tendency and dispersion (mean, standard deviation, and percentiles). For log-Jacobian, displacement magnitude, and Frobenius strain norm, higher-order moments (variance, skewness, and kurtosis) were additionally computed.}
+	
+	\subsection{Experimental Design}
+	\label{sec:experiments}
+	
+	The pre-specified clinical endpoint was discrimination of sMCI versus pMCI under the 36-month eligibility rules in Section~\ref{subsec:longitudinal-window}. The prognostic cohort comprised 243 participants (153 sMCI and 90 pMCI) with three longitudinally spaced T1-weighted MRI volumes and bilateral hippocampal features at $T_1$, $T_2$, and $T_3$. In 52 pMCI participants the last predictor was the first AD acquisition (MCI--MCI--AD triplets); the remaining 38 contributed three MCI-stage scans. Outcome labels followed the shared 36-month clinical horizon. Generalization was evaluated exclusively at the patient level, with all visits from a participant kept together in either training or testing. The sample size reflects a deliberate trade-off: inclusion required three eligible predictors under a $\geq6$-month inter-scan gap, a fully observed clinical outcome interval, and successful image-quality control. These restrictions reduced the available sample but prevented incomplete follow-up and unconstrained post-outcome information from making the prognostic task artificially easier.
+	
+	No fixed hold-out set or class downsampling was used. \corrigir{}{The primary performance metric was patient-level AUC computed on subject-averaged out-of-fold (OOF) probabilities: each participant received one OOF probability in each outer-CV repetition, the ten probabilities were averaged for that participant, and AUC was then computed once across participants. Mean and standard deviation of the 50 fold-specific AUCs were retained as separate descriptive measures; the fold-wise standard deviation is not an uncertainty interval for the patient-level AUC. Fold-wise accuracy, sensitivity, and specificity are likewise reported as mean $\pm$ standard deviation.} Threshold-dependent metrics used a \corrigir{}{Youden-optimal threshold fitted separately on each outer fold from that fold's outer-training OOF probabilities and applied only to the matching outer-test fold.} External replication on an independent cohort was not available; internal optimism was mitigated by patient-level nested cross-validation repeated ten times (50 outer evaluations per configuration). We distinguished fixed image-wise operations from sample-dependent modeling operations. Preprocessing, parcellation, registration, and feature extraction were performed once per image using fixed algorithms, reference images, and software settings; these steps did not use diagnostic labels or parameters estimated from the sMCI/pMCI cohort. In contrast, NeuroComBat harmonization, variance and correlation filtering, feature scaling, feature selection, hyperparameter optimization, and decision-threshold estimation were fitted using outer-training data only and subsequently applied to the corresponding outer-test patients. Dataset-level QC limits and CN normative templates were computed once before cross-validation, as described in their respective sections.
+	
+	\subsubsection{Evaluation metrics}
+	\label{subsubsec:evaluation-metrics}
+	
+	\corrigir{}{Let $s_{ir}\in[0,1]$ denote the single OOF probability assigned to participant $i$ in outer-CV repetition $r\in\{1,\ldots,R\}$ with $R=10$, obtained by concatenating the five non-overlapping outer-test folds of that repetition. Write $\mathrm{AUC}(\{(y_k,t_k)\})$ for the Mann--Whitney AUC of any comparable score collection $\{t_k\}$. Two repetition-level summaries were distinguished from the primary estimator:}
+	\begin{equation}
+		\widehat{\mathrm{AUC}}^{(r)}
+		=
+		\mathrm{AUC}\!\left(\{(y_i,s_{ir})\}_{i=1}^{n}\right),
+		\qquad
+		\overline{\mathrm{AUC}}
+		=
+		\frac{1}{R}\sum_{r=1}^{R}\widehat{\mathrm{AUC}}^{(r)}.
+		\label{eq:auc-mean-rep}
+	\end{equation}
+	\corrigir{}{The primary estimator instead averaged calibrated probabilities first,}
+	\begin{equation}
+		\bar{s}_i
+		=
+		\frac{1}{R}\sum_{r=1}^{R}s_{ir},
+		\qquad
+		\widehat{\mathrm{AUC}}_{\mathrm{agg}}
+		=
+		\mathrm{AUC}\!\left(\{(y_i,\bar{s}_i)\}_{i=1}^{n}\right),
+		\label{eq:auc-agg}
+	\end{equation}
+	\corrigir{}{and then expanded the Mann--Whitney form of $\widehat{\mathrm{AUC}}_{\mathrm{agg}}$. Let $s_i\equiv\bar{s}_i$, $n_+=\sum_i y_i$, and $n_-=n-n_+$. The primary estimand was}
+	\begin{equation}
+		\mathrm{AUC}_{\mathrm{patient}}
+		\equiv
+		\widehat{\mathrm{AUC}}_{\mathrm{agg}}
+		= \frac{1}{n_+ n_-}
+		\sum_{i:\,y_i=1} \sum_{j:\,y_j=0}
+		\left(
+		\mathbb{I}(s_i > s_j)
+		+ \tfrac{1}{2}\,\mathbb{I}(s_i = s_j)
+		\right),
+		\label{eq:auc-pooled}
+	\end{equation}
+	where $\mathbb{I}(\cdot)$ is the indicator function. \corrigir{}{Four related summaries were kept conceptually distinct. A fold AUC was computed only on one outer-test fold; their mean and standard deviation describe variation across the 50 fitted fold models and are \emph{not} the sampling uncertainty of $\widehat{\mathrm{AUC}}_{\mathrm{agg}}$. Concatenating the five held-out folds within one repetition yields $\{s_{ir}\}_{i=1}^{n}$ and therefore the repetition-specific $\widehat{\mathrm{AUC}}^{(r)}$ in Eq.~\eqref{eq:auc-mean-rep}. The primary patient-level AUC is $\widehat{\mathrm{AUC}}_{\mathrm{agg}}$ in Eqs.~\eqref{eq:auc-agg}--\eqref{eq:auc-pooled}, which is a different estimator from $\overline{\mathrm{AUC}}$. As a secondary sensitivity summary, pooled AUC concatenates all held-out predictions from all repetitions before computing AUC, thereby retaining $R$ records per participant rather than averaging them. Bootstrap confidence intervals and paired tests were calculated from the patient-level aggregated scores $\{\bar{s}_i\}$, not from the fold-wise standard deviation.}
+	
+	For threshold-dependent metrics, the operating point $\tau$ was chosen on outer-training out-of-fold scores by maximizing Youden's index,
+	\begin{equation}
+		J(\tau) = \mathrm{TPR}(\tau) + \mathrm{TNR}(\tau) - 1,
+		\qquad
+		\tau^{*} = \arg\max_{\tau \in [0,1]} J(\tau),
+		\label{eq:youden}
+	\end{equation}
+	where $\mathrm{TPR}$ and $\mathrm{TNR}$ denote true positive and true negative rates, respectively. \corrigir{}{All evaluated classifiers produced class probabilities through \code{predict\_proba} (for SVM after Platt scaling with \code{probability=True}); decision-function scores were never used for thresholding. Consequently the search domain remained $\tau\in[0,1]$ rather than $\tau\in\mathbb{R}$. A separate Youden threshold $\tau^{*}$ was fitted in each outer fold from that fold's outer-training OOF probabilities and applied only to the corresponding outer-test fold. Accuracy, sensitivity, specificity, and F1 were therefore computed fold-wise under fold-specific thresholds and summarized as mean $\pm$ SD across the 50 outer evaluations. When confusion counts were pooled across folds, binary predictions already produced under each fold's own $\tau^{*}$ were concatenated; a single global threshold was never re-estimated on mixed scores from different folds.}
+	
+	\corrigir{}{Fixed analysis constants were: random seed 42; correlation filter $|\rho|>0.90$; variance filter $<0.01$; selection-frequency group threshold $\theta = 0.50$; $B=50$ ordinary bootstrap-derived replicates; and fixed L1 inverse-regularization strength $C=0.1$. No minimum number of stable visit prefixes was required (\code{stable-pool-min-timepoints=0}).}
+	
+	
+	\subsubsection{Classifiers and comparative analyses}
+	
+	The primary classifier was a Support Vector Machine (SVM) with linear or Radial-Basis-Function (RBF) kernel \citep{cortes-1995} selected by inner cross-validation. \corrigir{}{The SVM was fitted with \code{probability=True}; its decision values were transformed to probabilities by the Platt-scaling procedure implemented internally by \code{SVC}. This calibration was refitted within each training fit, including the fits used to generate outer-training OOF probabilities and the final fit on the complete outer-training partition. Held-out outer-test participants were never used for calibration. Reported SVM scores were obtained with \code{predict\_proba}, not \code{decision\_function}.} This choice was pre-specified before ablation and defines the main inferential estimand. Feature selection always used \corrigir{}{bootstrap-derived $\ell_1$ selection-frequency filtering} independently of the downstream classifier, separating sparse variable screening from the prognostic decision rule. SVM is also the conventional reference in hippocampal-volume ADNI studies \citep{cuingnet-2011}. Random forests (RF) \citep{breiman-2001} and elastic-net logistic regression \citep{zou-2005} were evaluated only in exploratory ranking and sensitivity analyses (Table~\ref{tab:main_results}, Figure~\ref{fig:heatmap_smci_combat}, and Figure~\ref{fig:combat}). The pre-specified primary volumetric endpoint is illustrated in Figure~\ref{fig:roc_smci_pmci}. Fold-wise NeuroComBat harmonization was likewise reserved for sensitivity analyses rather than the primary endpoint.
+	
+	Comparative analyses included: (i)~first-visit clinical predictors (sex, age, MMSE, ADAS, FAQ) versus imaging-only features; (ii)~early fusion of clinical and hippocampal predictors; (iii)~\corrigir{}{complete wide longitudinal versus first-visit-only representation-specific pipelines}; and (iv)~with versus without fold-wise NeuroComBat harmonization \citep{fortin-2018}. Multimodal early fusion was operationalized by column-wise concatenation of $z$-score-normalized $T_1$ clinical features and \corrigir{}{selection-frequency-filtered} longitudinal hippocampal features inside each outer training fold, yielding a single unified feature matrix for one downstream classifier (not soft voting, probability averaging, or a stacked meta-classifier). Clinical predictors were $z$-scored on outer-training patients; imaging columns followed the same fold-internal selection-frequency filtering and tuning pipeline as imaging-only models. Prognostic experiments used ten outer repeats of stratified five-fold cross-validation (50 outer evaluations). \corrigir{}{Statistical inference used patient-level subject-averaged OOF probabilities. Tests against chance were label-permutation tests on these frozen scores: the patient-level outcome vector was shuffled $B_{\mathrm{perm}}=5000$ times while scores were held fixed; the nested training pipeline (selection, scaling, hyperparameter tuning, and refitting) was \emph{not} re-executed under each permutation. The one-sided $p$-value used the standard correction $p=(r+1)/(B_{\mathrm{perm}}+1)$, where $r$ is the number of permutations with AUC at least as large as the observed AUC. Paired protocol contrasts (e.g., wide versus $T_1$-only) used patient-level paired bootstrap of the AUC difference with $B_{\mathrm{boot}}=5000$ resamples of participants with replacement, percentile 95\% confidence intervals, and the same $(r+1)/(B_{\mathrm{boot}}+1)$ correction for the bootstrap $p$-value. The resampled quantities were the paired patient-level scores of the two configurations, not fold-level AUCs. Wide and $T_1$-only runs did not share identical outer partitions (50 versus 25 outer evaluations); pairing was therefore at the patient-score level after subject averaging. Because directional superiority of the longitudinal pipeline was not pre-registered, two-sided bootstrap $p$-values were treated as primary; one-sided values are reported only as secondary sensitivity summaries. When five modalities were tested jointly, Benjamini--Hochberg FDR $q$-values were computed on the two-sided $p$-values and reported explicitly.}
+	
+	
+	\subsection{Patient-level nested validation and scope of fold-wise fitting}
+	\label{sec:modelagem}
+	
+	Prognostic models were evaluated using patient-level nested cross-validation designed to limit model-stage information leakage (Figure~\ref{fig:nestedcv}). \corrigir{}{Although the modelling matrix used one wide row per participant (three visits already concatenated as columns), folds were still defined by participant identifier rather than by image or by row, so that $T_1$, $T_2$, and $T_3$ from the same subject never straddled training and testing. This patient-level partition is the standard safeguard against longitudinal leakage; with a single prognostic set per participant it does not change the number of modelling units relative to a row-wise split of the wide table, but it documents that no visit of a held-out subject entered outer-training fits.} An outer stratified five-fold loop (approximately 80\%/20\%) was repeated ten times with different random seeds, yielding 50 outer evaluations per configuration. \corrigir{}{For the primary cohort of $n=243$ participants and 729 MRI volumes (exactly three predictors per participant), stratified outer folds contained nominally 194--195 training and 48--49 test participants (582--585 and 144--147 images), with class counts approximately 122--123 sMCI / 72 pMCI in outer training and 30--31 sMCI / 18 pMCI in outer testing. Within each outer-training partition, the inner stratified five-fold loop used nominally about 155--156 / 38--39 participants (465--468 / 114--117 images) for inner training and validation, respectively. Exact counts varied by one subject across folds because stratification cannot divide 153 and 90 evenly by five; image counts follow from three volumes per participant.} Within each outer fold, optional fold-wise NeuroComBat harmonization and feature selection were fit only on outer-training patients. The \corrigir{}{selection-frequency pool was constructed once from the corresponding outer-training partition using up to $B=50$ ordinary bootstrap-derived replicates} using Eqs.~\eqref{eq:l1-logistic}--\eqref{eq:stability-freq}. Hyperparameters \corrigir{}{of the downstream classifier were tuned} on outer-training data with an inner stratified five-fold loop via grid search (primary configuration); exploratory runs could substitute Optuna TPE. At each inner split, correlation and variance filters and $z$-score scaling were refit on inner-training data restricted to the selection-frequency pool; \corrigir{}{the pool itself was not reconstructed in each inner split.} The selected pipeline was refit on the full outer-training set; \corrigir{}{each outer fold obtained its own Youden threshold $\tau^{*}$ (Eq.~\ref{eq:youden}) from outer-training OOF probabilities, applied only to that fold's outer-test patients.} \corrigir{}{Within each repetition, the five outer-test folds were concatenated to obtain one complete OOF probability vector with exactly one prediction per participant. The ten repetition-specific probabilities for each participant were then averaged before computing the primary patient-level AUC in Eq.~\eqref{eq:auc-pooled}. Pooled AUC, obtained by concatenating all outer-test predictions across repetitions without patient-wise averaging, was retained only as a sensitivity estimator.}
+	The nested procedure therefore covered all sample-dependent modeling operations, but not the fixed image-processing, quality-control, and normative-template stages described above.
+	
+	\begin{figure}[htbp]
+		\centering
+		\includegraphics[width=1.0\textwidth]{graphics/nestedcv.pdf}
+		\caption{Patient-level nested cross-validation.}
+		\label{fig:nestedcv}
+	\end{figure}
+	
+	
+	\subsection{Feature Normalization and Selection}
+	\label{sec:feature-selection}
+	
+	Volumetric features were computed per hippocampal ROI as normalized within-ROI CSF, GM, and WM tissue fractions. Prognostic volume models used these fractions only; absolute volumes and ICV normalization were not applied. Shape, texture, and displacement descriptors were likewise extracted without ICV correction.
+	
+	Longitudinal tables were pivoted to one row per participant. In the primary protocol, hippocampal features from $T_1$, $T_2$, and $T_3$ were concatenated as separate columns. A first-visit-only control used $T_1$ features. Modalities were evaluated individually (volume, shape, texture, displacement) and jointly (all modalities merged). All imaging experiments were restricted to the bilateral hippocampus.
+	
+	\corrigir{}{We used a descriptive bootstrap-derived L1 selection-frequency filter, related to resampling-based variable-selection ideas \citep{bach-2008,meinshausen-2010}, but not the classical stability-selection procedure of \citet{meinshausen-2010} and therefore without its Per-Family Error Rate (PFER) guarantee. For each outer-training partition, $n_{\mathrm{train}}$ indices were sampled with replacement in each of $B=50$ draws; duplicate indices were then collapsed, producing a bootstrap-derived subsample. Replicates containing only one outcome class were skipped. The procedure was not explicitly stratified and used no class weights. In each retained replicate, predictors were first filtered by correlation ($|\rho|>0.90$) and variance ($<0.01$).} These thresholds were fixed \emph{a priori} as conservative hygiene steps to remove perfectly redundant columns and near-constant noise before \corrigir{}{the L1 fit}, reducing the search space and computational cost; they were not tuned inside the inner Optuna loop. The remaining candidates were then screened with $\ell_1$-penalized logistic regression,
+	\begin{equation}
+		\begin{aligned}
+			\hat{\boldsymbol{\beta}}^{(b)}
+			&= \arg\min_{\boldsymbol{\beta}}
+			\left\{
+			-\sum_{i=1}^{n_{\mathrm{train}}^{(b)}}
+			\left[
+			y_i \log p_i^{(b)} + (1-y_i)\log\!\left(1-p_i^{(b)}\right)
+			\right]
+			+ \lambda \|\boldsymbol{\beta}\|_1
+			\right\}, \\
+			p_i^{(b)} &= \sigma\!\left(\mathbf{x}_i^{\top}\boldsymbol{\beta}\right),
+		\end{aligned}
+		\label{eq:l1-logistic}
+	\end{equation}
+	where $\sigma(\cdot)$ is the logistic sigmoid, $\mathbf{x}_i$ the wide feature vector of patient $i$ in the pivoted outer-training matrix, and $n_{\mathrm{train}}^{(b)}$ the number of unique patients retained in replicate $b$ (not the full cohort size $n=243$). \corrigir{}{The selection-stage logistic regression used scikit-learn's \code{SAGA} solver with a single inverse-regularization value $C=0.1$ in every replicate; no selection-stage $C$ grid or inner-CV tuning was used. This fixed screening parameter was distinct from downstream-classifier hyperparameters tuned by inner CV.} Let $\mathcal{M}^{(b)} = \{j : \lvert\hat{\beta}^{(b)}_j\rvert>10^{-9}\}$ denote the active set in retained replicate $b$. If an L1 fit produced no active coefficient, all columns surviving that replicate's correlation and variance filters were retained as a conservative fallback. The bootstrap-derived selection frequency of feature $j$ was
+	\begin{equation}
+		\pi_j = \frac{1}{B_{\mathrm{eff}}}\sum_{b=1}^{B_{\mathrm{eff}}} \mathbb{I}(j \in \mathcal{M}^{(b)}),
+		\label{eq:stability-freq}
+	\end{equation}
+	Here, $B_{\mathrm{eff}}\leq 50$ is the number of retained two-class replicates. \corrigir{}{Visit-specific columns were grouped by ROI, hemisphere, and base-feature name after removal of the temporal prefix. For base-feature group $g$, let $\mathcal{C}_g$ denote its available temporal columns. Group-level selection frequency was defined as $\pi_g=B_{\mathrm{eff}}^{-1}\sum_{b=1}^{B_{\mathrm{eff}}}\mathbb{I}\!\left(\mathcal{M}^{(b)}\cap\mathcal{C}_g\neq\varnothing\right)$. A group entered the selection-frequency pool when $\pi_g\geq\theta$, with $\theta=0.50$, and all its available visit-specific columns were passed to subsequent fold-wise filtering and classification. No requirement that a feature be selected at two or more visits was imposed. For the first-visit-only representation, $\mathcal{C}_g$ contained only the corresponding $T_1$ column. If no group reached $\theta$, all original candidate columns were retained to prevent an empty design matrix. The implementation did not persist replicate-level active-set sizes, so their mean cannot be reported retrospectively without rerunning the selection stage.}
+	
+	
+	\subsection{Inter-Scanner Harmonization (NeuroComBat)}
+	\label{sec:harmonization}
+	
+	Scanner heterogeneity was optionally addressed with NeuroComBat \cite{fortin-2018} using empirical Bayesian estimation, a parametric formulation, and joint mean--variance correction. The batch variable combined MRI manufacturer and field strength,  finer scanner metadata was omitted to avoid sparse micro-batches. Age and sex were included as biological covariates to preserve; diagnosis, prognostic group, and any label-derived variable were excluded.
+	
+	Harmonization was strictly fold-wise: ComBat parameters were estimated on outer-training images and applied to both outer-training and outer-test images in that fold. Training batches with fewer than five samples were merged into a residual category; if fewer than two batches remained with acceptable cardinality, harmonization was skipped for that fold and raw features were retained.
+	
+	% =============================================================================
+	
+	\section{Results}
+	\label{sec:Results}
+	
+	Among 243 participants in the sMCI versus pMCI classification task, age did not differ significantly between groups (Mann--Whitney $p=0.136$), and sex distributions were comparable ($\chi^2$ $p=0.268$). Across the three predictor visits, pMCI participants showed progressively lower MMSE and higher FAQ scores than sMCI participants (Table~\ref{tab:mci_demographics}).
+	
+	\subsection{Primary modeling performance}
+	
+	Table~\ref{tab:literature_comparison} places the present hippocampus-focused pipeline in the context of representative sMCI/pMCI studies. These results are not directly comparable because cohorts differ in prediction horizon, temporal proximity to conversion, feature scope, clinical variables, and validation design. The present study requires three longitudinally spaced MRI predictors under a $\geq6$-month gap within a 36-month clinical horizon and retains a first AD acquisition only in the last slot when needed to preserve otherwise incomplete progressive triplets. This conservative construction makes the task more restrictive and may contribute to lower apparent AUC than designs using measurements closer to conversion or more permissive eligibility criteria, although it cannot by itself explain cross-study performance differences. Several high-performing frameworks use whole-brain voxel features \citep{moradi-2015,ye-2012}, longitudinal cognitive trajectories \citep{bucholc-2023}, or rich clinical predictors alone (AUROC 0.88; \citealp{grassi-2019}). Our rows distinguish the pre-specified primary endpoint from the best image-only sensitivity configuration and from clinical and fusion comparators.
+	
+	\begin{sidewaystable}[htbp]
+		\centering
+		\footnotesize
+		\setlength{\tabcolsep}{4pt}
+		\renewcommand{\arraystretch}{1.15}
+		\caption{Indicative comparison of published prognostic performance on stable versus progressive MCI and our ADNI results under patient-level nested validation.}
+		\label{tab:literature_comparison}
+		\begin{tabular}{@{}lllccc@{}}
+			\toprule
+			\textbf{Study} & \textbf{Dataset} & \textbf{Features} &
+			\textbf{Validation Method} & \textbf{AUC} & \textbf{Sen / Spe (\%)} \\
+			\midrule
+			\citet{bucholc-2023} & NACC &
+			Cognitive + functional &
+			3 visits; held-out CV &
+			$0.601 \pm 0.054$ & $95.4 \pm 1.8$ / $24.7 \pm 12.0$ \\
+			\citet{bucholc-2023} & NACC &
+			Cognitive + functional &
+			4 visits; held-out CV &
+			$0.756 \pm 0.103$ & $92.9 \pm 4.6$ / $58.3 \pm 19.1$ \\
+			\citet{grassi-2019} & ADNI &
+			Socio-demographic + clinical &
+			Baseline; 10-fold CV &
+			$0.88$ & $77.7$ / $79.9$ \\
+			\citet{moradi-2015} & ADNI &
+			GM density (whole brain) &
+			Baseline; 10-fold CV &
+			$0.766$ & $88.9$ / $51.6$ \\
+			\citet{moradi-2015} & ADNI &
+			GM density (whole brain) + cognitive &
+			Baseline; 10-fold CV &
+			$0.902$ & $86.7$ / $73.6$ \\
+			\citet{ye-2012}$^{\S}$ & ADNI &
+			Whole brain features + cognitive &
+			Baseline; Stability selection &
+			$0.859$ & \textemdash\ / \textemdash \\
+			\citet{casanova-2013}$^{\P}$ & ADNI &
+			Tissues (whole Brain) + Cognitive &
+			Baseline; nested CV &
+			\textemdash & 45.8 \/ 75.5 \\
+			\citet{guo-2017a}$^{\|}$ & ADNI &
+			Cortical  &
+			Baseline; LOOCV &
+			\textemdash & $85.0$ / $84.8$ \\
+			\citet{cuingnet-2011} & ADNI &
+			Hippocampus volume &
+			Baseline; LOOCV &
+			\textemdash & $62.0$ / $69.0$ \\
+			\midrule
+			\textbf{Our Work (primary)}$^{\dagger}$ & ADNI &
+			Hippocampus volume &
+			3 visits; nested CV (SVM, no ComBat) &
+			$\mathbf{0.680 \pm 0.075}$ & $\mathbf{55.9 \pm 15.1}$ / $\mathbf{65.4 \pm 11.2}$ \\
+			\textbf{Our Work (best imaging)}$^{\ddagger}$ & ADNI &
+			Hippocampus volume &
+			3 visits; nested CV (elastic-net, ComBat) &
+			$\mathbf{0.708 \pm 0.070}$ & $\mathbf{63.9 \pm 14.5}$ / $\mathbf{65.5 \pm 13.8}$ \\
+			\textbf{Our Work} & ADNI &
+			Hippocampus volume &
+			$T_1$ only; nested CV (SVM, no ComBat) &
+			$\mathbf{0.579 \pm 0.161}$ & $\mathbf{42.8 \pm 24.3}$ / $\mathbf{63.2 \pm 23.3}$ \\
+			\textbf{Our Work} & ADNI &
+			Cognitive &
+			$T_1$ clinical; nested CV &
+			$\mathbf{0.761 \pm 0.067}$ & $\mathbf{69.1 \pm 12.0}$ / $\mathbf{69.9 \pm 11.0}$ \\
+			\textbf{Our Work} & ADNI &
+			Hippocampus volume + cognitive &
+			3 MRI visits + $T_1$ clinical; nested CV &
+			$\mathbf{0.765 \pm 0.063}$ & $\mathbf{69.9 \pm 13.9}$ / $\mathbf{65.6 \pm 14.9}$ \\
+			\bottomrule
+		\end{tabular}
+		\vspace{0.5em}
+		\begin{flushleft}
+			\scriptsize
+			\textit{Note:}
+			Alzheimer's Disease Neuroimaging Initiative (ADNI); National Alzheimer's Coordinating Center (NACC); Leave-One-Out Cross-validation (LOOCV); Cross-Validation (CV).
+			$^{\dagger}$Pre-specified primary endpoint (wide, SVM, \corrigir{}{bootstrap-derived L1 selection-frequency filtering}, no ComBat); \corrigir{}{the value before $\pm$ is patient-level AUC on subject-averaged OOF probabilities, whereas the value after $\pm$ is the descriptive SD of the 50 fold-specific AUCs and is not an uncertainty interval for the patient-level estimate.}
+			$^{\ddagger}$Best image-only sensitivity analysis (elastic-net, fold-wise ComBat).
+			\corrigir{}{Sen/Spe at fold-specific Youden thresholds; mean $\pm$ SD across outer folds.}
+		\end{flushleft}
+	\end{sidewaystable}
+	
+	Under the pre-specified protocol (longitudinal wide hippocampal representation, volumetric modality, SVM, \corrigir{}{bootstrap-derived L1 selection-frequency filtering}, no ComBat; 50 outer evaluations), patient-level out-of-fold AUC was \textbf{0.680} (\corrigir{}{label-permutation $p<0.001$ versus chance on frozen patient-level OOF scores; $B_{\mathrm{perm}}=5000$}; Table~\ref{tab:auc_modalidades}). Volumetric tissue fractions provided the strongest image-only signal; morphometric shape remained above chance (AUC $=0.635$, $p<0.001$), texture was weakly above chance (AUC $=0.581$, $p=0.025$), and displacement was not significant (AUC $=0.553$, $p=0.107$). Merging all modalities did not improve over volume alone (AUC $=0.584$, $p=0.021$). As a positive-control sanity check on the same pipeline, CN versus AD discrimination reached patient-level AUC $=0.912$ for shape features (elastic-net, no ComBat) and $0.855$ for volume (SVM, no ComBat), confirming that the feature extraction and nested-validation stack recover strong diagnostic signal when group separation is large. Figure~\ref{fig:roc_smci_pmci} shows the volumetric ROC for the primary sMCI/pMCI task, whose performance is modest in absolute terms but statistically meaningful.
+	
+	\begin{table}[htbp]
+		\centering
+		\footnotesize
+		\caption{Patient-level out-of-fold AUC by imaging modality under the pre-specified primary protocol (wide, SVM, \corrigir{}{bootstrap-derived L1 selection-frequency filtering}, no ComBat, $n=188$, 50 outer evaluations). \corrigir{}{Point estimate: AUC on subject-averaged OOF probabilities; SD: descriptive variation among the 50 fold-specific AUCs, not uncertainty of the patient-level AUC.} \corrigir{}{Permutation $p$: one-sided label shuffle of patient outcomes with scores held fixed ($B_{\mathrm{perm}}=5000$; $p=(r+1)/(B_{\mathrm{perm}}+1)$); nested fitting not re-run.}}
+		\label{tab:auc_modalidades}
+		\begin{tabular}{@{}lcc@{}}
+			\toprule
+			Modality & Patient-level AUC $\pm$ SD & Permutation $p$ (vs.\ chance) \\
+			\midrule
+			Volume       & $0.680 \pm 0.075$ & $<0.001$ \\
+			Shape        & $0.635 \pm 0.097$ & $<0.001$ \\
+			All merged   & $0.584 \pm 0.073$ & $0.021$ \\
+			Texture      & $0.581 \pm 0.071$ & $0.025$ \\
+			Displacement & $0.553 \pm 0.110$ & $0.107$ \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
+	\begin{figure}[htbp]
+		\centering
+		\includegraphics[width=1.00\linewidth]{graphics/roc_smci_pmci.pdf}
+		\caption{ROC curves for sMCI vs.\ pMCI on volumetric wide features under the pre-specified primary protocol (SVM family, \corrigir{}{bootstrap-derived L1 selection-frequency filtering}, no ComBat). Shaded bands: $\pm$1 SD of TPR across outer evaluations. Legend: \corrigir{}{patient-level AUC on subject-averaged OOF probabilities $\pm$ bootstrap SD} (same estimand as Table~\ref{tab:auc_modalidades}).}
+		\label{fig:roc_smci_pmci}
+	\end{figure}
+	
+	\corrigir{}{The secondary CN-versus-AD task was used only as a positive-control analysis of the same extraction and validation stack, not as a prognostic endpoint. Its ROC curves are shown in Figure~\ref{fig:roc_cn_ad}; the substantially higher discrimination confirms that the pipeline recovers strong diagnostic signal when anatomical separation is large. The corresponding modality-by-classifier heatmap and confusion matrices were not included in the main text because they are redundant with the ROC and threshold-based summary metrics.}
+	
+	\begin{figure}[htbp]
+		\centering
+		\includegraphics[width=1.00\linewidth]{graphics/roc_cn_ad.pdf}
+		\caption{\corrigir{}{Positive-control ROC curves for CN versus AD under the same wide imaging and nested-validation framework. Shaded bands show $\pm$1 SD of TPR across outer evaluations; legend values are patient-level AUCs on subject-averaged OOF probabilities $\pm$ bootstrap SD.}}
+		\label{fig:roc_cn_ad}
+	\end{figure}
+	
+	%	\begin{figure}[htbp]
+		%		\centering
+		%		\includegraphics[width=0.75\linewidth]{graphics/cm_smci_pmci.pdf}
+		%		\caption{Pooled confusion matrix for sMCI vs.\ pMCI (volumetric wide features, SVM, L1-stable selection, no ComBat).}
+		%		\label{fig:cm_smci_pmci}
+		%	\end{figure}
+	
+	\subsection{\corrigir{}{Primary, ablation, and sensitivity configurations}}
+	
+	\corrigir{}{Table~\ref{tab:main_results} is organized by analysis role rather than by a post-hoc top-AUC ranking: it reports the pre-specified SVM/no-ComBat configuration across all five modalities, two volumetric sensitivity configurations, and the matched first-visit volumetric comparator.} The highest image-only value was elastic-net logistic regression with fold-wise ComBat on volumetric wide features (AUC $=0.708$). Figure~\ref{fig:heatmap_smci_combat} summarizes modality-by-classifier performance under ComBat and aligns with the best imaging row in Table~\ref{tab:literature_comparison}. These results are reported as \emph{sensitivity/exploratory} analyses: they estimate an upper performance bound under alternative classifiers and harmonization but do not replace the primary endpoint. \corrigir{}{The complete modality-by-classifier-by-ComBat ranking is retained in the machine-readable result files rather than expanded in the main-text table.}
+	
+	\begin{figure}[htbp]
+		\centering
+		\includegraphics[width=\linewidth]{graphics/heatmap_smci_pmci.pdf}
+		\caption{Sensitivity analysis: modality-by-classifier heatmap for sMCI vs.\ pMCI with fold-wise ComBat and \corrigir{}{bootstrap-derived L1 selection-frequency filtering}.}
+		\label{fig:heatmap_smci_combat}
+	\end{figure}
+	
+	\begin{table}[htbp]
+		\centering
+		\footnotesize
+		\setlength{\tabcolsep}{4pt}
+		\caption{Selected primary, modality-ablation, sensitivity, and first-visit configurations for sMCI vs.\ pMCI. AUC point estimates are patient-level; SD denotes variability across outer-fold AUCs.}
+		\label{tab:main_results}
+		\begin{tabular}{@{}llllccc@{}}
+			\toprule
+			Protocol & Modality & Model & ComBat &
+			AUC$\pm\mathrm{SD}$ & Acc$\pm\mathrm{SD}$ & F1$\pm\mathrm{SD}$ \\
+			\midrule
+			\multicolumn{7}{l}{\textit{Pre-specified primary configuration and modality ablation}} \\
+			Wide & volume       & SVM         & no  & $0.680 \pm 0.075$ & $0.613 \pm 0.067$ & $0.546 \pm 0.106$ \\
+			Wide & shape        & SVM         & no  & $0.635 \pm 0.097$ & $0.567 \pm 0.075$ & $0.529 \pm 0.112$ \\
+			Wide & texture      & SVM         & no  & $0.581 \pm 0.071$ & $0.517 \pm 0.062$ & $0.496 \pm 0.144$ \\
+			Wide & displacement & SVM         & no  & $0.553 \pm 0.110$ & $0.510 \pm 0.079$ & $0.375 \pm 0.198$ \\
+			Wide & all merged   & SVM         & no  & $0.584 \pm 0.073$ & $0.515 \pm 0.064$ & $0.489 \pm 0.132$ \\
+			\midrule
+			\multicolumn{7}{l}{\textit{Sensitivity analyses}} \\
+			Wide & volume       & elastic-net & yes & $0.708 \pm 0.070$ & $0.649 \pm 0.065$ & $0.605 \pm 0.086$ \\
+			Wide & volume       & SVM         & yes & $0.700 \pm 0.062$ & $0.640 \pm 0.063$ & $0.597 \pm 0.083$ \\
+			\midrule
+			\multicolumn{7}{l}{\textit{First-visit comparator}} \\
+			Baseline & volume     & SVM         & no  & $0.579 \pm 0.161$ & $0.546 \pm 0.101$ & $0.409 \pm 0.198$ \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
+	\subsection{Longitudinal wide versus first-visit-only representation}
+	
+	\corrigir{}{The complete wide longitudinal pipeline yielded higher patient-level AUC than the first-visit-only pipeline for several modalities (Table~\ref{tab:abs_vs_t1}; Figure~\ref{fig:abs_t1only}). Using two-sided paired bootstrap tests as primary, volume showed $\Delta$AUC $=+0.101$ (95\% percentile CI [0.021, 0.179], $p=0.012$, FDR $q=0.060$), displacement $\Delta$AUC $=+0.111$ (CI [$-0.014$, 0.238], $p=0.078$, $q=0.195$), and shape $\Delta$AUC $=+0.055$ (CI [$-0.016$, 0.125], $p=0.128$, $q=0.213$). After Benjamini--Hochberg correction across the five modalities, no contrast retained $q<0.05$; volume had the smallest two-sided $p$ but only a borderline FDR result. Corresponding one-sided $p$-values (volume $0.006$, displacement $0.039$, shape $0.064$) are secondary and were not used for multiplicity-corrected inference.} \corrigir{}{Because selection-frequency grouping operated over the columns available in each representation, these contrasts quantify differences between complete representation-specific pipelines and do not isolate the causal contribution of adding $T_2$ and $T_3$ under identical column-wise selection.}
+	
+	\begin{table}[htbp]
+		\centering
+		\footnotesize
+		\caption{Paired comparison of longitudinal versus $T_1$-only imaging (SVM, \corrigir{}{bootstrap-derived L1 selection-frequency filtering}, no ComBat, $n=188$). Patient-level AUC; SD across outer-fold AUCs (wide: 50 evaluations; $T_1$-only: 25). \corrigir{}{Primary $p$ is two-sided paired bootstrap; $q$ is Benjamini--Hochberg FDR across the five modalities. One-sided $p$ shown only as secondary.}}
+		\label{tab:abs_vs_t1}
+		\begin{tabular}{lcccccc}
+			\toprule
+			Modality & AUC wide & AUC $T_1$-only & $\Delta$AUC & $p$ (2-sided) & $q$ (FDR) & $p$ (1-sided) \\
+			\midrule
+			Volume       & $0.680 \pm 0.075$ & $0.579 \pm 0.161$ & $+0.101$ & $0.012$ & $0.060$ & $0.006$ \\
+			Displacement & $0.553 \pm 0.110$ & $0.441 \pm 0.068$ & $+0.111$ & $0.078$ & $0.195$ & $0.039$ \\
+			Texture      & $0.581 \pm 0.071$ & $0.520 \pm 0.120$ & $+0.061$ & $0.224$ & $0.224$ & $0.112$ \\
+			All merged   & $0.584 \pm 0.073$ & $0.524 \pm 0.118$ & $+0.060$ & $0.206$ & $0.224$ & $0.103$ \\
+			Shape        & $0.635 \pm 0.097$ & $0.580 \pm 0.123$ & $+0.055$ & $0.128$ & $0.213$ & $0.064$ \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
+	\begin{figure}[htbp]
+		\centering
+		\includegraphics[width=\linewidth]{graphics/abs_t1only.pdf}
+		\caption{\corrigir{}{Patient-level comparison of complete wide longitudinal versus $T_1$-only imaging pipelines by modality.} Bars: patient-level AUC.}
+		\label{fig:abs_t1only}
+	\end{figure}
+	
+	\subsection{Clinical predictors and multimodal fusion}
+	
+	First-visit clinical variables (sex, age, MMSE, ADAS, FAQ) outperformed the pre-specified imaging endpoint. The clinical SVM reached patient-level AUC $=0.761 \pm 0.067$; wide volumetric imaging under the primary SVM configuration reached AUC $=0.680$ (50 outer evaluations: 10 repeats $\times$ 5 folds). This ordering is expected in ADNI MCI, where cognitive scores already encode much of the prognostic signal. The imaging pipeline should therefore be interpreted as a structural benchmark and ablation framework, not as a replacement for inexpensive clinical screening. Early fusion of clinical and volumetric wide features did not yield a robust gain over clinical-only performance in paired bootstrap comparison ($\Delta$AUC $=+0.005$, 95\% percentile CI [$-0.044$, 0.053], \corrigir{}{two-sided $p=0.84$}), indicating no demonstrable incremental AUC from hippocampal MRI beyond standard first-visit scores under the tested fusion design.
+	
+	\subsection{Confounding analysis}
+	
+	Age alone (AUC $=0.456$, $p=0.85$) and sex alone (AUC $=0.507$, $p=0.43$) did not discriminate sMCI from pMCI. The wide volumetric model retained substantial information beyond age ($\Delta$AUC $=0.223$, 95\% CI [0.102, 0.341]) and beyond sex ($\Delta$AUC $=0.172$, 95\% CI [0.047, 0.297]).
+	
+	
+	\subsection{Sensitivity analyses}
+	
+	Figure~\ref{fig:combat} compares patient-level AUC with and without fold-wise ComBat (SVM reference). Volumetric AUC increased modestly with ComBat (from 0.680 without harmonization to 0.700 in the same SVM family), but the pre-specified primary analysis remained without harmonization. In the ADNI prognostic cohort, vendor--field batches were sufficiently represented in outer-training folds: batch-cardinality rules were satisfied in all 50 outer evaluations (10 repeats $\times$ 5 folds), and harmonization was executed without triggering the skip fallback that retains raw features when fewer than two acceptable batches remain.
+	
+	\begin{figure}[htbp]
+		\centering
+		\includegraphics[width=\linewidth]{graphics/combat.pdf}
+		\caption{Sensitivity analysis: effect of fold-wise ComBat harmonization on patient-level AUC by modality.}
+		\label{fig:combat}
+	\end{figure}
+	% =============================================================================
+	\section{Discussion}
+	\label{sec:Discussions}
+	
+	This study specifies and stress-tests a longitudinal pipeline for hippocampal features in ADNI, with the clinically difficult sMCI vs.\ pMCI task as the primary endpoint. The interpretation of the results is tied to the 36-month eligibility design: three longitudinally spaced predictors under a $\geq6$-month gap, outcome ascertainment on the same clinical horizon, and retention of a first AD scan only in the last slot when needed to preserve MCI--MCI--AD triplets. Performance was evaluated with patient-level nested cross-validation, patient-level out-of-fold (OOF) AUC, permutation tests against chance, and paired bootstrap comparisons across protocols. Sample-dependent modeling operations were fitted within the validation procedure, whereas image-wise processing, dataset-level QC, and CN template construction occurred before cross-validation. This reporting distinction is important because prognostic performance can be inflated when conversion-stage information, feature selection, harmonization, or threshold tuning incorporates information unavailable at the intended prediction time. \corrigir{}{Accordingly, the contribution is not another isolated classifier comparison but an evaluation architecture that makes temporal assumptions, fitting boundaries, estimands, and negative ablations inspectable. This architecture is reusable when assessing candidate components for neuroimaging-based decision support, where an apparently stronger model is useful only if its gain survives the same leakage controls and patient-level comparison.}
+	
+	
+	\subsection{Prognostic performance and task difficulty}
+	
+	For the pre-specified sMCI vs.\ pMCI endpoint, patient-level AUC was \textbf{0.680} (permutation $p<0.001$). Morphometric shape features remained above chance (AUC $=0.635$), texture was weakly above chance (AUC $=0.581$), and displacement was not significant (AUC $=0.553$). In sensitivity analyses, elastic-net logistic regression with fold-wise ComBat reached slightly higher image-only AUC on volume ($\mathrm{AUC}=0.708$; Table~\ref{tab:main_results}) without changing the modality ranking (volume $>$ shape $\gg$ texture/displacement). These results are consistent with the known difficulty of separating stable from progressive MCI using hippocampal structure alone at a single-ROI scale, in a cohort with heterogeneous conversion dynamics and substantial contribution of non-structural factors \cite{wyman-2013,scheltens-1992}. Modest prognostic utility does not imply that hippocampal MRI alone solves prognosis.
+	
+	The primary volumetric result ($\mathrm{AUC}=0.680$) is meaningfully above chance yet far from clinical utility thresholds often discussed in the literature ($\mathrm{AUC}\gtrsim 0.80$ for individual risk stratification). Balanced accuracy and MCC remained low across imaging models, reflecting class imbalance (153 sMCI vs.\ 90 pMCI) and the limited separability of groups. Demographic covariates did not explain the imaging signal: age and sex alone performed near chance ($\mathrm{AUC}\approx 0.46$ and $0.51$), and volumetric wide features retained prognostic information after accounting for age and sex in supplementary confounding analyses. Thus the detected signal is hippocampal-specific rather than a proxy for demographics, but its absolute magnitude remains modest.
+	
+	Interpreting $\mathrm{AUC}\approx 0.68$ in context, similar ranges have been reported for hippocampal volume or shape in MCI-to-AD prediction when strict patient-level validation is enforced. The result provides a conservative estimate for hippocampus-only, triplet-visit features under patient-level nested evaluation.
+	
+	\corrigir{}{Pairwise comparison showed that the complete wide longitudinal pipeline outperformed the first-visit-only pipeline, although the contrast cannot be attributed exclusively to follow-up information because selection-frequency grouping operated over the columns available in each representation.} For SVM with \corrigir{}{bootstrap-derived L1 selection-frequency filtering} (no ComBat), volumetric wide features improved over $T_1$-only with $\Delta\mathrm{AUC}=+0.101$ (95\% percentile bootstrap CI [0.021, 0.179]; \corrigir{}{two-sided $p=0.012$, FDR $q=0.060$}). Displacement showed a similar \corrigir{}{paired pipeline difference} ($\Delta\mathrm{AUC}=+0.111$; \corrigir{}{two-sided $p=0.078$, $q=0.195$}), and shape showed a directional trend ($\Delta\mathrm{AUC}=+0.055$; \corrigir{}{two-sided $p=0.128$, $q=0.213$}). \corrigir{}{After Benjamini--Hochberg correction across five modalities, no contrast retained $q<0.05$.}
+	
+	Stable feature selection reinforced that interpretation. Six bilateral hippocampal tissue fractions (GM, WM, CSF) were retained in 100\% of outer folds for volumetric wide models under the primary SVM configuration, with follow-up visits contributing beyond $T_1$ (notably right-hemisphere WM selected mainly at $T_2$, with weaker retention at $T_3$). That stability argues against overfitting to a single visit and supports a biological reading: prognostic information in this cohort is carried less by exotic texture descriptors than by simple, bilateral compartmental shifts tracked longitudinally.
+	
+	\subsection{Ablation experiments}
+	
+	The ablation ordering was stable across classifiers: volume $>$ shape $\gg$ texture $\approx$ displacement; merging all modalities ($\mathrm{AUC}\approx 0.58$) did not beat volume alone. Reporting these weaker texture and displacement results is deliberate: under patient-level nested validation with fold-wise model fitting, they document that high-dimensional radiomic and SyN-derived deformation summaries add little prognostic value in a compact hippocampal ROI, despite substantial extraction cost. Publishing null or near-null modality outcomes constrains false optimism from pipelines that tune or select features on held-out patients and helps future work avoid over-interpreting complex descriptors when simple volumetry already saturates the available signal.
+	
+	Several non-mutually-exclusive mechanisms may explain the ranking.
+	
+	First, ROI restriction to the hippocampus limits texture and Jacobian-based displacement to a small, partially homogeneous region where group differences are subtle and registration variability is large relative to signal. Non-linear SyN warps and resampling in a compact ROI amplify interpolation error, which disproportionately affects displacement summaries and local intensity-gradient texture. Second, ADNI mixes 1.5T and 3T acquisitions across phases; local radiomic descriptors are especially sensitive to such scanner heterogeneity when harmonization is not applied in the primary endpoint. Third, radiomics and displacement fields are high-dimensional; even with fold-internal \corrigir{}{selection-frequency filtering}, variance dominates when the biological effect size is small. Fourth, volumetric tissue fractions are directly tied to atrophy biology and align with classical hippocampal volumetry, whereas merged feature spaces introduce redundancy without additional prognostic degrees of freedom under strict validation.
+	
+	Reporting near-chance texture and displacement performance under patient-level nested validation is itself informative: it cautions against interpreting high AUC values from complex radiomic or deformation pipelines in small ROIs without equally strict patient-level evaluation, and it provides an open negative benchmark that discourages analytic leakage. Prior studies reporting stronger texture-based prognostic performance may have benefited from global preprocessing, test-set feature selection, or less conservative splitting.
+	
+	\subsection{Imaging versus clinical predictors and fusion}
+	
+	First-visit clinical scores (MMSE, ADAS, FAQ) outperformed imaging alone: clinical SVM reached patient-level $\mathrm{AUC}=0.761$ (50 outer evaluations), compared with $\mathrm{AUC}=0.680$ for the pre-specified imaging endpoint (SVM, no ComBat) and $\mathrm{AUC}=0.708$ for the best post-hoc imaging configuration (elastic-net with ComBat). Early fusion of volumetric and clinical features ($\mathrm{AUC}=0.765$ with elastic-net) did not yield a robust improvement over clinical-only models in paired bootstrap comparison ($\Delta\mathrm{AUC}=+0.005$, \corrigir{}{two-sided $p=0.84$}). That is an important negative result: adding hippocampal MRI to standard cognitive/clinical baselines did not demonstrably increase prognostic AUC under paired, patient-level validation.
+	
+	This does not imply that MRI is irrelevant for prognosis in general. Clinical scores already encode cognitive decline; in ADNI MCI, they are strong proxies for underlying pathology. Residual structural information may require (i) different ROIs (entorhinal cortex, temporal lobe), (ii) explicit progression models (slopes, event-aligned changes), (iii) larger multi-site cohorts, or (iv) fusion strategies that respect nested validation at the multimodal selection stage. Our study establishes a conservative benchmark against which such extensions should be compared. The null fusion result is consistent with overlapping information: when cognitive scores already separate groups well, incremental hippocampal structure may not improve patient-level AUC unless targeted at clinically ambiguous cases, an analysis left for future work.
+	
+	\subsection{\corrigir{}{Implications for decision-support design}}
+	
+	\corrigir{}{The comparative evidence favors a staged decision-support architecture rather than an imaging-first predictor. Low-cost clinical variables would provide the initial prognostic assessment, while MRI-derived features would be considered only where they demonstrate incremental value for a predefined subgroup or clinical decision. Under this interpretation, the present pipeline supplies a validation layer for candidate imaging components: it tests whether longitudinal representation, feature family, harmonization, or fusion adds robust patient-level discrimination after all trainable operations are isolated from held-out participants. The current results do not justify deployment or replacement of clinical assessment; instead, they prevent unsupported complexity from being promoted into a decision-support workflow and define measurable conditions that future imaging components must exceed. Prospective workflow evaluation, calibration at clinically relevant operating points, external validation, and assessment of net clinical benefit remain necessary before clinical use.}
+	
+	\subsection{Limitations}
+	
+	\begin{itemize}
+		\item \textbf{Single cohort, complete-case selection, and external validation.} The primary analysis used ADNI (ADNI-1/2/GO) and required three longitudinally spaced predictors under a $\geq6$-month gap together with a fully observed 36-month clinical outcome; $n=243$ for sMCI/pMCI, including 52 progressive triplets that retained a first AD acquisition only in the last predictor slot. This construction reduces incomplete follow-up but produces a selected cohort. Generalization to other scanners, protocols, visit patterns, and populations remains unknown. Nested cross-validation with 50 outer evaluations reduces internal optimism but does not replace replication in an independent cohort.
+		\item \textbf{Pre-cross-validation reference operations.} Image-wise preprocessing and feature extraction used fixed configurations and did not pool information across prognostic participants. However, MRQy QC limits were estimated from the complete image pool, and the stratified CN templates were constructed once before cross-validation rather than within each outer fold. The CN templates contained no sMCI or pMCI participants and were treated as fixed references from a group disjoint from the two prognostic classes. Nevertheless, the full-pool QC procedure was sample-dependent, and the study should not be interpreted as demonstrating an end-to-end pipeline in which every operation was fitted within the validation folds.
+		\item \textbf{ROI scope.} Hippocampus-only analysis was a deliberate design choice to benchmark a canonical atrophy marker under patient-level longitudinal evaluation. It likely underestimates prognostic value of entorhinal cortex, whole-brain atrophy, or white-matter microstructure. The extraction and validation framework is anatomically agnostic and can be extended to additional ROIs without changing the nested learning protocol.
+		\item \textbf{Class imbalance and metrics.} 153 sMCI vs.\ 90 pMCI motivates AUC, balanced accuracy, and MCC over raw accuracy; clinical utility at specific sensitivity--specificity operating points was not optimized for deployment.
+		\item \textbf{Computational cost.} SyN registration, groupwise templates, and full radiomics limit rapid iteration; incremental processing mitigates interruptions but not total cost.
+		\item \textbf{Intensity normalization and radiomics.} Global histogram matching to a fixed MNI template can alter texture descriptors; we did not ablate matching on versus off. Feature-level NeuroComBat was evaluated only as a sensitivity analysis and does not replace an intensity-pipeline ablation.
+		\item \textbf{ANTsPyNet internal preprocessing.} Parcellation and deep Atropos were run with library preprocessing enabled after an already complete external ANTsX chain, which may duplicate intensity or spatial normalization relative to the pretrained model domain.
+		\item \textbf{Clinical fusion.} Fusion used early column-wise concatenation of clinical and imaging features under the same nested structure, with \corrigir{}{bootstrap-derived L1 selection-frequency filtering} applied to imaging columns only; late fusion (soft voting, score averaging, or stacking) was not evaluated.
+		\item \corrigir{}{\textbf{Longitudinal versus first-visit selection.} Stable-pool grouping operated over the columns available in each representation. A base feature in the wide representation could satisfy the group-level criterion through any of its three visit-specific columns, whereas the corresponding first-visit group contained only its $T_1$ column. The observed AUC differences therefore compare complete representation-specific pipelines and may partly reflect their selected feature spaces; they should not be interpreted as pure causal estimates of information added by follow-up visits.}
+	\end{itemize}
+	
+	% =============================================================================
+	\section{Conclusions}
+	\label{sec:Conclusions}
+	
+	We presented a longitudinal framework for hippocampal biomarker extraction and prognostic classification on ADNI (ADNI-1/2/GO), evaluated through patient-level nested cross-validation with fold-wise model fitting. The primary cohort used three longitudinally spaced predictors within a fixed 36-month clinical window under a $\geq6$-month inter-scan gap; when progressive trajectories would otherwise retain only two MCI-stage scans, the first AD acquisition was kept solely in the last predictor slot ($n=52$). Nested cross-validation with \corrigir{}{bootstrap-derived L1 selection-frequency filtering}, patient-level out-of-fold evaluation, and explicit ablations yielded a transparent account of performance under these conservative conditions. \corrigir{}{The principal contribution is an auditable methodology for evaluating candidate components of longitudinal neuroimaging decision support: it links temporal cohort construction, fold-isolated fitting, feature-selection-frequency analysis, representation ablation, clinical comparison, and patient-level statistical inference in one reproducible protocol.}
+	
+	The pre-specified sMCI/pMCI endpoint remained challenging yet above chance (wide hippocampal volume, SVM, no ComBat: patient-level AUC $=0.680$, permutation $p<0.001$). \corrigir{}{The complete wide longitudinal pipeline outperformed the $T_1$-only pipeline for volume ($\Delta\mathrm{AUC}=+0.101$, two-sided $p=0.012$, FDR $q=0.060$), with weaker two-sided contrasts for displacement ($\Delta\mathrm{AUC}=+0.111$, $p=0.078$, $q=0.195$) and shape ($\Delta\mathrm{AUC}=+0.055$, $p=0.128$, $q=0.213$); no modality retained $q<0.05$ after Benjamini--Hochberg correction across five tests;} \corrigir{}{because selection was representation-specific, these differences do not isolate the causal contribution of follow-up visits.} Six bilateral tissue-fraction features were stably selected across outer folds. Modality ablation ranked volume highest, followed by shape ($\mathrm{AUC}=0.635$); texture, displacement, and merged modalities did not improve over volume alone---a useful negative finding under strict validation. Sensitivity analyses with elastic-net and fold-wise ComBat raised image-only AUC modestly (up to $0.708$) without changing this ordering. First-visit clinical scores remained stronger than hippocampal MRI alone ($\mathrm{AUC}=0.761$ vs.\ $0.680$), and early multimodal fusion did not robustly exceed clinical predictors ($\Delta\mathrm{AUC}=+0.005$, \corrigir{}{two-sided $p=0.84$}).
+	
+	\corrigir{}{The resulting evidence supports a clinically conservative architecture in which inexpensive clinical predictors remain the first-line signal and structural MRI is admitted only after demonstrating incremental value under matched validation. Future work should evaluate that staged design in external cohorts, extend anatomical coverage beyond the hippocampus, test subgroup-specific and calibrated decision rules, and quantify clinical utility while preserving fold isolation for every sample-dependent operation.}
+	% =============================================================================
+	\section*{Acknowledgments}
+	
+	Data collection and sharing for this project was funded by the Alzheimer's Disease Neuroimaging Initiative (ADNI).
+	
+	\subsection*{Funding Statement}
+	
+	The authors thank CAPES (Coordena\c{c}\~{a}o de Aperfei\c{c}oamento de Pessoal de N\'{\i}vel Superior, Brazil), Finance Code 001, for financial support.
+	
+	\section*{Conflict of Interest Statement}
+	
+	The authors declare no conflict of interest.
+	
+	%\bibliographystyle{elsarticle-num}
+	%\bibliography{referencias}
+	\bibliographystyle{cas-model2-names-short}
+	\biboptions{authoryear}
+	\bibliography{cas-refs}
+	
+\end{document}
