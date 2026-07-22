@@ -1,60 +1,11 @@
-# Groupwise: todos os *.nii.gz no diretório (templates), registrados à referência do pipeline ADNI (MNI)
-
-# import glob
-# import os
-# import time
-# import ants
-
-# input_dir_gw = "/mnt/study-data/pgirardi/groupwise/adni/CN/"
-# output_dir_gw = "/mnt/study-data/pgirardi/graphs/images/groupwise"
-# ref_adni_img = "/mnt/study-data/pgirardi/preproc/atlases/templates/mni152_2009c_template.nii.gz"
-
-# nii_files = sorted(glob.glob(os.path.join(input_dir_gw, "*.nii.gz")))
-# n_total = len(nii_files)
-# print(f"[INFO] Total de imagens (*.nii.gz) no diretório: {n_total}")
-
-# if n_total == 0:
-#     print("[WARN] Nenhum .nii.gz encontrado em", input_dir_gw)
-# else:
-#     os.makedirs(output_dir_gw, exist_ok=True)
-#     fixed = ants.image_read(ref_adni_img)
-#     t0 = time.perf_counter()
-
-#     for k, moving_path in enumerate(nii_files, start=1):
-#         prog = f"[{k}/{n_total}]"
-#         basename = os.path.basename(moving_path)
-#         out_img_path = os.path.join(output_dir_gw, basename)
-
-#         if os.path.isfile(out_img_path):
-#             print(f"{prog} [SKIP] Já existe: {out_img_path}")
-#             continue
-
-#         print(f"{prog} [RUN] {basename} -> rigid to referência ADNI (MNI)")
-#         moving = ants.image_read(moving_path)
-
-#         reg = ants.registration(
-#             fixed=fixed,
-#             moving=moving,
-#             type_of_transform="Rigid",
-#             interpolator="linear",
-#         )
-
-#         warped = reg["warpedmovout"]
-#         ants.image_write(warped, out_img_path)
-#         print(f"{prog} [OK] Salvo: {out_img_path}")
-
-#     elapsed = time.perf_counter() - t0
-#     print(f"[INFO] Concluído: {n_total} arquivos processados no loop em {elapsed:.1f} s.")
-
-#######################################################################
-
-
 import os
 import time
 import ants
 import pandas as pd
 
-population_file = "csvs/adnimerged_longitudinal_optimo.csv" #"image_data.txt"
+# Lista união (entrada). Imagens/warps continuam em images/ (globais).
+COHORT = "all_population"
+population_file = f"csvs/cohorts/{COHORT}/all_population.csv"
 
 input_dir = "/mnt/databases/mri/adni/preproc/3-biasfield/"
 output_dir = "/mnt/study-data/pgirardi/graphs/images/resampled_1.0mm"

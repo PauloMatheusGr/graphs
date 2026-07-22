@@ -440,7 +440,7 @@ if __name__ == "__main__":
     assert "strain_fro_mean" in dropped_df.columns
     print(f"ok: exclude-features matched {len(hit)} cols")
 
-    base = Path("csvs/longitudinal_optimo_4_groups")
+    base = Path("csvs/cohorts/36m_6m")
     rad_path = base / "ablation" / ROI_FILTER_DEFAULT / "rad_long.csv"
     if not rad_path.is_file():
         print(f"pulando self-check shape/texture: {rad_path} ausente")

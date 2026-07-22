@@ -21,15 +21,15 @@ import numpy as np
 # CONFIG (edite aqui)
 # =========================
 
-ab = "longitudinal_optimo_4_groups"
-# ab = "longitudinal_4_groups"
+# Lista união + store master de features.
+COHORT = "all_population"
+COHORT_DIR = f"csvs/cohorts/{COHORT}"
 
-IMAGES_CSV = "csvs/adnimerged_longitudinal_optimo.csv"
-# IMAGES_CSV = "csvs/adnimerged_longitudinal.csv"
+IMAGES_CSV = f"{COHORT_DIR}/all_population.csv"
 REGIONS_DIR = "./images/regions"
 SEG_DIR = "./images/seg"
 BRAIN_MASK_DIR = "./images/brain_mask"
-OUT_CSV = f"./csvs/{ab}/features_volumetric.csv"
+OUT_CSV = f"{COHORT_DIR}/features_volumetric.csv"
 
 LOG_EVERY = 1
 

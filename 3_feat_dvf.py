@@ -30,19 +30,19 @@ from scipy.stats import kurtosis, skew
 # CONFIG (edite aqui)
 # =========================
 
-ab = "longitudinal_optimo_4_groups"
-# ab = "longitudinal_4_groups"
+# Lista união + store master de features DVF.
+COHORT = "all_population"
+COHORT_DIR = f"csvs/cohorts/{COHORT}"
 
-IMAGES_CSV = "csvs/adnimerged_longitudinal_optimo.csv"
-# IMAGES_CSV = "csvs/adnimerged_longitudinal.csv"
+IMAGES_CSV = f"{COHORT_DIR}/all_population.csv"
 
 WARPS_DIR = "./images/displacement_field"
 CLINIC_DIR = "./images/resampled_1.0mm"
 REGIONS_DIR = "./images/regions"
 BRAIN_MASK_DIR = "./images/brain_mask"
 
-OUT_CSV = f"./csvs/{ab}/features_displacement.csv"
-RUN_DIR = os.path.join(WARPS_DIR, "features", ab)
+OUT_CSV = f"{COHORT_DIR}/features_displacement.csv"
+RUN_DIR = os.path.join(WARPS_DIR, "features", COHORT)
 
 RESUME = True
 LOG_EVERY = 1  # log a cada N imagens processadas

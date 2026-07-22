@@ -305,7 +305,7 @@ if __name__ == "__main__":
 
     from ablation_prep import pivot_long_to_wide
 
-    data_dir = Path("csvs/longitudinal_optimo_4_groups/ablation") / roi
+    data_dir = Path("csvs/cohorts/36m_6m/ablation") / roi
     for mod, fname in (("vol", "vol_long.csv"), ("disp", "disp_long.csv"), ("shape", "shape_long.csv")):
         long_path = data_dir / fname
         if not long_path.is_file():

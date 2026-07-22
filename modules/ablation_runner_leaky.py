@@ -669,7 +669,7 @@ def _results_dir_for_modality(
 
 def run_full_ablation_suite_leaky(
     *,
-    base_dir: Path | str = "csvs/longitudinal_optimo_4_groups/ablation/hippocampus",
+    base_dir: Path | str = "csvs/cohorts/36m_6m/ablation/hippocampus",
     roi: str = ROI_FILTER_DEFAULT,
     tasks: tuple[str, ...] = ("cn_ad", "smci_pmci"),
     modalities: tuple[str, ...] = ("vol", "shape", "texture", "disp", "all"),

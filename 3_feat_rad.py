@@ -28,16 +28,16 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-ab = "longitudinal_optimo_4_groups"
-# ab = "longitudinal_4_groups"
+# Lista união + store master de features.
+COHORT = "all_population"
+COHORT_DIR = Path("csvs/cohorts") / COHORT
 
-DEFAULT_LIST = Path(f"csvs/adnimerged_longitudinal_optimo.csv")
-# DEFAULT_LIST = Path(f"/mnt/study-data/pgirardi/graphs/csvs/adnimerged_longitudinal.csv")
+DEFAULT_LIST = COHORT_DIR / "all_population.csv"
 DEFAULT_IMAGE_DIR = Path("images/resampled_1.0mm")
 DEFAULT_IMAGE_SUFFIX = "_stripped_nlm_denoised_biascorrected.nii.gz"
 DEFAULT_REGIONS_DIR = Path("images/regions")
 DEFAULT_BRAIN_MASK_DIR = Path("images/brain_mask")
-DEFAULT_OUT = Path(f"csvs/{ab}/features_radiomic.csv")
+DEFAULT_OUT = COHORT_DIR / "features_radiomic.csv"
 
 # Seleção de features no código (em vez de Params.yaml).
 # Referência das classes: https://github.com/AIM-Harvard/pyradiomics/blob/master/docs/features.rst

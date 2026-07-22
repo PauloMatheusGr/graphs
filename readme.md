@@ -1,9 +1,9 @@
-# Plano experimental enxuto (paper optimo)
+# Plano experimental enxuto (paper 36m_6m)
 
-**Base:** `csvs/longitudinal_optimo_4_groups`  
-**Análise:** `6_results.ipynb` → `all_protocols_summary.csv`  
-**Stats:** `7_stats.ipynb`  
-**CLI detalhado (legado/completo):** `0_cli_runs.md` (preferir este plano)
+**Base:** `csvs/cohorts/36m_6m`  
+**Trocar cohort:** `--cohort` nos `4_`/`5_run_*` (ou `COHORT` em `6_results.ipynb`).  
+**Análise:** `6_results.ipynb` → `all_protocols_summary.csv` (1 cohort) e `csvs/cohort_comparison/{cohort_results,cohort_features_long}.csv` (multi-cohort)  
+**Stats:** `7_stats.ipynb`
 
 Rodar **um experimento por vez**. Não expandir a grade sem necessidade.
 
@@ -89,7 +89,7 @@ Gera `ablation/hippocampus/{vol,rad,shape,disp,merge}_long.csv`.
 
 ```bash
 python 5_run_ablation.py \
-  --base-dir csvs/longitudinal_optimo_4_groups/ablation/hippocampus \
+  --base-dir csvs/cohorts/36m_6m/ablation/hippocampus \
   --representation wide \
   --modality shape,texture,disp,all \
   --tasks smci_pmci \
@@ -124,7 +124,7 @@ Saída: `ablation_results_clinic/`
 
 ```bash
 python 5_run_ablation.py \
-  --base-dir csvs/longitudinal_optimo_4_groups/ablation/hippocampus \
+  --base-dir csvs/cohorts/36m_6m/ablation/hippocampus \
   --representation t1_only \
   --modality shape,texture,disp,all \
   --tasks smci_pmci \
@@ -166,7 +166,7 @@ Saída: `ablation_results_clinic_img/`
 
 ```bash
 python 5_run_ablation.py \
-  --base-dir csvs/longitudinal_optimo_4_groups/ablation/hippocampus \
+  --base-dir csvs/cohorts/36m_6m/ablation/hippocampus \
   --representation wide \
   --modality vol \
   --tasks cn_ad \

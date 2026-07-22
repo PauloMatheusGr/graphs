@@ -13,8 +13,11 @@ if str(_MOD) not in sys.path:
 import pandas as pd
 from ablation_prep import assign_scanner_batch, export_ablation_long_only
 
-BASE = Path("csvs/longitudinal_optimo_4_groups")
-LONGITUDINAL = Path("csvs/adnimerged_longitudinal_optimo.csv")
+# Features vêm da store união; meta/ablation saem no cohort de análise.
+FEATURES_DIR = Path("csvs/cohorts/all_population")
+COHORT = "36m_6m"  # editar só isto → cohort de análise
+BASE = Path("csvs/cohorts") / COHORT
+LONGITUDINAL = BASE / "adnimerged_longitudinal.csv"
 MERGE_KEYS = ["ID_IMG", "roi", "side", "label"]
 
 VOL_FEAT_COLS = [
@@ -43,8 +46,8 @@ def normalize_merge_keys(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def merge_rad_vol_icv() -> pd.DataFrame:
-    vol_df = normalize_merge_keys(pd.read_csv(BASE / "features_volumetric.csv"))
-    rad_df = normalize_merge_keys(pd.read_csv(BASE / "features_radiomic.csv"))
+    vol_df = normalize_merge_keys(pd.read_csv(FEATURES_DIR / "features_volumetric.csv"))
+    rad_df = normalize_merge_keys(pd.read_csv(FEATURES_DIR / "features_radiomic.csv"))
 
     icv_df = (
         vol_df.loc[vol_df["roi"] == "__global__", ["ID_IMG", "mask_mm3"]]
@@ -101,10 +104,13 @@ def add_cohort_meta(radiomics_merge: pd.DataFrame) -> pd.DataFrame:
         "MMSE_SCORE", "CDR_GLOBAL", "ADAS_SCORE", "FAQ_SCORE",
     ]
     longitudinal = pd.read_csv(LONGITUDINAL)
+    longitudinal["ID_IMG"] = longitudinal["ID_IMG"].astype(str).str.strip()
+    cohort_ids = set(longitudinal["ID_IMG"])
+    out = out.loc[out["ID_IMG"].isin(cohort_ids)].copy()
+
     meta_cols = list(dict.fromkeys(cohort_cols + tech_cols))
     meta_sub = (
         longitudinal[meta_cols]
-        .assign(ID_IMG=lambda d: d["ID_IMG"].astype(str).str.strip())
         .drop_duplicates(subset=["ID_IMG"], keep="last")
     )
     merge = out.merge(meta_sub, on="ID_IMG", how="left", validate="many_to_one")
@@ -137,12 +143,15 @@ def build_feat_disp_all() -> pd.DataFrame:
         out["label"] = out["label"].astype(str).str.strip()
         return out
 
-    df_disp = norm_keys(pd.read_csv(BASE / "features_displacement.csv"))
+    df_disp = norm_keys(pd.read_csv(FEATURES_DIR / "features_displacement.csv"))
     meta_extra = ["ID_IMG", "slot", "FIELD_STRENGTH", "MANUFACTURER", "MFG_MODEL",
                   "MMSE_SCORE", "CDR_GLOBAL", "ADAS_SCORE", "FAQ_SCORE"]
+    longitudinal = pd.read_csv(LONGITUDINAL)
+    longitudinal["ID_IMG"] = longitudinal["ID_IMG"].astype(str).str.strip()
+    cohort_ids = set(longitudinal["ID_IMG"])
+    df_disp = df_disp.loc[df_disp["ID_IMG"].isin(cohort_ids)].copy()
     meta_sub = (
-        pd.read_csv(LONGITUDINAL)[meta_extra]
-        .assign(ID_IMG=lambda d: d["ID_IMG"].astype(str).str.strip())
+        longitudinal[meta_extra]
         .drop_duplicates(subset=["ID_IMG"], keep="last")
     )
     overlap = [c for c in meta_sub.columns if c in df_disp.columns and c != "ID_IMG"]
@@ -193,9 +202,10 @@ def build_feat_merge_all(rad: pd.DataFrame, disp: pd.DataFrame) -> pd.DataFrame:
 
 def main() -> None:
     for p in (
-        BASE / "features_volumetric.csv",
-        BASE / "features_radiomic.csv",
-        BASE / "features_displacement.csv",
+        FEATURES_DIR / "features_volumetric.csv",
+        FEATURES_DIR / "features_radiomic.csv",
+        FEATURES_DIR / "features_displacement.csv",
+        LONGITUDINAL,
     ):
         if not p.is_file():
             raise FileNotFoundError(f"Extração incompleta: {p}")
@@ -205,6 +215,7 @@ def main() -> None:
     merge = build_feat_merge_all(rad, disp)
     paths = export_ablation_long_only(rad, disp, merge, BASE)
     print(f"ablation export OK: {len(paths)} ficheiros → {list(paths.values())}")
+    print(f"features←{FEATURES_DIR} | cohort←{COHORT} | out←{BASE}")
 
 
 if __name__ == "__main__":

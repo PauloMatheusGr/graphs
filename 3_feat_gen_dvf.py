@@ -28,7 +28,9 @@ import pandas as pd
 # CONFIG (edite aqui)
 # =========================
 
-DEFAULT_IMAGES_CSV = "csvs/adnimerged_longitudinal_optimo.csv"
+# Lista união (warps em images/displacement_field/, globais).
+COHORT = "all_population"
+DEFAULT_IMAGES_CSV = f"csvs/cohorts/{COHORT}/all_population.csv"
 
 # Tamanho mínimo para considerar NIfTI completo (em bytes)
 DEFAULT_MIN_OUTPUT_BYTES = 1024

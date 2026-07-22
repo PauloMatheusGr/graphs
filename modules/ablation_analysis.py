@@ -841,7 +841,7 @@ def plot_feature_stability(
 
 
 def default_results_dir(modality: str, base: Path | None = None) -> Path:
-    root = base if base is not None else Path("csvs/longitudinal_optimo_4_groups/ablation_results")
+    root = base if base is not None else Path("csvs/cohorts/36m_6m/ablation_results")
     return root / modality
 
 

@@ -2,7 +2,7 @@
 """Ablação protocolo LEAKY (literatura): pré-processamento global antes do CV.
 
 AVISO: resultados inflados de propósito — comparar com estudos sem anti-leakage.
-Saída: csvs/longitudinal_optimo_4_groups/ablation_results_leaky/{modality}/
+Saída: csvs/cohorts/36m_6m/ablation_results_leaky/{modality}/
 Análise: 3_results.ipynb com RESULTS_ROOT apontando para ablation_results_leaky.
 """
 
@@ -55,6 +55,8 @@ warnings.filterwarnings("ignore", category=ConvergenceWarning)
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
+
+COHORT = "36m_6m"  # editar só isto → csvs/cohorts/{COHORT}/
 
 log = logging.getLogger("ablation_leaky")
 
@@ -135,6 +137,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--roi", default=ROI_FILTER_DEFAULT)
     p.add_argument(
+        "--cohort",
+        default=COHORT,
+        help="Pasta em csvs/cohorts/{cohort}/",
+    )
+    p.add_argument(
         "--results-dir",
         type=Path,
         default=None,
@@ -196,7 +203,7 @@ def main(argv: list[str] | None = None) -> int:
     models = _split_csv(args.models)
     inflate = _parse_inflate(args.inflate)
 
-    base_dir = Path(f"csvs/longitudinal_optimo_4_groups/ablation/{args.roi}")
+    base_dir = Path(f"csvs/cohorts/{args.cohort}/ablation/{args.roi}")
     representation = args.representation
 
     if args.results_dir is None and len(modalities) == 1:
@@ -224,6 +231,7 @@ def main(argv: list[str] | None = None) -> int:
     active_inflate = [k for k, v in inflate.items() if v] or ["nenhum (só leaky_global)"]
     log.warning("=== ablação LEAKY (pré-processamento global antes do CV) ===")
     log.warning("infladores:   %s", ", ".join(active_inflate))
+    log.info("cohort:       %s", args.cohort)
     log.info("representação:%s", representation)
     log.info("modalidades:  %s", modalities)
     log.info("tasks:        %s", tasks)

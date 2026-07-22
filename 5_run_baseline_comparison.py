@@ -63,6 +63,8 @@ from ablation_runner import (
 
 log = logging.getLogger("baseline_comparison")
 
+COHORT = "36m_6m"  # editar só isto → csvs/cohorts/{COHORT}/
+
 CLINICAL_COLS = ("SEX", "AGE", "MMSE_SCORE", "ADAS_SCORE", "FAQ_SCORE") #, "CDR_GLOBAL")
 
 
@@ -519,14 +521,14 @@ def main(argv: list[str] | None = None) -> int:
     modalities = _parse_modalities(args.modality)
     with_combat = args.combat == "true"
     representation = args.representation
-    base = Path(f"csvs/longitudinal_optimo_4_groups/ablation/{args.roi}")
+    base = Path(f"csvs/cohorts/{COHORT}/ablation/{args.roi}")
     stable_pool_min_timepoints = resolve_stable_pool_min_timepoints(
         representation, args.stable_pool_min_timepoints, log=log,
     )
     if args.results_dir is not None:
         out_dir = args.results_dir
     elif args.feature_set == "clinical":
-        out_dir = Path("csvs/longitudinal_optimo_4_groups/ablation_results_clinic")
+        out_dir = Path(f"csvs/cohorts/{COHORT}/ablation_results_clinic")
     else:
         out_dir = default_fusion_results_dir(base, representation, results_dir=args.results_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

@@ -52,6 +52,8 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
 
+COHORT = "36m_6m"  # editar só isto → csvs/cohorts/{COHORT}/
+
 log = logging.getLogger("ablation_deltas")
 
 
@@ -136,6 +138,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--roi", default=ROI_FILTER_DEFAULT)
     p.add_argument(
+        "--cohort",
+        default=COHORT,
+        help="Pasta em csvs/cohorts/{cohort}/",
+    )
+    p.add_argument(
         "--results-dir",
         type=Path,
         default=None,
@@ -172,7 +179,7 @@ def main(argv: list[str] | None = None) -> int:
     selection_modes = _parse_selection(args.selection)
     models = _split_csv(args.models)
 
-    base_dir = Path(f"csvs/longitudinal_optimo_4_groups/ablation/{args.roi}")
+    base_dir = Path(f"csvs/cohorts/{args.cohort}/ablation/{args.roi}")
     representation = args.representation
     stable_pool_min_timepoints = resolve_stable_pool_min_timepoints(
         representation, args.stable_pool_min_timepoints, log=log,
@@ -203,6 +210,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     log.info("=== ablação nested CV (%s) ===", PROTOCOL_T1_DELTAS)
+    log.info("cohort:       %s", args.cohort)
     log.info("representação:%s", representation)
     log.info("modalidades:  %s", modalities)
     log.info("tasks:        %s", tasks)

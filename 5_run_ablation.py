@@ -47,6 +47,8 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
 
+COHORT = "36m_6m"  # editar só isto → csvs/cohorts/{COHORT}/
+
 log = logging.getLogger("ablation")
 
 
@@ -138,10 +140,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--roi", default=ROI_FILTER_DEFAULT)
     p.add_argument(
+        "--cohort",
+        default=COHORT,
+        help="Pasta em csvs/cohorts/{cohort}/ (default: constante COHORT no script)",
+    )
+    p.add_argument(
         "--base-dir",
         type=Path,
         default=None,
-        help="Pasta com *_long.csv (default: csvs/longitudinal_optimo_4_groups/ablation/{roi})",
+        help="Pasta com *_long.csv (default: csvs/cohorts/{cohort}/ablation/{roi})",
     )
     p.add_argument(
         "--results-dir",
@@ -203,7 +210,7 @@ def main(argv: list[str] | None = None) -> int:
     models = _split_csv(args.models)
     exclude_features = _split_csv(args.exclude_features)
 
-    base_dir = args.base_dir or Path(f"csvs/longitudinal_optimo_4_groups/ablation/{args.roi}")
+    base_dir = args.base_dir or Path(f"csvs/cohorts/{args.cohort}/ablation/{args.roi}")
     representation = args.representation
 
     if args.results_dir is None and len(modalities) == 1:
@@ -231,6 +238,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     log.info("=== ablação nested CV ===")
+    log.info("cohort:       %s", args.cohort)
     log.info("representação:%s", representation)
     log.info("modalidades:  %s", modalities)
     log.info("tasks:        %s", tasks)
