@@ -20,6 +20,12 @@ BASE = Path("csvs/cohorts") / COHORT
 LONGITUDINAL = BASE / "adnimerged_longitudinal.csv"
 MERGE_KEYS = ["ID_IMG", "roi", "side", "label"]
 
+# DVF: escolher store (pastas/CSV separados para comparar CN-template vs baseline-fixed).
+#   "features_displacement.csv"               ← legado 3_feat_*_old.py
+#   "features_displacement_longitudinal.csv"  ← 3_feat_gen_dvf.py + 3_feat_dvf.py
+DISP_FEATURES = "features_displacement.csv"
+# DISP_FEATURES = "features_displacement_longitudinal.csv"
+
 VOL_FEAT_COLS = [
     "mask_mm3", "gm_mm3", "gm_norm", "wm_mm3", "wm_norm",
     "csf_mm3", "csf_norm", "tissues_mm3", "tissues_norm",
@@ -143,7 +149,7 @@ def build_feat_disp_all() -> pd.DataFrame:
         out["label"] = out["label"].astype(str).str.strip()
         return out
 
-    df_disp = norm_keys(pd.read_csv(FEATURES_DIR / "features_displacement.csv"))
+    df_disp = norm_keys(pd.read_csv(FEATURES_DIR / DISP_FEATURES))
     meta_extra = ["ID_IMG", "slot", "FIELD_STRENGTH", "MANUFACTURER", "MFG_MODEL",
                   "MMSE_SCORE", "CDR_GLOBAL", "ADAS_SCORE", "FAQ_SCORE"]
     longitudinal = pd.read_csv(LONGITUDINAL)
@@ -204,7 +210,7 @@ def main() -> None:
     for p in (
         FEATURES_DIR / "features_volumetric.csv",
         FEATURES_DIR / "features_radiomic.csv",
-        FEATURES_DIR / "features_displacement.csv",
+        FEATURES_DIR / DISP_FEATURES,
         LONGITUDINAL,
     ):
         if not p.is_file():
@@ -215,7 +221,7 @@ def main() -> None:
     merge = build_feat_merge_all(rad, disp)
     paths = export_ablation_long_only(rad, disp, merge, BASE)
     print(f"ablation export OK: {len(paths)} ficheiros → {list(paths.values())}")
-    print(f"features←{FEATURES_DIR} | cohort←{COHORT} | out←{BASE}")
+    print(f"features←{FEATURES_DIR} | disp←{DISP_FEATURES} | cohort←{COHORT} | out←{BASE}")
 
 
 if __name__ == "__main__":

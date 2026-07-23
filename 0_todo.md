@@ -1,45 +1,378 @@
-# Plano de ablações e discussão do artigo
+# TODO — DVF legado (`disp`) + DVF longitudinal (`disp_longitudinal`) na planilha
 
-**Primary:** `csvs/cohorts/36m_6m`  
-**Endpoint:** `smci_pmci` · wide (abs) · `vol` · `svm` · ComBat `false` · `l1_stable`  
-**Análise:** `6_results.ipynb` + `7_stats.ipynb` (stats só no primary)  
-**Pré-requisito:** `4_run_post_extract.py` nas 6 cohorts
+Objetivo: `all_protocols_summary.csv` com **ambas** as modalidades.
+
+## Já feito / seguro
+
+- [x] Warps/features legado intactos (`displacement_field/`, `features_displacement.csv`)
+- [x] Backup t1_only legado: `ablation_results_t1_only/disp_cn_backup/`
+- [ ] Backup wide legado (só **depois** de existir a pasta):
+  ```bash
+  cp -r csvs/cohorts/36m_6m/ablation_results/disp \
+        csvs/cohorts/36m_6m/ablation_results/disp_cn_backup
+  ```
+  (hoje `ablation_results/disp/` ainda **não existe** — falta correr ablação wide do DVF CN)
+
+## Falta (ordem)
+
+1. **Terminar** `python 3_feat_gen_dvf.py` (~1346 pares)
+2. **Correr** `python 3_feat_dvf.py` → `features_displacement_longitudinal.csv`
+3. **(Opcional mas recomendado)** ablação wide DVF legado **antes** de trocar o long:
+   ```bash
+   # 4 com DISP_FEATURES = features_displacement.csv, COHORT=36m_6m
+   python 4_run_post_extract.py
+   python 5_run_ablation.py --cohort 36m_6m --representation wide \
+     --modality disp --models svm --combat both $COMMON
+   # depois o cp do backup wide acima
+   ```
+4. Trocar no `4_run_post_extract.py`:
+   ```python
+   COHORT = "36m_6m"
+   DISP_FEATURES = "features_displacement_longitudinal.csv"
+   ```
+   → `python 4_run_post_extract.py`
+5. Ablação **nova** em pasta separada (nunca sem `--results-dir`):
+   ```bash
+   python 5_run_ablation.py --cohort 36m_6m --representation wide \
+     --modality disp --models svm --combat both $COMMON \
+     --results-dir csvs/cohorts/36m_6m/ablation_results/disp_longitudinal
+
+   python 5_run_ablation.py --cohort 36m_6m --representation t1_only \
+     --modality disp --models svm --combat false $COMMON \
+     --results-dir csvs/cohorts/36m_6m/ablation_results_t1_only/disp_longitudinal
+   ```
+6. **Rename modality** nos CSVs novos (senão os dois aparecem como `disp`):
+   ```bash
+   .venv/bin/python - <<'PY'
+   from pathlib import Path
+   import pandas as pd
+   for d in [
+       Path("csvs/cohorts/36m_6m/ablation_results/disp_longitudinal"),
+       Path("csvs/cohorts/36m_6m/ablation_results_t1_only/disp_longitudinal"),
+   ]:
+       if not d.is_dir():
+           continue
+       for name in ("ablation_summary.csv", "ablation_results_all.csv"):
+           p = d / name
+           if not p.is_file():
+               continue
+           df = pd.read_csv(p)
+           df["modality"] = "disp_longitudinal"
+           if "modality_label" in df.columns:
+               df["modality_label"] = "DVF longitudinal"
+           df.to_csv(p, index=False)
+           print("ok", p)
+   PY
+   ```
+7. Em `6_results.ipynb`, `MOD_ORDER` incluir `"disp_longitudinal"`:
+   ```python
+   MOD_ORDER = ["vol", "shape", "texture", "disp", "disp_longitudinal", "all"]
+   ```
+8. Rodar consolidação do `6_results` → planilha com `disp` + `disp_longitudinal`.
+
+**Nota:** pasta `disp_cn_backup` = só seguro. Na planilha o legado continua coluna `modality=disp`.
 
 ---
 
-## Racional geral
+# Pipeline do estudo e plano experimental
 
-| Decisão | Porquê |
-|---------|--------|
-| **Uma** coorte primary (`36m_6m`) | Hipótese pré-especificada; evita pesca de significância |
-| Matriz completa só no primary | Modalidades/modelos/ComBat respondem *o quê medir* |
-| Outros cohorts = só `vol` wide | Respondem *em quem* (definição de follow-up); sensibilidade descritiva |
-| Kernel = **wide vs T1** | Claim central: valor longitudinal vs baseline único (só imagem) |
-| Stats formais só em `36m_6m` | Cohorts aninhados — não testar “qual cohort é melhor” |
-| Sem deltas / tasks periféricas | Plano enxuto; YAGNI |
+Documento de referência: **o quê** fazemos, **como**, e **porquê** — do ADNIMERGED bruto até às ablações e à discussão do artigo.
 
-**Mensagem do artigo (1 frase):**  
-Em MCI, representação longitudinal de atributos de imagem (esp. volumétricos) melhora a discriminação sMCI×pMCI face ao baseline único, de forma robusta a definições alternativas de follow-up e com controlos metodológicos (nested CV, estabilidade, leaky, clínico).
+Lê isto até conseguires explicar cada etapa sem consultar o código. Os CLIs estão no final (secção 10).
 
 ---
 
-## Checklist operacional
+## Mensagem do artigo (1 frase)
 
-- [x] Extração features (`all_population`: vol, rad, DVF)
-- [x] `4_run_post_extract.py` × 6 cohorts
-- [x] A1 Wide `36m_6m` (tmux `36m_6m_wide`)
-- [x] A2 T1-only `36m_6m` (tmux `36m_6m_t1`)
-- [ ] A3 Clínica
-- [ ] A4 Fusion
-- [ ] A5 Sanity CN×AD
-- [ ] A6 Leaky (opcional)
-- [ ] B Sensibilidade vol × 5 cohorts
-- [ ] `6_results` → `cohort_comparison/`
-- [ ] `7_stats` (primary)
+Em MCI, a representação **longitudinal** de atributos de imagem (várias visitas) deve discriminar sMCI×pMCI **melhor** que o baseline único (análise transversal), e esse ganho deve **aumentar** quando o intervalo entre imagens (`t_imagens`) e/ou a janela clínica (`t_janela`) crescem — porque há mais tempo para diferenças anatómicas se pronunciarem.
+
+**Primary formal (pré-especificado):** `36m_6m` · `smci_pmci` · wide · `vol` · `svm` · ComBat `false` · `l1_stable`.  
+**Kernel científico:** wide vs T1 em **6 cenários** (`t_janela` ∈ {36,48} × `t_imagens` ∈ {6,9,12}).
 
 ---
 
-## 0. Flags comuns
+## Mapa mental do pipeline
+
+```
+ADNI brutos
+    → analysis_adni.ipynb          [QC + merge MRI↔DX↔scores]
+    → csvs/adnimerged.csv
+    → 1_dataset.ipynb              [rótulos clínicos + escolha de 3 imagens]
+    → csvs/cohorts/{Xm_Ym}/ + all_population/
+    → 2_resample.py                [espaço comum MNI 1 mm]
+    → 3_feat_vol / rad / gen_dvf / dvf   [atributos na store união]
+    → 4_run_post_extract.py        [filtra cohort → *_long.csv hipocampo]
+    → 5_run_ablation*.py           [nested CV, wide/t1/clinic/fusion/leaky]
+    → 6_results + 7_stats          [tabelas, ΔAUC, FDR só no primary]
+```
+
+---
+
+## 1. Filtragem upstream — `../datasets/analysis_adni.ipynb`
+
+**Papel:** construir uma tabela MRI–clínica limpa **antes** das definições de coorte do paper.  
+**Saída consumida pelo graphs:** `graphs/csvs/adnimerged.csv` (cópia/uso de `datasets/output/adni/adnimerged.csv`).
+
+### 1.1 Merge MRI ↔ diagnóstico ↔ escalas
+
+| Passo | Regra | Racional |
+|-------|--------|----------|
+| Sexo | Remove `SEX == 'X'` | Sexo inválido |
+| Outra demência | Remove `DXOTHDEM == 1` | Foco em trajectória AD / MCI / CN |
+| DX / datas vazias | Remove | Sem rótulo temporal não há coorte |
+| Reversão AD | Exclui paciente se CN/MCI **depois** do 1.º AD | Trajectória clínica incoerente |
+| Reversão MCI | Exclui se CN **depois** do 1.º MCI | Idem |
+| Escalas | ADAS, CDR, MMSE, FAQ sem buracos no merge | Precisamos de clínico para baseline/fusion |
+| Proximidade MRI–DX | `merge_asof` nearest; \|MRI−DX\| ≤ **3 meses** (`time_diff_mri_diag=3`, ≈90 dias) | Score clínico “da mesma visita” |
+| Campo magnético | Valores >2.5 → 3.0 | Normaliza 2.9 T ≈ 3 T |
+| Outliers | Remove `ID_IMG` listados em `outliers_adni.txt` | QC de imagem (pipeline de detecção à parte) |
+
+**Porquê esta etapa existe:** sem QC e alinhamento temporal MRI–diagnóstico, qualquer definição de sMCI/pMCI a jusante herda lixo.
+
+### 1.2 Critérios “legado” no mesmo notebook
+
+Há um bloco CRITERIA antigo (janelas deslizantes, abordagem 4, etc.) que gera `image_data.txt` / combinações.  
+**Não é** o que alimenta `csvs/cohorts/` do paper. As coortes de análise vêm do redefine em `1_dataset.ipynb` (secção 2).
+
+---
+
+## 2. Definição populacional — `1_dataset.ipynb`
+
+**Entrada:** `csvs/adnimerged.csv` (já filtrado).  
+**Saída:** `csvs/cohorts/{t_janela}m_{t_imagens}m/adnimerged_longitudinal.csv` + união `all_population/all_population.csv`.
+
+### 2.1 Ideia central (duas fases)
+
+1. **Rótulo clínico** com horizonte `t_janela` a partir do primeiro MRI (`t0`).  
+2. **Escolha de exactamente `qtd_imagens` (=3) MRIs** com espaçamento mínimo `t_imagens`, para predictores.
+
+Slots `t0/t1/t2` = ordem no conjunto escolhido (**não** visitas ADNI fixas m12/m24).
+
+### 2.2 Parâmetros
+
+| Símbolo | Primary | Grelha de sensibilidade | Significado |
+|---------|---------|-------------------------|-------------|
+| `T_JANELA` | **36** m | 36, 48 | Horizonte clínico desde `t0` |
+| `T_IMAGENS` | **6** m | 6, 9, 12 | Gap mínimo entre imagens consecutivas |
+| `QTD_IMAGENS` | **3** | 3 | Sempre triplo longitudinal |
+| `SOFT_PMCI` | **True** | True | Permite 1.º AD só no **último** slot se faltar MCI pré-AD |
+
+**Racional `t_janela≈36`:** tempo MCI→AD no ADNIMERGED tem mediana ~19–20 meses; 36 m cobre a maioria das conversões.  
+**Racional `t_imagens`:** gap curto (6 m) ≈ quase transversal; gaps maiores → mais mudança estrutural esperada → wide deve afastar-se mais de T1.  
+**Racional soft-pMCI:** recupera conversores com poucas MRI pré-AD **sem** reescrever o DIAG observado (fica AD; `DIAG_EFFECTIVE=MCI_soft`).
+
+### 2.3 Regras de GROUP (`classify_patient`)
+
+`t0` = data do 1.º MRI do paciente (após dedupe). `t_end = t0 + T_JANELA`.
+
+| GROUP | Regra (linguagem clara) | Racional |
+|-------|-------------------------|----------|
+| **CN** | Só CN na trajectória; tem exame ≥ `t_end` ainda CN | Confirma estabilidade no horizonte |
+| **AD** | Começa e permanece AD | Grupo de sanity / contraste |
+| **pMCI** | Começa MCI; 1.º AD em `(t0, t_end]`; sem reversões; predictores **antes** do AD | Conversor *dentro* da janela |
+| **sMCI** | Começa MCI; **não** converte até `t_end`; confirmação pós-janela ainda MCI | *Não-conversor na janela* — **não** “MCI eterno” |
+
+Exclusões típicas: trajectória mista, reversão diagnóstica, sem confirmação pós-janela, imagens insuficientes.
+
+### 2.4 Selecção das 3 imagens (`select_images`)
+
+1. Pool de predictores no intervalo correcto (pMCI: até antes do AD).  
+2. Escolhe extremos (mais cedo / mais tarde) + ponto(s) intermédios equidistantes.  
+3. Gaps consecutivos ≥ `T_IMAGENS`.  
+4. Soft: se falhar, último slot = 1.º AD (só pMCI).
+
+**Racional:** mesmo protocolo temporal para todos os pacientes → comparáveis; extremos + equidistantes maximizam cobertura do intervalo sem cherry-pick manual.
+
+### 2.5 Seis cohorts em disco
+
+`36m_6m` (primary), `36m_9m`, `36m_12m`, `48m_6m`, `48m_9m`, `48m_12m`.
+
+`all_population/` = união de `ID_IMG` (extração **uma vez**; análise filtra por cohort).
+
+### 2.6 Hipótese multi-cohort (porquê 6, não 1)
+
+| Expectativa | Motivo |
+|-------------|--------|
+| Em `36m_6m`, wide ≈ T1 é **plausível** | Gap 6 m: pouca mudança estrutural |
+| Δ(wide−T1) **sobe** com `t_imagens` | Mais tempo entre scans → anatomia diverge |
+| `t_janela` 36 vs 48 | Definição de conversão / follow-up mais longa muda quem é pMCI |
+
+**Confounds a declarar:** N cai com critérios mais duros; % soft-pMCI sobe; quem tem 3 MRI com gap 12 m ≠ população com gap 6 m (viés de retenção). Análise = tendência descritiva + IC; FDR formal só no primary.
+
+---
+
+## 3. Pré-processamento de imagem — `2_resample.py`
+
+| Item | Valor | Racional |
+|------|--------|----------|
+| Entrada | `all_population.csv` + T1 bias-corrected | Lista união |
+| Registo | ANTs **Rigid** → MNI 152 1 mm | Espaço comum sem warping não-linear agressivo na anatomia nativa da feature vol/rad |
+| Labels | Nearest-neighbor | Preserva IDs de ROI |
+| Saídas | `images/resampled_1.0mm/`, regions, seg, brain_mask | Base de vol/rad/DVF |
+
+**Porquê:** volumetria, radiomics e DVF precisam da mesma geometria.
+
+---
+
+## 4. Extração de atributos — `3_feat_*.py`
+
+Tudo grava em `csvs/cohorts/all_population/`. Resume/skip IDs já feitos.
+
+### 4.1 Volumetria — `3_feat_vol.py` → `features_volumetric.csv`
+
+Por ROI (20 estruturas L/R, hipocampo…ínsula) + linha `__global__`:  
+`mask/gm/wm/csf/tissues` em mm³ e `*_norm` (fracções).
+
+**Racional:** atrofia / composição tecidual = âncora clínica clássica em AD.
+
+### 4.2 Radiomics — `3_feat_rad.py` → `features_radiomic.csv`
+
+PyRadiomics, `binCount=64`, imagem Original: firstorder, shape, glcm, glrlm, glszm, ngtdm, gldm.
+
+**Racional:** textura/forma além do volume; standard IBSI-like via PyRadiomics (não LBP).
+
+### 4.3 DVF — legado vs longitudinal
+
+| Script | Âncora | Warps | Features CSV |
+|--------|--------|-------|--------------|
+| **`3_feat_gen_dvf_old.py` + `3_feat_dvf_old.py`** | visita → template CN (sexo/idade baseline) | `images/displacement_field/` | `features_displacement.csv` |
+| **`3_feat_gen_dvf.py` + `3_feat_dvf.py`** | follow-up → **baseline do paciente** (i2/i3→i1) | `images/displacement_field_longitudinal/` | `features_displacement_longitudinal.csv` |
+
+1. **gen (atual):** `fixed=i1`, `moving=i2|i3`; sem i1→i1; naming `{moving}_ref-{baseline}_*`.  
+2. **dvf (atual):** domínio + ROI + mask no **i1**; `ID_IMG`=móvel; `ref_tag=baseline_{i1}`; mesmas cols de feat que o legado.  
+3. **`4_run_post_extract.py`:** constante `DISP_FEATURES` escolhe qual CSV entra na ablação.
+
+**Racional (atual):** deformação intra-sujeito = mudança longitudinal.  
+**Racional (legado):** deformação vs CN = “afastamento do envelhecimento típico” (arquivado p/ comparação).
+
+Ordem: `python 3_feat_gen_dvf.py` → `python 3_feat_dvf.py` → editar `DISP_FEATURES` → `4_run_post_extract.py`.
+
+---
+
+## 5. Pós-extração por cohort — `4_run_post_extract.py`
+
+| Item | Detalhe | Racional |
+|------|---------|----------|
+| Features | Lê **sempre** `all_population/features_*.csv` | Não reextrair 6 vezes |
+| Meta | Filtra `ID_IMG` do `adnimerged_longitudinal` do cohort | Só pacientes da definição |
+| ICV | Normaliza tamanhos radiomics/vol com ICV global | Comparabilidade de tamanho craniano |
+| Batch ComBat | `MANUFACTURER` + `FIELD_STRENGTH` | Scanner como batch |
+| ROI ablação | **hipocampo** L/R | Foco anatómico AD; reduz dimensionalidade |
+| Saídas | `ablation/hippocampus/{vol,shape,rad,disp,merge}_long.csv` | Uma linha por imagem×ROI |
+
+**Nota CLI:** hoje **sem** `--cohort` — editar constante `COHORT` no script.
+
+---
+
+## 6. O que entra no classificador (modalidades)
+
+O CSV long pode ser “gordo”; o modelo só vê **allowlists** (`modules/ablation_prep.py`):
+
+| Modalidade | Sufixos / features | Racional do corte |
+|------------|--------------------|-------------------|
+| **vol** | `gm_norm`, `wm_norm`, `csf_norm` | Frações teciduais; evita mm³ brutos redundantes com ICV |
+| **shape** | MeshVolume, SurfaceArea, SurfaceVolumeRatio, Sphericity, Elongation, Flatness | Forma clássica; corta diâmetros redundantes |
+| **texture** | GLCM Contrast, Correlation, Idm, JointEntropy | GLCM canónico; corta GLRLM/GLSZM/… (enxuto 2026-07) |
+| **disp** | logjac + strain_fro (mean/std/skewness/kurtosis) | Momentos do artigo; corta ux/uy/uz, percentis, etc. |
+| **all** | união das acima | Multimodalidade imagem |
+
+Wide pivot: colunas tipo `hippocampus_L_T1_gm_norm`, `…_T2_…`, `…_T3_…`.
+
+---
+
+## 7. Representações (protocolos)
+
+| Protocolo | Features temporais | Pasta resultados | Papel |
+|-----------|--------------------|------------------|-------|
+| **wide** (abs) | T1+T2+T3 | `ablation_results/` | Análise **longitudinal** |
+| **t1_only** | só T1 (baseline do conjunto) | `ablation_results_t1_only/` | Análise **transversal** de controlo |
+| clinic | SEX, AGE, MMSE, ADAS, FAQ (t0) | `ablation_results_clinic/` | Piso clínico |
+| fusion | clinic + imagem wide vol | `ablation_results_clinic_img/` | Incremental RM |
+| leaky | wide com ops globais | `ablation_results_leaky/` | Controlo de vazamento (suplemento) |
+| deltas | fora do plano paper | — | YAGNI |
+
+**Comparação justa wide vs T1:** mesma task, seleção, repeats, Optuna, **mesmo modelo**, **mesmo ComBat**, mesma modalidade.  
+O Δ reportado no artigo = **svm ↔ svm** (e combat emparelhado).
+
+---
+
+## 8. Aprendizagem / CV / desbalanceamento / modelos
+
+### 8.1 Nested CV (`modules/ablation_runner.py`)
+
+| Peça | Valor | Racional |
+|------|--------|----------|
+| Unidade de split | **paciente** (`ID_PT`) | Evita leak entre visitas do mesmo sujeito |
+| Outer / inner | StratifiedKFold **5×5** | Proporção de classes nos folds |
+| Repeats | **10** | Estabilidade da estimativa |
+| Seed base | 42 | Reprodutibilidade |
+| Métrica de tuning | ROC **AUC** | Ranking; robusta a desbalanceamento |
+| Métrica primary reportada | **`auc_patient_mean`** (média OOF por paciente → AUC) | Alinhada a decisão clínica por sujeito |
+| Limiar | Youden no inner OOF | Operacionaliza sens/spec (secundário) |
+
+### 8.2 Desbalanceamento (ponderação, não reamostragem)
+
+**Não** há SMOTE / undersampling.
+
+1. **Estratificação** — folds com a mesma proporção sMCI/pMCI do cohort.  
+2. **`class_weight ∈ {None, "balanced"}`** — hiperparâmetro (grid/Optuna) em svm/rf/elasticnet: se `"balanced"`, a classe minoritária pesa mais no treino (`n / (n_classes × n_c)`).  
+3. **AUC** como alvo — não optimizamos accuracy enviesada para a maioria.
+
+**Como explicar em 15 s:**  
+*Não mexemos na amostra; mantemos a proporção nos folds; o modelo pode pesar mais a classe rara se isso melhorar a AUC.*
+
+**Porquê igual em todos os cohorts:** diferenças de AUC reflectem população/tempo, não mudança de receita de balanceamento.
+
+### 8.3 Selecção de atributos — `l1_stable`
+
+No **outer train** apenas:
+
+1. Bootstrap ×50  
+2. Filtro correlação/variância → Logistic L1 `C=0.1`  
+3. Mantém features em ≥ **70%** dos boots (`--stable-pool-min-pct 70`)  
+4. `--stable-pool-min-timepoints 0` (não exige estabilidade em T1 e T2 e T3 em simultâneo)  
+5. Pipeline: scaler → classificador (Optuna, 10 trials)
+
+**Racional:** reduz overfitting e dá lista de atributos **estáveis** interpretáveis (não só AUC).
+
+### 8.4 ComBat
+
+Opcional por fold: fit no train, aplica no test; batch = fabricante × campo.  
+Paper primary = **false**. Ablação = `both` no wide/t1 do `36m_6m` para ver se harmonização ajuda ou apaga sinal.
+
+### 8.5 Modelos
+
+| Modelo | Onde | Racional |
+|--------|------|----------|
+| **svm** | Primary + todos os contrastes temporais | Endpoint pré-especificado; linear/RBF + `class_weight` |
+| **rf**, **elasticnet** | **Só** wide `36m_6m` (ablacão de algoritmo) | “O sinal depende do classificador?” — uma vez, no endpoint rico |
+| Não no T1 / outros cohorts | — | Fixar svm isola a pergunta temporal; evita misturar algoritmo × tempo |
+
+Clínica / fusion / sanity / leaky / sensibilidade: **svm** (alinhado ao primary).
+
+### 8.6 Clínica — variáveis
+
+`SEX`, `AGE`, `MMSE_SCORE`, `ADAS_SCORE`, `FAQ_SCORE` (CDR comentado no código).  
+Baseline = visita `t0` do conjunto.
+
+---
+
+## 9. Camada de análise
+
+| Artefacto | Conteúdo | Racional |
+|-----------|----------|----------|
+| `6_results.ipynb` | Heatmaps, ROC, summary 1 cohort | Figuras do primary |
+| `cohort_results.csv` | AUC ± IC × cohort × config | Gradiente temporal descritivo |
+| `cohort_features_long.csv` | Features estáveis (`pct`, T1/T2/T3) | Monitorar *quais* atributos |
+| `7_stats.ipynb` | ΔAUC pareado, bootstrap, FDR-BH | Inferência **só** `36m_6m` |
+
+Stats multi-cohort formais: **não** (amostras aninhadas + pesca).
+
+---
+
+## 10. Plano experimental e CLIs
+
+### Flags comuns
 
 ```bash
 source .venv/bin/activate
@@ -51,17 +384,28 @@ COMMON="--tasks smci_pmci --selection l1_stable --repeats 10 \
   --stable-bootstrap 50 --stable-l1-c 0.1"
 ```
 
-`$COMMON` / `$C` = variáveis bash (shell expande antes do Python).
+### Checklist
+
+- [x] Extração `all_population` (vol, rad, DVF)
+- [x] `4_run_post_extract` × 6 cohorts
+- [x] A1 Wide `36m_6m`
+- [x] A2 T1 `36m_6m`
+- [ ] A3 Clínica (svm)
+- [ ] A4 Fusion
+- [ ] A5 Sanity CN×AD
+- [ ] A6 Leaky (opcional)
+- [ ] B Gradiente temporal (5 cohorts × wide + t1)
+- [ ] `6_results` / `cohort_comparison`
+- [ ] `7_stats`
 
 ---
 
-## 1. CLIs das ablações
+### A. Primary `36m_6m` — matriz rica
 
-### A. Primary `36m_6m` — matriz paper
+#### A1. Wide — longitudinal + ablação modelo/ComBat
 
-#### A1. Wide (abs) — todas as modalidades
-
-**Racional:** ranking de famílias de atributos + modelos + ComBat no endpoint longitudinal.
+**Racional:** endpoint longitudinal completo; 3 modelos = sensibilidade ao algoritmo; ComBat both = efeito da harmonização.  
+**Δ vs T1 usa apenas células svm** deste run.
 
 ```bash
 C=36m_6m
@@ -70,11 +414,10 @@ python 5_run_ablation.py --cohort $C --representation wide \
   --models svm,rf,elasticnet --combat both $COMMON
 ```
 
-Saída: `csvs/cohorts/36m_6m/ablation_results/{modality}/`
+#### A2. T1-only — transversal (espelho do primary para o Δ)
 
-#### A2. T1-only — claim longitudinal (kernel)
-
-**Racional:** isola o ganho de t1/t2 vs só baseline; sustenta narrativa “imagem longitudinal”.
+**Racional:** mesmo pipeline, **só svm** (modelo do endpoint). Não precisa de rf/en para o claim wide vs T1 ser justo.  
+`combat both` → pares nocombat–nocombat e combat–combat.
 
 ```bash
 C=36m_6m
@@ -83,25 +426,22 @@ python 5_run_ablation.py --cohort $C --representation t1_only \
   --models svm --combat both $COMMON
 ```
 
-Saída: `csvs/cohorts/36m_6m/ablation_results_t1_only/{modality}/`
+**Porquê A1 ≠ A2 nos modelos?** Wide é **superset**. Comparação reportada = svm. RF/EN no wide respondem outra pergunta.
 
-#### A3. Clínica
+#### A3. Clínica — piso (svm alinhado)
 
-**Racional:** piso demográfico/clínico; imagem precisa superar ou complementar escalas.
-
-Nota: `5_run_baseline_comparison.py` usa constante `COHORT` (sem `--cohort`). Garantir `36m_6m`.
+**Racional:** mesmo classificador que a imagem primary → comparação clinic vs img vs fusion sem misturar algoritmos.
 
 ```bash
+# Garantir COHORT = "36m_6m" em 5_run_baseline_comparison.py (sem --cohort ainda)
 python 5_run_baseline_comparison.py --feature-set clinical \
-  --tasks smci_pmci --models svm,rf,elasticnet \
+  --tasks smci_pmci --models svm \
   --repeats 10 --tuner optuna --optuna-trials 10
 ```
 
-Saída: `ablation_results_clinic/`
+#### A4. Fusion
 
-#### A4. Fusion (imagem + clínico)
-
-**Racional:** valor incremental da RM quando o clínico já está no modelo.
+**Racional:** RM acrescenta ao clínico?
 
 ```bash
 python 5_run_baseline_comparison.py --feature-set fusion \
@@ -109,168 +449,82 @@ python 5_run_baseline_comparison.py --feature-set fusion \
   --selection l1_stable --models svm --combat false $COMMON
 ```
 
-Saída: `ablation_results_clinic_img/`
+#### A5. Sanity CN×AD
 
-#### A5. Sanity CN × AD
-
-**Racional:** ceiling do pipeline em tarefa fácil; contraste com sMCI×pMCI.
+**Racional:** ceiling do pipeline em tarefa fácil.
 
 ```bash
 python 5_run_ablation.py --cohort 36m_6m --representation wide \
   --modality vol --tasks cn_ad --models svm --combat false $COMMON
 ```
 
-#### A6. Leaky (opcional / suplemento)
+#### A6. Leaky (opcional)
 
-**Racional:** controlo metodológico — selecção global infla AUC?
+**Racional:** controlo metodológico — selecção/normalização global infla AUC?
 
 ```bash
 python 5_run_ablation_leaky.py --cohort 36m_6m --representation wide \
   --inflate "" --modality vol --models svm --combat false $COMMON
 ```
 
-Saída: `ablation_results_leaky/vol/` — **não** misturar com wide/t1 no abstract.
-
-#### Fora do plano
-
-- Deltas (`5_run_ablation_deltas.py`)
-- Tasks: `cn_smci`, `cn_pmci`, `smci_ad`, `pmci_ad`
-- Fusion/leaky em shape|texture|disp|all
-- T1-only com rf/elasticnet
-
 ---
 
-### B. Sensibilidade — outros 5 cohorts (só vol)
+### B. Gradiente temporal — outros 5 cohorts
 
-**Racional:** mesma medida (primary vol), muda só a definição de população (`t_janela` × `t_imagens`). Sem FDR multi-cohort; tabela descritiva AUC ± IC.
+**Racional (hipótese forte):** mesma análise longitudinal vs transversal em cada célula `(t_janela, t_imagens)`.  
+Protocolo **fixo:** 5 modalidades · **svm** · **nocombat** · wide **e** t1_only.  
+Não repetir 3 modelos (isola o efeito do tempo).
 
 ```bash
 for C in 36m_9m 36m_12m 48m_6m 48m_9m 48m_12m; do
   python 5_run_ablation.py --cohort $C --representation wide \
-    --modality vol --models svm --combat false $COMMON
-done
-```
+    --modality vol,shape,texture,disp,all \
+    --models svm --combat false $COMMON
 
-Opcional (gap wide–T1 na sensibilidade):
-
-```bash
-for C in 36m_9m 36m_12m 48m_6m 48m_9m 48m_12m; do
   python 5_run_ablation.py --cohort $C --representation t1_only \
-    --modality vol --models svm --combat false $COMMON
+    --modality vol,shape,texture,disp,all \
+    --models svm --combat false $COMMON
 done
 ```
 
-**Porquê não 5 modalidades nos outros cohorts?**  
-Modalidades exploram *feature family* (já respondido no primary). Cohorts exploram *definição demográfica*. Cruzar as duas grelhas = custo ×6 e pesca de p-values.
+**Mínimo se CPU apertar:** só `--modality vol` nos dois comandos (ainda testa a hipótese temporal).
+
+**Figura-chave:** ΔAUC(wide−T1) vs `t_imagens`, facet por `t_janela` (começar em vol; depois por modalidade).
 
 ---
 
-### C. Pós-experimento
+### C. Pós-run
 
-1. `6_results.ipynb` → `all_protocols_summary.csv` + `csvs/cohort_comparison/{cohort_results,cohort_features_long}.csv`
-2. `7_stats.ipynb` → **só** `36m_6m`
-
-| Ficheiro | Conteúdo |
-|----------|----------|
-| `cohort_results.csv` | Métricas × cohort × config; `n_features_mean` |
-| `cohort_features_long.csv` | Atributos estáveis (`anatomical_key`, `pct`, freq T1/T2/T3) |
-| `stats_*.csv` | ΔAUC pareado / FDR no primary |
+1. `6_results.ipynb` → summary + `csvs/cohort_comparison/`  
+2. `7_stats.ipynb` → demografia + Δ wide vs T1 + FDR (**só** `36m_6m`)
 
 ---
 
-## 2. Ordem tmux
+## 11. Ordem tmux sugerida
 
 | Fase | Sessões | Jobs |
 |------|---------|------|
-| 1 | `36m_6m_wide`, `36m_6m_t1` | A1 + A2 em paralelo |
+| 1 | `36m_6m_wide`, `36m_6m_t1` | A1 + A2 |
 | 2 | 1 sessão | A3 → A4 → A5 (+ A6) |
-| 3 | 5 tmux leves | Loop B (só vol) |
+| 3 | até 5 tmux | Loop B (wide+t1 por cohort) |
 | 4 | — | `6_results` + `7_stats` |
 
-Não lançar 6 matrizes full em paralelo.
+---
+
+## 12. O que discutir no artigo
+
+1. **Δ wide−T1** no primary (FDR nas modalidades) — claim kernel  
+2. **Gradiente** Δ vs `t_imagens` / `t_janela` — relevância do desenho longitudinal  
+3. Ranking modalidades + features estáveis (vol/csf_norm, etc.)  
+4. SVM vs RF/EN só no wide primary  
+5. ComBat on/off  
+6. Clínica / fusion  
+7. Soft-pMCI, N↓, viés de retenção — limitações honestas  
+8. Leaky / CN×AD — suplemento metodológico  
 
 ---
 
-## 3. Contagem
-
-| Item | Contagem |
-|------|----------|
-| Configs `36m_6m` (A1–A5, sem leaky) | ~45 |
-| + leaky | +1 |
-| Sensibilidade 5× vol | +5 |
-| **Invocações CLI** | ~10–11 |
-
-Um CLI com várias mods/modelos/`combat both` = várias configs no mesmo processo.
-
----
-
-## 4. Testes / análises por bloco
-
-| Bloco | Pergunta | Análise |
-|-------|----------|---------|
-| Primary wide/vol/svm/nocombat | Separar sMCI×pMCI com imagem longitudinal? | AUC patient-level ± IC |
-| Wide × modalidades | Qual família carrega o sinal? | Ranking AUC; features estáveis |
-| Wide × modelos | Sinal depende do classificador? | svm vs rf vs elasticnet |
-| ComBat on/off | Harmonização ajuda ou apaga sinal? | Δ AUC |
-| **Wide vs T1** | Visitas extras > baseline só? | ΔAUC pareado + FDR (`7_stats`) |
-| Clínica | Escalas sozinhas separam? | AUC vs imagem |
-| Fusion | RM acrescenta ao clínico? | clinic vs img vs fusion |
-| Demografia | Grupos balanceados? Idade/sexo preveem? | MW, χ², permutação |
-| CN×AD | Pipeline OK em tarefa fácil? | Sanity |
-| Leaky | Selecção global infla? | abs vs leaky |
-| Sensibilidade cohorts | Depende de janela/gap? | Tabela descritiva |
-
-### Balanceamento (igual em todos os cohorts)
-
-- Sem SMOTE / undersampling
-- `StratifiedKFold` (outer + inner)
-- `class_weight ∈ {None, "balanced"}` (hiperparâmetro)
-- Tuning / primary metric: ROC AUC
-
----
-
-## 5. Discussão do artigo
-
-### Núcleo
-
-1. Valor longitudinal (wide > T1) — ou honestidade se Δ≈0
-2. Modalidade vencedora (vol vs radiomics vs DVF)
-3. Atributos estáveis (interpretabilidade)
-
-### Metodologia
-
-4. Nested CV + patient-level AUC  
-5. `l1_stable`  
-6. ComBat (over-correction?)  
-7. Controlo leaky  
-8. Desbalanceamento via estratificação + pesos + AUC  
-
-### Clínica
-
-9. Imagem vs clínico vs fusion  
-10. CN×AD como ceiling  
-
-### Limitações
-
-11. Soft-pMCI / definição de conversão  
-12. Robustez multi-cohort (sem overclaim em `*12m`)  
-13. ADNI / generalização  
-14. ROI hipocampo  
-
-### Framing sugerido
-
-| Secção | Conteúdo |
-|--------|----------|
-| Resultados 1 | Primary AUC + features estáveis |
-| Resultados 2 | **Wide vs T1** (claim principal) |
-| Resultados 3 | Modalidades / modelos / ComBat |
-| Resultados 4 | Clínico / fusion |
-| Resultados 5 | Sensibilidade 6 cohorts |
-| Suplemento | Leaky, cn_ad |
-
----
-
-## 6. Flags CLI (`--cohort`)
+## 13. Flags `--cohort`
 
 | Script | `--cohort`? |
 |--------|-------------|
@@ -280,4 +534,24 @@ Um CLI com várias mods/modelos/`combat both` = várias configs no mesmo process
 | `4_run_post_extract.py` | não — constante `COHORT` |
 | `5_run_baseline_comparison.py` | não — constante `COHORT` |
 
-Ver também `readme.md` (plano experimental enxuto).
+---
+
+## 14. FAQ rápido (para a defesa / oral)
+
+**“Porquê 36m_6m como primary?”**  
+Pré-especificado; janela cobre a maioria das conversões; gap 6 m é o extremo “quase transversal” da grelha — âncora + ponto de partida do gradiente.
+
+**“Porquê não 3 modelos em todo o lado?”**  
+Ablação de algoritmo uma vez (wide primary). No contraste temporal fixamos SVM.
+
+**“T1 com menos modelos é injusto?”**  
+Não: o Δ usa sempre svm↔svm.
+
+**“Porquê hipocampo só?”**  
+Âncora AD; controla dimensionalidade; outras ROIs existem na extração mas a ablação paper foca hipocampo.
+
+**“O que é soft-pMCI?”**  
+Última imagem pode ser o 1.º AD se faltarem MCIs com o gap exigido; DIAG observado mantém-se AD.
+
+**“Balanceamento?”**  
+Estratificação + `class_weight` opcional + AUC; sem SMOTE.
