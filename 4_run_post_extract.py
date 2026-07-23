@@ -15,7 +15,7 @@ from ablation_prep import assign_scanner_batch, export_ablation_long_only
 
 # Features vêm da store união; meta/ablation saem no cohort de análise.
 FEATURES_DIR = Path("csvs/cohorts/all_population")
-COHORT = "36m_6m"  # editar só isto → cohort de análise
+COHORT = "48m_9m"  # editar só isto → cohort de análise
 BASE = Path("csvs/cohorts") / COHORT
 LONGITUDINAL = BASE / "adnimerged_longitudinal.csv"
 MERGE_KEYS = ["ID_IMG", "roi", "side", "label"]
