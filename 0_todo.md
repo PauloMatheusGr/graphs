@@ -1,6 +1,6 @@
 # O que falta para fechar o artigo
 
-Actualizado 2026-07-24 ~15:30. Primary = `36m_6m`.
+Actualizado 2026-07-25. Primary = `36m_6m`.
 
 ```bash
 source .venv/bin/activate
@@ -23,93 +23,27 @@ COMMON_NOTASK="--selection l1_stable --repeats 10 \
 
 | # | Experiência | Pasta / nota |
 |---|-------------|--------------|
-| 1 | Features vol / rad / DVF **legado** CN | `features_displacement.csv` |
-| 2 | Warps DVF longitudinal (1346) | `images/displacement_field_longitudinal/` |
-| 3 | Wide `36m_6m` todas modalidades | `ablation_results/{vol,shape,texture,disp,all}/` |
-| 4 | T1 `36m_6m` vol,shape,texture,all **+ disp** smci_pmci | `ablation_results_t1_only/` |
-| 5 | Backup wide DVF CN | `ablation_results/disp_cn_backup/` |
-| 6 | `*_long.csv` hipocampo nos 6 cohorts | (disp ainda = legado até Passo A) |
-| 7 | Clínica | `ablation_results_clinic/` |
-| 8 | Fusion clinic+vol | `ablation_results_clinic_img/` |
-| 9 | Sanity CN×AD | `ablation_results/vol_cn_ad/` |
-| 10 | Leaky baseline (`--inflate ""`) | `ablation_results_leaky/vol/` |
+| 1 | Features vol / rad / DVF CN-template | `features_displacement.csv` · `images/displacement_field/` |
+| 2 | Wide `36m_6m` todas modalidades | `ablation_results/{vol,shape,texture,disp,all}/` |
+| 3 | T1 `36m_6m` vol,shape,texture,disp,all | `ablation_results_t1_only/` |
+| 4 | Backup wide DVF CN | `ablation_results/disp_cn_backup/` |
+| 5 | `*_long.csv` hipocampo nos 6 cohorts | `disp` = CN-template (`DISP_FEATURES`) |
+| 6 | Clínica | `ablation_results_clinic/` |
+| 7 | Fusion clinic+vol | `ablation_results_clinic_img/` |
+| 8 | Sanity CN×AD | `ablation_results/vol_cn_ad/` |
+| 9 | Leaky baseline (`--inflate ""`) | `ablation_results_leaky/vol/` |
+
+**DVF follow-up→baseline (intra-sujeito): descartado.** AUC ~chance; só 2 TPs (sem linha baseline); `t1_only` deixa de ser baseline clínico. Scripts/artefactos long removidos. Oficial = visita → template CN.
 
 ---
 
 ## 2. A correr agora
 
-| # | O quê | Nota |
-|---|--------|------|
-| A | `3_feat_dvf.py` (extract features long) | Esperar `[DONE]` / fim do log |
+Nada. Pipeline DVF long cancelado; `disp_long.csv` dos 6 cohorts regenerado com legado.
 
 ---
 
-## 3. Próximo bloco — DVF longitudinal (quando A acabar)
-
-**Sim: a sequência que descreveste está correcta.** Em ordem:
-
-### A1 — Editar `4_run_post_extract.py` e gerar `disp_long.csv`
-
-```python
-COHORT = "36m_6m"
-DISP_FEATURES = "features_displacement_longitudinal.csv"
-```
-
-```bash
-python 4_run_post_extract.py
-```
-
-Isto **só** troca o input DVF do cohort `36m_6m` para o CSV longitudinal.  
-Não apaga `features_displacement.csv` (legado).  
-**Não** uses `--results-dir` aqui — isso é só no passo A2.
-
-### A2 — Ablação (flag `--modality disp` + pasta nova)
-
-`--modality disp` = “usa colunas DVF”.  
-O que diferencia legado vs long = o CSV que o `4` carregou + `--results-dir`.
-
-```bash
-# wide → pasta nova (não toca ablation_results/disp/)
-python 5_run_ablation.py --cohort 36m_6m --representation wide \
-  --modality disp --models svm --combat both $COMMON \
-  --results-dir csvs/cohorts/36m_6m/ablation_results/disp_longitudinal
-
-# t1 → pasta nova (não toca ablation_results_t1_only/disp/)
-python 5_run_ablation.py --cohort 36m_6m --representation t1_only \
-  --modality disp --models svm --combat both $COMMON \
-  --results-dir csvs/cohorts/36m_6m/ablation_results_t1_only/disp_longitudinal
-```
-
-### A3 — Renomear coluna `modality` nos CSVs de **resultado** (após A2)
-
-(Os CSVs ainda dizem `modality=disp`; isto muda para `disp_longitudinal` na planilha.)
-
-```bash
-.venv/bin/python - <<'PY'
-from pathlib import Path
-import pandas as pd
-for d in [
-    Path("csvs/cohorts/36m_6m/ablation_results/disp_longitudinal"),
-    Path("csvs/cohorts/36m_6m/ablation_results_t1_only/disp_longitudinal"),
-]:
-    if not d.is_dir():
-        continue
-    for name in ("ablation_summary.csv", "ablation_results_all.csv"):
-        p = d / name
-        if not p.is_file():
-            continue
-        df = pd.read_csv(p)
-        df["modality"] = "disp_longitudinal"
-        if "modality_label" in df.columns:
-            df["modality_label"] = "DVF longitudinal"
-        df.to_csv(p, index=False)
-        print("ok", p)
-PY
-```
-
----
-
-## 4. Depois disso — ainda falta
+## 3. Ainda falta
 
 ### B — Leaky com outros `--inflate` (suplemento)
 
@@ -131,32 +65,7 @@ python 5_run_ablation_leaky.py --cohort 36m_6m --representation wide \
 
 ### C — Gradiente temporal (hipótese do artigo)
 
-Decisão no primary (`36m_6m`): legado (`disp/`) vs long (`disp_longitudinal/`).
-
-**Se legado ganhar** → saltar C0; ir directo a C1 (os 5 já têm `disp_long.csv` legado).
-
-**Se longitudinal ganhar** → C0 depois C1. O `disp` oficial passa a ser o long (reescreve `disp_long.csv` + `merge_long.csv`).
-
-#### C0 — só se long ganhar: regenerar DVF nos 5 cohorts
-
-Em `4_run_post_extract.py`:
-
-```python
-DISP_FEATURES = "features_displacement_longitudinal.csv"
-```
-
-Para cada cohort, mudar `COHORT` e correr:
-
-```bash
-for C in 36m_9m 36m_12m 48m_6m 48m_9m 48m_12m; do
-  # editar COHORT="$C" no 4_run_post_extract.py, depois:
-  python 4_run_post_extract.py
-done
-```
-
-(`36m_6m` já terá sido feito no bloco A.)
-
-#### C1 — ablação nos 5 cohorts
+`disp` oficial = CN-template em todos os cohorts. Ablação nos 5:
 
 ```bash
 for C in 36m_9m 36m_12m 48m_6m 48m_9m 48m_12m; do
@@ -175,7 +84,6 @@ done
 ### D — Planilhas
 
 1. `6_results.ipynb` — consolidação + comparação cohorts  
-   (`MOD_ORDER` com `"disp_longitudinal"` se ainda precisares da pasta de comparação no primary)
 2. `7_stats.ipynb` — FDR no primary
 
 ---
@@ -184,8 +92,7 @@ done
 
 - 🟠[x] Wide + T1 primary (incl. T1 disp smci_pmci)
 - 🟠[x] Clínica + Fusion + Sanity + Leaky (`inflate ""`)
-- [~] Extract features DVF long (`3_feat_dvf.py`)
-- [ ] **A1→A4** DVF longitudinal no primary (`4` + ablação + rename + restaurar `4`)
+- 🟠[x] DVF oficial = CN-template (long descartado; `4` × 6 com legado)
 - [ ] Leaky `pseudo` / `pseudo,fulltune` / (`max`)
 - [ ] Gradiente 5 cohorts
 - [ ] `6_results` + `7_stats`
@@ -204,28 +111,9 @@ Lê isto até conseguires explicar cada etapa sem consultar o código. Os CLIs e
 |-------|----------|
 | Wide vs T1 no `36m_6m` | Longitudinal ajuda no primary? |
 | Clínica / fusion / sanity / leaky | Piso clínico, RM acrescenta, ceiling, leakage? |
-| `disp` vs `disp_longitudinal` | Qual DVF serve melhor? |
+| Modalidade `disp` (CN-template) | Deformação vs CN ajuda? (comparável wide↔T1) |
 | 5 cohorts (Passo 2) | Gap maior → Δ(wide−T1) maior? |
 | `6` + `7` | Tabelas + testes formais |
-
----
-
-## Checklist curta
-
-- 🟠[x] Wide + T1 primary (exceto T1 disp — a reparar)
-- 🟠[x] Clínica + Leaky
-- [~] Extract DVF long · T1 disp · Fusion · Sanity
-- [ ] Ablação `disp_longitudinal` (wide + t1)
-- [ ] Gradiente 5 cohorts
-- [ ] `6_results` + `7_stats`
-
----
-
-# Pipeline do estudo e plano experimental
-
-Documento de referência: **o quê** fazemos, **como**, e **porquê** — do ADNIMERGED bruto até às ablações e à discussão do artigo.
-
-Lê isto até conseguires explicar cada etapa sem consultar o código. Os CLIs estão no final (secção 10).
 
 ---
 
@@ -378,21 +266,21 @@ PyRadiomics, `binCount=64`, imagem Original: firstorder, shape, glcm, glrlm, gls
 
 **Racional:** textura/forma além do volume; standard IBSI-like via PyRadiomics (não LBP).
 
-### 4.3 DVF — legado vs longitudinal
+### 4.3 DVF — `3_feat_gen_dvf.py` + `3_feat_dvf.py` → `features_displacement.csv`
 
-| Script | Âncora | Warps | Features CSV |
-|--------|--------|-------|--------------|
-| **`3_feat_gen_dvf_old.py` + `3_feat_dvf_old.py`** | visita → template CN (sexo/idade baseline) | `images/displacement_field/` | `features_displacement.csv` |
-| **`3_feat_gen_dvf.py` + `3_feat_dvf.py`** | follow-up → **baseline do paciente** (i2/i3→i1) | `images/displacement_field_longitudinal/` | `features_displacement_longitudinal.csv` |
+| Item | Valor |
+|------|--------|
+| Âncora | visita → template CN (sexo/idade do baseline do paciente) |
+| Warps | `images/displacement_field/` |
+| Features | `csvs/cohorts/all_population/features_displacement.csv` |
+| `4_run_post_extract.py` | `DISP_FEATURES = "features_displacement.csv"` |
 
-1. **gen (atual):** `fixed=i1`, `moving=i2|i3`; sem i1→i1; naming `{moving}_ref-{baseline}_*`.  
-2. **dvf (atual):** domínio + ROI + mask no **i1**; `ID_IMG`=móvel; `ref_tag=baseline_{i1}`; mesmas cols de feat que o legado.  
-3. **`4_run_post_extract.py`:** constante `DISP_FEATURES` escolhe qual CSV entra na ablação.
+Fluxo: cada `ID_IMG` (T1/T2/T3) tem warp → CN; domínio = imagem clínica; `ref_tag` identifica o template.  
+**Racional:** deformação vs CN = “afastamento do envelhecimento típico”; 3 visitas → wide vs `t1_only` comparáveis.
 
-**Racional (atual):** deformação intra-sujeito = mudança longitudinal.  
-**Racional (legado):** deformação vs CN = “afastamento do envelhecimento típico” (arquivado p/ comparação).
+**Descartado:** follow-up→baseline do paciente (intra-sujeito). Só 2 TPs (sem i1→i1); `t1_only` deixava de ser baseline; AUC fraca no primary.
 
-Ordem: `python 3_feat_gen_dvf.py` → `python 3_feat_dvf.py` → editar `DISP_FEATURES` → `4_run_post_extract.py`.
+Ordem: `python 3_feat_gen_dvf.py` → `python 3_feat_dvf.py` → `python 4_run_post_extract.py`.
 
 ---
 
@@ -533,17 +421,16 @@ COMMON="--tasks smci_pmci --selection l1_stable --repeats 10 \
 
 ### Checklist
 
-Ver **topo deste ficheiro** (FASES 0–4) — fonte de verdade.
+Ver **topo deste ficheiro** — fonte de verdade operacional.
 
-- 🟠[x] Extração `all_population` (vol, rad, DVF legado)
-- 🟠[x] `4_run_post_extract` × 6 cohorts (legado disp)
+- 🟠[x] Extração `all_population` (vol, rad, DVF CN-template)
+- 🟠[x] `4_run_post_extract` × 6 cohorts (`disp` = CN-template)
 - 🟠[x] A1 Wide `36m_6m`
-- 🟠[x] A2 T1 `36m_6m` (vol/shape/texture/all; disp a reparar `[~]`)
-- 🟠[x] A3 Clínica
-- 🟠[x] A6 Leaky
-- [~] A4 Fusion · A5 Sanity (`vol_cn_ad`) · extract DVF long · T1 disp smci_pmci
-- [ ] FASE 1 `disp_longitudinal` wide+t1
-- [ ] B Gradiente 5 cohorts × wide + t1
+- 🟠[x] A2 T1 `36m_6m` (vol/shape/texture/disp/all)
+- 🟠[x] A3 Clínica · A4 Fusion · A5 Sanity · A6 Leaky (`inflate ""`)
+- 🟠[x] DVF follow-up→baseline descartado
+- [ ] B Leaky `pseudo` / `pseudo,fulltune` / (`max`)
+- [ ] C Gradiente 5 cohorts × wide + t1
 - [ ] `6_results` / `cohort_comparison`
 - [ ] `7_stats`
 
@@ -656,11 +543,9 @@ done
 
 | Fase | Sessões | Jobs |
 |------|---------|------|
-| 0–1 | extract + `disp_long` | FASE 0–1 no topo |
-| 1b | `t1_disp_fix` | reparar t1 disp legado se preciso |
-| 2 | 1 sessão | A3 → A4 → A5 (+ A6) — **já podes começar** |
-| 3 | até 5 tmux | Loop B (wide+t1 por cohort) |
-| 4 | — | `6_results` + `7_stats` |
+| 1 | leaky | B — `pseudo` / `pseudo,fulltune` (/ `max`) |
+| 2 | até 5 tmux | C — gradiente (wide+t1 por cohort) |
+| 3 | — | `6_results` + `7_stats` |
 
 ---
 

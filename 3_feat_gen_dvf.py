@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """
-Gera warps ANTs longitudinais: follow-up → baseline do mesmo paciente.
+Gera warps ANTs (DVF) registrando template CN estratificado em cada imagem clínica.
 
-Para cada ID_PT com visitas ordenadas (slot / MRI_DATE):
-  - fixed  = imagem clínica do baseline (i1 = t0)
-  - moving = i2 (t1) e i3 (t2)
-  - saída  = affine + warp + inverseWarp em images/displacement_field_longitudinal/
+Pastas / saídas:
+  warps:  images/displacement_field/
+  feats:  csvs/cohorts/all_population/features_displacement.csv  (via 3_feat_dvf.py)
 
-Naming:
-  {ID_IMG_moving}_ref-{ID_IMG_baseline}_0GenericAffine.mat
-  {ID_IMG_moving}_ref-{ID_IMG_baseline}_1Warp.nii.gz
-  {ID_IMG_moving}_ref-{ID_IMG_baseline}_1InverseWarp.nii.gz
+Para cada ID_IMG em IMAGES_CSV:
+  - fixed  = imagem clínica pré-processada (resampled_1.0mm)
+  - moving = template CN com mesmo sexo e faixa etária do baseline do paciente
+  - saída  = affine + warp + inverse warp em images/displacement_field/
 
-Não gera warp i1→i1. Legado CN-template: 3_feat_gen_dvf_old.py → images/displacement_field/.
+Extração de atributos por ROI: 3_feat_dvf.py (consome estes warps).
 
-Extração de atributos: 3_feat_dvf.py (consome esta pasta).
+DIAG/GROUP não entram na escolha do template: todos usam CN estratificado
+por SEX e faixa etária da visita baseline.
 """
 
 from __future__ import annotations
@@ -30,15 +30,21 @@ import pandas as pd
 # CONFIG (edite aqui)
 # =========================
 
+# Lista união (warps em images/displacement_field/, globais).
 COHORT = "all_population"
 DEFAULT_IMAGES_CSV = f"csvs/cohorts/{COHORT}/all_population.csv"
 
+# Tamanho mínimo para considerar NIfTI completo (em bytes)
 DEFAULT_MIN_OUTPUT_BYTES = 1024
 
-# Pastas SEPARADAS do legado (images/displacement_field/)
-DEFAULT_TMPDIR = "./images/displacement_field_longitudinal/_tmp_ants"
+# Temporários (evita /tmp do sistema; respeita TMPDIR)
+DEFAULT_TMPDIR = "./images/displacement_field/_tmp_ants"
+
+# Templates CN estratificados (imagens móveis no registro)
+groupwise_dir = "./images/groupwise"
+# Imagens clínicas pré-processadas (imagens fixas no registro)
 clinic_dir = "./images/resampled_1.0mm"
-warps_output = "./images/displacement_field_longitudinal"
+warps_output = "./images/displacement_field"
 
 SLOT_ORDER = {"baseline": 0, "m12": 1, "m24": 2, "t0": 0, "t1": 1, "t2": 2}
 
@@ -52,23 +58,37 @@ os.makedirs(os.environ["TMPDIR"], exist_ok=True)
 
 
 @dataclass(frozen=True)
-class PatientBaseline:
-    id_img: str
-    clinic_path: str
+class BaselineReference:
+    sex: str
+    age: int
+    age_range: str
+    ref_path: str
 
 
-def clinic_path_for(img_id: str) -> str:
+def get_age_range(age: float) -> str:
+    age = float(age)
+    if 50 <= age <= 59.9:
+        return "50-59"
+    if 60 <= age <= 69.9:
+        return "60-69"
+    if 70 <= age <= 79.9:
+        return "70-79"
+    if 80 <= age <= 89.9:
+        return "80-89"
+    if 90 <= age <= 99.9:
+        return "90-99"
+    return "50-59" if age < 50 else "90-99"
+
+
+def get_stratified_reference_path(sex: str, age_range: str) -> str:
+    sex = str(sex).upper().strip()
+    ref_filename = f"groupwise_DIAG-CN_SEX-{sex}_AGE-{age_range}_N-20_template.nii.gz"
+    return os.path.join(groupwise_dir, ref_filename)
+
+
+def fixed_path_for(img_id: str) -> str:
     return os.path.join(
         clinic_dir, f"{img_id}_stripped_nlm_denoised_biascorrected.nii.gz"
-    )
-
-
-def warp_paths(moving_id: str, baseline_id: str) -> tuple[str, str, str]:
-    stem = f"{moving_id}_ref-{baseline_id}"
-    return (
-        os.path.join(warps_output, f"{stem}_0GenericAffine.mat"),
-        os.path.join(warps_output, f"{stem}_1Warp.nii.gz"),
-        os.path.join(warps_output, f"{stem}_1InverseWarp.nii.gz"),
     )
 
 
@@ -114,61 +134,60 @@ def _sort_images_chronologically(df: pd.DataFrame) -> pd.DataFrame:
     return out.sort_values(sort_cols)
 
 
-def build_patient_baseline_map(df_images: pd.DataFrame) -> dict[str, PatientBaseline]:
-    """Primeira visita cronológica = fixed de todos os follow-ups do paciente."""
+def build_baseline_reference_map(df_images: pd.DataFrame) -> dict[str, BaselineReference]:
+    """
+    Define o template CN estratificado por paciente a partir da visita baseline.
+
+    Usa SEX e AGE da primeira visita (slot baseline, se disponível; senão MRI_DATE).
+    DIAG e GROUP são ignorados de propósito: o referencial anatômico é sempre CN.
+    """
     df = _sort_images_chronologically(df_images)
-    out: dict[str, PatientBaseline] = {}
+    ref_by_pt: dict[str, BaselineReference] = {}
     for id_pt, g in df.groupby("ID_PT", sort=False):
         r0 = g.iloc[0]
-        bid = str(r0["ID_IMG"]).strip()
-        out[str(id_pt)] = PatientBaseline(id_img=bid, clinic_path=clinic_path_for(bid))
-    return out
+        sex = str(r0["SEX"]).upper().strip()
+        age = int(r0["AGE"])
+        age_range = get_age_range(age)
+        ref_path = get_stratified_reference_path(sex=sex, age_range=age_range)
+        ref_by_pt[str(id_pt)] = BaselineReference(
+            sex=sex, age=age, age_range=age_range, ref_path=ref_path
+        )
+    return ref_by_pt
 
 
-def run_longitudinal_registrations(
+def run_individual_registrations(
     csv_images_path: str, *, min_output_bytes: int = DEFAULT_MIN_OUTPUT_BYTES
 ) -> None:
     df_imgs = pd.read_csv(csv_images_path)
-    required = {"ID_PT", "ID_IMG", "MRI_DATE"}
+    required = {"ID_PT", "ID_IMG", "SEX", "AGE", "MRI_DATE"}
     missing = required - set(df_imgs.columns)
     if missing:
         raise ValueError(f"CSV sem colunas obrigatorias: {sorted(missing)}")
 
-    baseline_by_pt = build_patient_baseline_map(df_imgs)
-    df = _sort_images_chronologically(df_imgs)
+    ref_by_pt = build_baseline_reference_map(df_imgs)
+    n_total = len(df_imgs)
+    n_skip = n_ok = n_err = 0
 
-    n_ok = n_skip = n_err = 0
-    jobs: list[tuple[str, str, str, str]] = []  # id_pt, moving_id, baseline_id, moving_path
-
-    for id_pt, g in df.groupby("ID_PT", sort=False):
-        base = baseline_by_pt.get(str(id_pt))
-        if base is None:
+    for idx, row in df_imgs.iterrows():
+        img_id = str(row["ID_IMG"]).strip()
+        id_pt = str(row["ID_PT"]).strip()
+        ref = ref_by_pt.get(id_pt)
+        if ref is None:
+            print(f"[{idx + 1}/{n_total}] [SKIP] {img_id}: referencia baseline ausente.")
+            n_skip += 1
             continue
-        for _, row in g.iterrows():
-            moving_id = str(row["ID_IMG"]).strip()
-            if moving_id == base.id_img:
-                continue  # sem i1→i1
-            jobs.append(
-                (str(id_pt), moving_id, base.id_img, clinic_path_for(moving_id))
-            )
 
-    n_total = len(jobs)
-    print(
-        f"[START] pares follow-up→baseline={n_total} "
-        f"pacientes={len(baseline_by_pt)} out={warps_output}",
-        flush=True,
-    )
-
-    for idx, (id_pt, moving_id, baseline_id, moving_path) in enumerate(jobs, start=1):
-        affine_out, warp_out, inv_warp_out = warp_paths(moving_id, baseline_id)
-        fixed_path = clinic_path_for(baseline_id)
+        ref_tag = f"CN_SEX-{ref.sex}_AGE-{ref.age_range}"
+        affine_out = os.path.join(warps_output, f"{img_id}_{ref_tag}_0GenericAffine.mat")
+        warp_out = os.path.join(warps_output, f"{img_id}_{ref_tag}_1Warp.nii.gz")
+        inv_warp_out = os.path.join(
+            warps_output, f"{img_id}_{ref_tag}_1InverseWarp.nii.gz"
+        )
 
         if registration_bundle_complete(
             affine_out, warp_out, inv_warp_out, min_bytes=min_output_bytes
         ):
-            print(
-                f"[{idx}/{n_total}] [SKIP] {moving_id}→{baseline_id}: registro completo."
-            )
+            print(f"[{idx + 1}/{n_total}] [SKIP] {img_id}: registro completo ja existe.")
             n_skip += 1
             continue
 
@@ -177,26 +196,25 @@ def run_longitudinal_registrations(
                 affine_out,
                 warp_out,
                 inv_warp_out,
-                reason=f"Registro incompleto {moving_id}_ref-{baseline_id}",
+                reason=f"Registro incompleto para {img_id}",
             )
 
+        fixed_path = fixed_path_for(img_id)
+        moving_path = ref.ref_path
         if not os.path.isfile(fixed_path):
-            print(
-                f"[{idx}/{n_total}] [SKIP] {moving_id}: baseline ausente: {fixed_path}"
-            )
+            print(f"[{idx + 1}/{n_total}] [SKIP] {img_id}: imagem clinica ausente: {fixed_path}")
             n_skip += 1
             continue
         if not os.path.isfile(moving_path):
             print(
-                f"[{idx}/{n_total}] [SKIP] {moving_id}: follow-up ausente: {moving_path}"
+                f"[{idx + 1}/{n_total}] [SKIP] {img_id}: template CN ausente: {moving_path}"
             )
             n_skip += 1
             continue
 
         print(
-            f"[{idx}/{n_total}] [RUN] moving={moving_id} fixed={baseline_id} "
-            f"(paciente={id_pt})",
-            flush=True,
+            f"[{idx + 1}/{n_total}] [RUN] {img_id} "
+            f"(paciente={id_pt}, ref={ref_tag}, GROUP ignorado no registro)"
         )
         try:
             fixed_img = ants.image_read(fixed_path)
@@ -220,28 +238,26 @@ def run_longitudinal_registrations(
                 None,
             )
             if affine_src is None or fwd_warp_src is None or inv_warp_src is None:
-                print(
-                    f"[{idx}/{n_total}] [ERROR] {moving_id}: transforms incompletos."
-                )
+                print(f"[{idx + 1}/{n_total}] [ERROR] {img_id}: transforms incompletos.")
                 n_err += 1
                 continue
 
             shutil.copy2(affine_src, affine_out)
             shutil.copy2(fwd_warp_src, warp_out)
             shutil.copy2(inv_warp_src, inv_warp_out)
-            print(f"[{idx}/{n_total}] [OK] {moving_id} -> {warp_out}", flush=True)
+            print(f"[{idx + 1}/{n_total}] [OK] {img_id} -> {warp_out}")
             n_ok += 1
         except Exception as e:
-            print(f"[{idx}/{n_total}] [ERROR] {moving_id}: {e}", flush=True)
+            print(f"[{idx + 1}/{n_total}] [ERROR] {img_id}: {e}")
             n_err += 1
 
     print(
-        f"[DONE] registros longitudinais: ok={n_ok} skip={n_skip} err={n_err} "
-        f"pares={n_total} out={warps_output}"
+        f"[DONE] registros: ok={n_ok} skip={n_skip} err={n_err} "
+        f"total_linhas={n_total} out={warps_output}"
     )
 
 
 if __name__ == "__main__":
-    run_longitudinal_registrations(
+    run_individual_registrations(
         DEFAULT_IMAGES_CSV, min_output_bytes=DEFAULT_MIN_OUTPUT_BYTES
     )
