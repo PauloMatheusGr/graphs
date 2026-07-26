@@ -90,8 +90,16 @@ def _stable_seed(*parts: object) -> int:
 
 
 def _summary_files(root: Path) -> list[Path]:
-    files = list(root.glob("*/ablation_summary.csv"))
-    files += [f for f in root.glob("*summary*.csv") if not f.name.startswith("all_")]
+    # ignora pastas/ficheiros backup ou sanity (ex.: vol_smci_pmci_backup, vol_cn_ad)
+    def _ok(p: Path) -> bool:
+        blob = f"{p.parent.name}/{p.stem}".lower()
+        return "backup" not in blob and "_cn_ad" not in blob
+
+    files = [f for f in root.glob("*/ablation_summary.csv") if _ok(f)]
+    files += [
+        f for f in root.glob("*summary*.csv")
+        if not f.name.startswith("all_") and _ok(f)
+    ]
     return files
 
 

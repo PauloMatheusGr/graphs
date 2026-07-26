@@ -127,6 +127,26 @@ def filter_ablation_config(
     if "selection_mode" in sub.columns:
         mask &= sub["selection_mode"].astype(str) == selection_mode
     out = sub.loc[mask].copy()
+    if out.empty and str(task) == "cn_ad":
+        # AUTOLOAD_CN_AD_v2 — recovery se o notebook passou ablation_abs sem vol_cn_ad
+        from pathlib import Path as _P
+        import pandas as _pd
+        _cand = _P("csvs/cohorts/36m_6m/ablation_results/vol_cn_ad/ablation_results_all.csv")
+        if _cand.is_file():
+            _extra = prepare_ablation_df(_pd.read_csv(_cand))
+            if selection_mode is not None and "selection_mode" in _extra.columns:
+                _extra = _extra.loc[_extra["selection_mode"].astype(str) == str(selection_mode)]
+            sub2 = _extra
+            mask2 = pd.Series(True, index=sub2.index)
+            if modality is not None and "modality" in sub2.columns:
+                mask2 &= sub2["modality"].astype(str) == str(modality)
+            if model_key is not None and "model_key" in sub2.columns:
+                mask2 &= sub2["model_key"].astype(str) == str(model_key)
+            if with_combat is not None and "with_combat" in sub2.columns:
+                mask2 &= sub2["with_combat"] == with_combat
+            out = sub2.loc[mask2].copy()
+            if not out.empty:
+                print(f"filter_ablation_config AUTOLOAD_CN_AD_v2 ← {_cand}")
     if out.empty:
         raise ValueError(
             f"Nenhuma linha para task={task!r} modality={modality!r} "
