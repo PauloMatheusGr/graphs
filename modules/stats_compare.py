@@ -18,6 +18,9 @@ def image_ablation_path(base: Path, protocol: str, modality: str) -> Path:
     roots = {
         "abs": base / "ablation_results",
         "t1_only": base / "ablation_results_t1_only",
+        "deltas": base / "ablation_results_deltas",
+        "deltas_only": base / "ablation_results_deltas_only",
+        "deltas_rel": base / "ablation_results_deltas_rel",
         "global": base / "ablation_results_leaky",
     }
     if protocol not in roots:
