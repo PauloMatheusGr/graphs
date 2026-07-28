@@ -154,15 +154,17 @@ def compare_modalities(
     label_b: str,
     comparison: str,
     alpha: float = 0.05,
+    cfg_for_mod_b: Callable[[str], object] | None = None,
 ) -> pd.DataFrame:
     rows: list[dict] = []
     for i, mod in enumerate(modalities):
         pa, pb = path_a(mod), path_b(mod)
         if pa is None or pb is None or not pa.exists() or not pb.exists():
             continue
-        cfg = cfg_for_mod(mod)
-        pat_a = load_patients(pa, cfg)
-        pat_b = load_patients(pb, cfg)
+        cfg_a = cfg_for_mod(mod)
+        cfg_b = cfg_for_mod_b(mod) if cfg_for_mod_b is not None else cfg_a
+        pat_a = load_patients(pa, cfg_a)
+        pat_b = load_patients(pb, cfg_b)
         paired = pat_a.merge(pat_b, on=["ID_PT", "y"], suffixes=(f"_{label_a}", f"_{label_b}"))
         if paired.empty:
             continue
