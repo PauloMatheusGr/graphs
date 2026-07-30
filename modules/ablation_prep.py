@@ -90,14 +90,13 @@ TEXTURE_FEATURE_SUFFIXES = {
 
 # Disp: momentos logjac + strain_fro (artigo); fora = ux/uy/uz, mag, percentis, etc.
 DISP_FEATURE_SUFFIXES = {
-    "logjac_mean",
-    "logjac_std",
-    "logjac_skewness",
-    "logjac_kurtosis",
+    # "mag_mean", "mag_variance", "mag_skewness", "mag_kurtosis",
+    # "logjac_mean", "logjac_variance", "logjac_skewness", "logjac_kurtosis",
+    # "strain_fro_mean", "strain_fro_variance", "strain_fro_skewness", "strain_fro_kurtosis",
+    "mag_mean",
     "strain_fro_mean",
-    "strain_fro_std",
-    "strain_fro_skewness",
-    "strain_fro_kurtosis",
+    "strain_fro_variance",
+    "logjac_variance",
 }
 
 # Legado: ainda usados em shape_long_from_rad_long / smoke; não definem ablação.
