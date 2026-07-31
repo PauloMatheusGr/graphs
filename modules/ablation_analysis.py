@@ -114,7 +114,7 @@ def filter_ablation_config(
     modality: str,
     model_key: str,
     with_combat: bool,
-    selection_mode: str = "mrmr",
+    selection_mode: str = "l1_stable",
     expected_folds: int = 5,
 ) -> pd.DataFrame:
     sub = prepare_ablation_df(df)
@@ -580,10 +580,10 @@ def selection_audit_report(
         print(f"\n{'=' * 60}")
         print(f"[{mode}] {task} | {mod_label} | {model} | combat={with_combat}")
         print(f"  wide (inicial):     {n_inicial} colunas")
-        if mode in ("mrmr_stable", "l1_stable") and "n_features_after_stable_pool" in part.columns:
+        if mode in ("l1_stable",) and "n_features_after_stable_pool" in part.columns:
             n_pool = float(_col_or(part, "n_features_after_stable_pool", part["n_features_raw"]).mean())
             print(f"  após pool estável:  {n_pool:.1f} (média folds)")
-        if mode in ("mrmr", "mrmr_stable", "l1_stable", "filters") and "n_features_after_filters" in part.columns:
+        if mode in ("l1_stable", "filters") and "n_features_after_filters" in part.columns:
             n_filt = float(_col_or(part, "n_features_after_filters", part["n_features_selected"]).mean())
             print(f"  após corr/var:      {n_filt:.1f} (média folds)")
         print(
@@ -591,7 +591,7 @@ def selection_audit_report(
             f"min={part['n_features_selected'].min()} max={part['n_features_selected'].max()}"
         )
 
-        if mode in ("mrmr_stable", "l1_stable") and "removed_by_stable_pool" in part.columns:
+        if mode in ("l1_stable",) and "removed_by_stable_pool" in part.columns:
             stable_rm = union_removed(part, "removed_by_stable_pool")
             print(f"  removidos pool estável ({len(stable_rm)}): {[feature_short_name(x) for x in stable_rm[:12]]}")
 
@@ -599,10 +599,7 @@ def selection_audit_report(
             filt_rm = union_removed(part, "removed_by_filters")
             if filt_rm:
                 print(f"  removidos corr/var ({len(filt_rm)}): {[feature_short_name(x) for x in filt_rm[:12]]}")
-        if mode in ("mrmr", "mrmr_stable") and "removed_by_mrmr" in part.columns:
-            mrmr_rm = union_removed(part, "removed_by_mrmr")
-            if mrmr_rm:
-                print(f"  removidos mRMR ({len(mrmr_rm)}): {[feature_short_name(x) for x in mrmr_rm[:12]]}")
+        # removed_by_mrmr kept in CSVs for schema compat; no longer printed
 
     rows = []
     for mode in modes:
@@ -883,7 +880,7 @@ if __name__ == "__main__":
                     "modality": "vol",
                     "model_key": "svm",
                     "with_combat": True,
-                    "selection_mode": "mrmr",
+                    "selection_mode": "l1_stable",
                     "combat_label": "ComBat",
                     "selected_features": json.dumps(feats),
                     "test_y_true": json.dumps(y_true),

@@ -43,9 +43,8 @@ from ablation_runner import (
     STABLE_POOL_L1_C,
     STABLE_POOL_MIN_PCT,
     STABLE_POOL_MIN_TIMEPOINTS,
-    STABLE_POOL_N_FEATURES,
     TASKS,
-    CorrVarMRMRSelector,
+    CorrVarSelector,
     TaskConfig,
     fold_metrics,
     fold_selection_audit,
@@ -69,7 +68,6 @@ from ablation_stable import inner_selections_l1_bootstrap
 
 log = logging.getLogger(__name__)
 
-LEAKY_INNER_FOLDS = 5  # ponytail: só para contagem do stable pool; cada fit usa dataset inteiro
 UNIVARIATE_K_GRID = [10, 20, 50, 100, 200, 500]
 UNIVARIATE_SCORE_FUNCS: dict[str, Any] = {
     "f_classif": f_classif,
@@ -205,35 +203,25 @@ def leaky_stable_pool_columns(
     y_full: np.ndarray,
     *,
     selection_mode: str,
-    roi: str,
-    n_features: int,
     min_pct: int,
     min_timepoints: int,
     n_bootstrap: int = STABLE_POOL_BOOTSTRAP,
     l1_c: float = STABLE_POOL_L1_C,
     seed: int = 0,
 ) -> list[str]:
-    """Stable pool leaky: L1 bootstrap (l1_stable) ou mRMR repetido (mrmr_stable)."""
+    """Stable pool leaky: só L1 bootstrap (l1_stable)."""
     cfg = SELECTION_MODES[selection_mode]
-    if cfg.get("use_l1_stable_pool"):
-        inner_selected = inner_selections_l1_bootstrap(
-            X_full,
-            y_full,
-            n_bootstrap=n_bootstrap,
-            l1_c=l1_c,
-            seed=seed,
-        )
-    else:
-        inner_selected = []
-        for _ in range(LEAKY_INNER_FOLDS):
-            pre = CorrVarMRMRSelector(
-                use_mrmr=True,
-                use_filters=True,
-                n_features_total=n_features,
-                roi=roi,
-            )
-            pre.fit(X_full, y_full)
-            inner_selected.append(list(pre.selected_names_))
+    if not cfg.get("use_l1_stable_pool"):
+        if cfg.get("use_stable_pool"):
+            raise ValueError("mrmr_stable removido; use l1_stable")
+        return list(X_full.columns)
+    inner_selected = inner_selections_l1_bootstrap(
+        X_full,
+        y_full,
+        n_bootstrap=n_bootstrap,
+        l1_c=l1_c,
+        seed=seed,
+    )
     allowed, _ = estimate_stable_pool_columns(
         list(X_full.columns),
         inner_selected,
@@ -244,17 +232,15 @@ def leaky_stable_pool_columns(
 
 
 class LeakyGlobalPreselector(BaseEstimator, TransformerMixin):
-    """Seleção corr/var/mRMR sempre no dataset global (ignora X/y do fold de treino)."""
+    """Seleção corr/var (+ optional L1 stable pool) no dataset global (ignora X/y do fold)."""
 
     def __init__(
         self,
         *,
-        selection_mode: str = "mrmr_stable",
+        selection_mode: str = "l1_stable",
         roi: str = ROI_FILTER_DEFAULT,
-        n_features_total: int = 20,
         stable_pool_min_pct: int = STABLE_POOL_MIN_PCT,
         stable_pool_min_timepoints: int = STABLE_POOL_MIN_TIMEPOINTS,
-        stable_pool_n_features: int = STABLE_POOL_N_FEATURES,
         stable_pool_bootstrap: int = STABLE_POOL_BOOTSTRAP,
         stable_pool_l1_c: float = STABLE_POOL_L1_C,
         X_global: pd.DataFrame | None = None,
@@ -262,31 +248,29 @@ class LeakyGlobalPreselector(BaseEstimator, TransformerMixin):
     ):
         self.selection_mode = selection_mode
         self.roi = roi
-        self.n_features_total = n_features_total
         self.stable_pool_min_pct = stable_pool_min_pct
         self.stable_pool_min_timepoints = stable_pool_min_timepoints
-        self.stable_pool_n_features = stable_pool_n_features
         self.stable_pool_bootstrap = stable_pool_bootstrap
         self.stable_pool_l1_c = stable_pool_l1_c
         self.X_global = X_global
         self.y_global = y_global
-        self._pre = CorrVarMRMRSelector(use_mrmr=False, use_filters=False, roi=roi)
+        self._pre = CorrVarSelector(use_filters=False, roi=roi)
         self.selected_names_: list[str] = []
         self.selected_indices_: np.ndarray = np.array([], dtype=int)
         self.feature_names_in_: list[str] = []
         self.removed_by_stable_pool_: list[str] = []
         self.removed_by_filters_: list[str] = []
-        self.removed_by_mrmr_: list[str] = []
+        self.removed_by_mrmr_: list[str] = []  # schema compat
         self.after_stable_pool_names_: list[str] = []
         self.after_filter_names_: list[str] = []
 
-    def _copy_attrs(self, pre: CorrVarMRMRSelector) -> None:
+    def _copy_attrs(self, pre: CorrVarSelector) -> None:
         self.selected_names_ = list(pre.selected_names_)
         self.selected_indices_ = pre.selected_indices_
         self.feature_names_in_ = list(pre.feature_names_in_)
         self.removed_by_stable_pool_ = list(pre.removed_by_stable_pool_)
         self.removed_by_filters_ = list(pre.removed_by_filters_)
-        self.removed_by_mrmr_ = list(pre.removed_by_mrmr_)
+        self.removed_by_mrmr_ = []
         self.after_stable_pool_names_ = list(pre.after_stable_pool_names_)
         self.after_filter_names_ = list(pre.after_filter_names_)
 
@@ -294,10 +278,8 @@ class LeakyGlobalPreselector(BaseEstimator, TransformerMixin):
         if self.X_global is None or self.y_global is None:
             raise ValueError("LeakyGlobalPreselector exige X_global e y_global.")
         cfg = SELECTION_MODES[self.selection_mode]
-        pre = CorrVarMRMRSelector(
-            use_mrmr=cfg["use_mrmr"],
+        pre = CorrVarSelector(
             use_filters=cfg["use_filters"],
-            n_features_total=self.n_features_total,
             roi=self.roi,
         )
         if cfg.get("use_stable_pool"):
@@ -305,8 +287,6 @@ class LeakyGlobalPreselector(BaseEstimator, TransformerMixin):
                 self.X_global,
                 self.y_global,
                 selection_mode=self.selection_mode,
-                roi=self.roi,
-                n_features=self.stable_pool_n_features,
                 min_pct=self.stable_pool_min_pct,
                 min_timepoints=self.stable_pool_min_timepoints,
                 n_bootstrap=self.stable_pool_bootstrap,
@@ -365,7 +345,7 @@ class LeakyUnivariatePreselector(BaseEstimator, TransformerMixin):
             selector.fit(self.X_global.to_numpy(dtype=float), self.y_global)
         mask = selector.get_support()
         self.selected_names_ = [n for n, keep in zip(names, mask) if keep]
-        self.removed_by_mrmr_ = [n for n in names if n not in set(self.selected_names_)]
+        self.removed_by_mrmr_ = []  # schema compat
         name_to_idx = {n: i for i, n in enumerate(names)}
         self.selected_indices_ = np.array(
             [name_to_idx[n] for n in self.selected_names_], dtype=int
@@ -383,7 +363,7 @@ class LeakyUnivariatePreselector(BaseEstimator, TransformerMixin):
 
 
 def param_grid_leaky_univariate(model_key: str) -> dict[str, list[Any]]:
-    """Grid: top-K univariado + hiperparâmetros do classificador (sem mRMR)."""
+    """Grid: top-K univariado + hiperparâmetros do classificador."""
     if is_embedded_model(model_key):
         return param_grid_for(model_key, "raw")
     grid = {
@@ -406,7 +386,6 @@ def make_leaky_pipeline(
     y_global: np.ndarray,
     stable_pool_min_pct: int,
     stable_pool_min_timepoints: int,
-    stable_pool_n_features: int,
     stable_pool_bootstrap: int = STABLE_POOL_BOOTSTRAP,
     stable_pool_l1_c: float = STABLE_POOL_L1_C,
     univariate_global: bool = False,
@@ -436,7 +415,6 @@ def make_leaky_pipeline(
                     y_global=y_global,
                     stable_pool_min_pct=stable_pool_min_pct,
                     stable_pool_min_timepoints=stable_pool_min_timepoints,
-                    stable_pool_n_features=stable_pool_n_features,
                     stable_pool_bootstrap=stable_pool_bootstrap,
                     stable_pool_l1_c=stable_pool_l1_c,
                 ),
@@ -462,7 +440,6 @@ def nested_cv_ablation_leaky(
     combat_quiet: bool = True,
     stable_pool_min_pct: int = STABLE_POOL_MIN_PCT,
     stable_pool_min_timepoints: int = STABLE_POOL_MIN_TIMEPOINTS,
-    stable_pool_n_features: int = STABLE_POOL_N_FEATURES,
     stable_pool_bootstrap: int = STABLE_POOL_BOOTSTRAP,
     stable_pool_l1_c: float = STABLE_POOL_L1_C,
     pseudo_replication: bool = False,
@@ -527,7 +504,6 @@ def nested_cv_ablation_leaky(
             y_global=y_all,
             stable_pool_min_pct=stable_pool_min_pct,
             stable_pool_min_timepoints=stable_pool_min_timepoints,
-            stable_pool_n_features=stable_pool_n_features,
             stable_pool_bootstrap=stable_pool_bootstrap,
             stable_pool_l1_c=stable_pool_l1_c,
             univariate_global=univariate_global,
@@ -683,7 +659,6 @@ def run_full_ablation_suite_leaky(
     combat_quiet: bool = True,
     stable_pool_min_pct: int = STABLE_POOL_MIN_PCT,
     stable_pool_min_timepoints: int = STABLE_POOL_MIN_TIMEPOINTS,
-    stable_pool_n_features: int = STABLE_POOL_N_FEATURES,
     stable_pool_bootstrap: int = STABLE_POOL_BOOTSTRAP,
     stable_pool_l1_c: float = STABLE_POOL_L1_C,
     pseudo_replication: bool = False,
@@ -694,15 +669,6 @@ def run_full_ablation_suite_leaky(
     optuna_trials: int = 30,
     representation: str = "wide",
 ) -> pd.DataFrame:
-    from ablation_runner import HAS_MRMR
-
-    if (
-        not HAS_MRMR
-        and not univariate_global
-        and {"mrmr", "mrmr_stable"} & set(selection_modes)
-    ):
-        raise ImportError("feature-engine necessário para modo mrmr: pip install feature-engine")
-
     stable_pool_min_timepoints = resolve_stable_pool_min_timepoints(
         representation, stable_pool_min_timepoints, log=log,
     )
@@ -778,7 +744,6 @@ def run_full_ablation_suite_leaky(
                                 combat_quiet=combat_quiet,
                                 stable_pool_min_pct=stable_pool_min_pct,
                                 stable_pool_min_timepoints=stable_pool_min_timepoints,
-                                stable_pool_n_features=stable_pool_n_features,
                                 stable_pool_bootstrap=stable_pool_bootstrap,
                                 stable_pool_l1_c=stable_pool_l1_c,
                                 pseudo_replication=pseudo_replication,
@@ -826,20 +791,19 @@ if __name__ == "__main__":
     Xz = global_zscore(X)
     assert abs(float(Xz.mean().mean())) < 0.2
     sel = LeakyGlobalPreselector(
-        selection_mode="mrmr",
+        selection_mode="filters",
         roi="hippocampus",
-        n_features_total=3,
         X_global=Xz,
         y_global=y,
     )
     sel.fit(Xz.iloc[:20], y[:20])
-    assert len(sel.selected_names_) <= 3
+    assert len(sel.selected_names_) >= 1
     uni = LeakyUnivariatePreselector(k=3, score_func="f_classif", X_global=Xz, y_global=y)
     uni.fit(Xz.iloc[:10], y[:10])
     assert 1 <= len(uni.selected_names_) <= 3
     assert len(param_grid_leaky_univariate("svm")["preselect__k"]) == len(UNIVARIATE_K_GRID)
     emb_pipe = make_leaky_pipeline(
-        "mrmr_stable",
+        "l1_stable",
         "logreg_l1",
         roi="hippocampus",
         seed=0,
@@ -847,7 +811,6 @@ if __name__ == "__main__":
         y_global=y,
         stable_pool_min_pct=70,
         stable_pool_min_timepoints=2,
-        stable_pool_n_features=50,
     )
     assert "preselect" not in emb_pipe.named_steps
     assert emb_pipe.named_steps["clf"].__class__.__name__ == "LogisticRegression"

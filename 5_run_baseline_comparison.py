@@ -43,7 +43,6 @@ from ablation_runner import (
     STABLE_POOL_L1_C,
     STABLE_POOL_MIN_PCT,
     STABLE_POOL_MIN_TIMEPOINTS,
-    STABLE_POOL_N_FEATURES,
     TASKS,
     TASK_PRESETS,
     embedded_selected_names,
@@ -302,7 +301,6 @@ def nested_cv_fusion(
     k_in: int = 5,
     stable_pool_min_pct: int = STABLE_POOL_MIN_PCT,
     stable_pool_min_timepoints: int = STABLE_POOL_MIN_TIMEPOINTS,
-    stable_pool_n_features: int = STABLE_POOL_N_FEATURES,
     stable_pool_bootstrap: int = STABLE_POOL_BOOTSTRAP,
     stable_pool_l1_c: float = STABLE_POOL_L1_C,
     tuner: str = "grid",
@@ -375,11 +373,9 @@ def nested_cv_fusion(
                 img_train,
                 y_train,
                 selection_mode=selection_mode,
-                inner_cv=inner_cv,
                 roi=roi,
                 min_pct=stable_pool_min_pct,
                 min_timepoints=stable_pool_min_timepoints,
-                n_features=stable_pool_n_features,
                 n_bootstrap=stable_pool_bootstrap,
                 l1_c=stable_pool_l1_c,
                 seed=seed + fold,
@@ -393,11 +389,9 @@ def nested_cv_fusion(
                 img_train,
                 y_train,
                 selection_mode=selection_mode,
-                inner_cv=inner_cv,
                 roi=roi,
                 min_pct=stable_pool_min_pct,
                 min_timepoints=stable_pool_min_timepoints,
-                n_features=stable_pool_n_features,
                 n_bootstrap=stable_pool_bootstrap,
                 l1_c=stable_pool_l1_c,
                 seed=seed + fold,
@@ -487,7 +481,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--stable-pool-min-pct", type=int, default=STABLE_POOL_MIN_PCT)
     p.add_argument("--stable-pool-min-timepoints", type=int, default=STABLE_POOL_MIN_TIMEPOINTS,
                    help="0 = sem filtro temporal no pool")
-    p.add_argument("--stable-pool-n", type=int, default=STABLE_POOL_N_FEATURES)
     p.add_argument("--stable-bootstrap", type=int, default=STABLE_POOL_BOOTSTRAP)
     p.add_argument("--stable-l1-c", type=float, default=STABLE_POOL_L1_C)
     p.add_argument("--tuner", choices=["grid", "optuna"], default="grid",
@@ -579,7 +572,6 @@ def main(argv: list[str] | None = None) -> int:
                         repeat_id=repeat_id,
                         stable_pool_min_pct=args.stable_pool_min_pct,
                         stable_pool_min_timepoints=stable_pool_min_timepoints,
-                        stable_pool_n_features=args.stable_pool_n,
                         stable_pool_bootstrap=args.stable_bootstrap,
                         stable_pool_l1_c=args.stable_l1_c,
                         tuner=args.tuner,

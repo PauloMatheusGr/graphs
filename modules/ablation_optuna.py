@@ -75,10 +75,6 @@ def suggest_sklearn_params(
         params["preselect__score_func"] = trial.suggest_categorical(
             "preselect__score_func", list(UNIVARIATE_SCORE_FUNCS.keys())
         )
-    elif not is_embedded_model(model_key) and selection_mode in ("mrmr", "mrmr_stable"):
-        params["preselect__n_features_total"] = trial.suggest_int(
-            "preselect__n_features_total", 10, 50, step=5
-        )
 
     if model_key == "logreg_l1":
         params["clf__C"] = trial.suggest_float("clf__C", 1e-3, 1e2, log=True)

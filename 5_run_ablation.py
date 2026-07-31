@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
-# python 2_run_ablation.py --modality vol,shape,texture,disp,all --tasks all \
-#   --selection mrmr_stable --models svm,rf,mlp,xgb --combat false --repeats 10
+# python 5_run_ablation.py --modality vol,shape,texture,disp,all --tasks all \
+#   --selection l1_stable --models svm,rf,mlp,xgb --combat false --repeats 10
 
 """Nested CV ablation — CLI (equivalente a 2_ablation.ipynb). Análise em 3_results.ipynb."""
 
@@ -33,7 +33,6 @@ from ablation_runner import (
     SELECTION_MODES,
     STABLE_POOL_MIN_PCT,
     STABLE_POOL_MIN_TIMEPOINTS,
-    STABLE_POOL_N_FEATURES,
     STABLE_POOL_BOOTSTRAP,
     STABLE_POOL_L1_C,
     TASKS,
@@ -131,7 +130,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--selection",
-        default="raw,l1_stable",
+        default="l1_stable",
         help=f"Modos: {','.join(SELECTION_MODES)}",
     )
     p.add_argument("--models", default="svm,rf,mlp", help="Modelos separados por vírgula")
@@ -159,7 +158,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--stable-pool-min-pct", type=int, default=STABLE_POOL_MIN_PCT)
     p.add_argument("--stable-pool-min-timepoints", type=int, default=STABLE_POOL_MIN_TIMEPOINTS,
                    help="Mín. visitas T1/T2/T3 estáveis no pool (0=desliga filtro temporal)")
-    p.add_argument("--stable-pool-n", type=int, default=STABLE_POOL_N_FEATURES)
     p.add_argument("--stable-bootstrap", type=int, default=STABLE_POOL_BOOTSTRAP,
                      help="Bootstraps para l1_stable (stable pool)")
     p.add_argument("--stable-l1-c", type=float, default=STABLE_POOL_L1_C,
@@ -274,7 +272,6 @@ def main(argv: list[str] | None = None) -> int:
             combat_quiet=True,
             stable_pool_min_pct=args.stable_pool_min_pct,
             stable_pool_min_timepoints=args.stable_pool_min_timepoints,
-            stable_pool_n_features=args.stable_pool_n,
             stable_pool_bootstrap=args.stable_bootstrap,
             stable_pool_l1_c=args.stable_l1_c,
             tuner=args.tuner,

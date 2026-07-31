@@ -233,4 +233,4 @@ No texto do artigo **não** listar dezenas de AUCs:
 | `--tuner` / `--optuna-trials` | `optuna` / `10` |
 | `--repeats` | `10` |
 
-`mrmr_stable` = legado.
+Modos `mrmr` / `mrmr_stable` removidos; seleção = `l1_stable` (+ corr/var).

@@ -38,7 +38,6 @@ from ablation_runner import (
     SELECTION_MODES,
     STABLE_POOL_MIN_PCT,
     STABLE_POOL_MIN_TIMEPOINTS,
-    STABLE_POOL_N_FEATURES,
     STABLE_POOL_BOOTSTRAP,
     STABLE_POOL_L1_C,
     TASKS,
@@ -155,7 +154,6 @@ def build_parser() -> argparse.ArgumentParser:
         default=0,
         help="0 recomendado para deltas (default); legado abs=2",
     )
-    p.add_argument("--stable-pool-n", type=int, default=STABLE_POOL_N_FEATURES)
     p.add_argument("--stable-bootstrap", type=int, default=STABLE_POOL_BOOTSTRAP)
     p.add_argument("--stable-l1-c", type=float, default=STABLE_POOL_L1_C)
     p.add_argument("--tuner", choices=["grid", "optuna"], default="optuna")
@@ -242,7 +240,6 @@ def main(argv: list[str] | None = None) -> int:
             combat_quiet=True,
             stable_pool_min_pct=args.stable_pool_min_pct,
             stable_pool_min_timepoints=stable_pool_min_timepoints,
-            stable_pool_n_features=args.stable_pool_n,
             stable_pool_bootstrap=args.stable_bootstrap,
             stable_pool_l1_c=args.stable_l1_c,
             tuner=args.tuner,

@@ -52,13 +52,6 @@ from xgboost import XGBClassifier
 
 log = logging.getLogger(__name__)
 
-try:
-    from feature_engine.selection import MRMR
-
-    HAS_MRMR = True
-except ImportError:
-    HAS_MRMR = False
-
 import os
 os.environ.setdefault("PYTHONWARNINGS", "ignore")
 
@@ -124,22 +117,14 @@ MODALITIES: dict[str, dict[str, str]] = {
 }
 
 SELECTION_MODES = {
-    "mrmr": {"use_mrmr": True, "use_filters": True, "label": "corr + var + MRMR"},
-    "mrmr_stable": {
-        "use_mrmr": True,
-        "use_filters": True,
-        "use_stable_pool": True,
-        "label": "stable pool (mRMR CV) + corr + var + MRMR",
-    },
     "l1_stable": {
-        "use_mrmr": False,
         "use_filters": True,
         "use_stable_pool": True,
         "use_l1_stable_pool": True,
         "label": "stable pool (L1 bootstrap) + corr + var",
     },
-    "filters": {"use_mrmr": False, "use_filters": True, "label": "corr + var (sem MRMR)"},
-    "raw": {"use_mrmr": False, "use_filters": False, "label": "sem seleção"},
+    "filters": {"use_filters": True, "label": "corr + var"},
+    "raw": {"use_filters": False, "label": "sem seleção"},
 }
 
 EMBEDDED_MODEL_KEYS = frozenset({"logreg_l1", "elasticnet"})
@@ -148,31 +133,26 @@ EMBEDDED_COEF_TOL = 1e-9
 # Estimativa do pool estável
 STABLE_POOL_MIN_PCT = 70
 STABLE_POOL_MIN_TIMEPOINTS = 2
-STABLE_POOL_N_FEATURES = 50  # mRMR por inner fold (só mrmr_stable legado)
 
 PARAM_GRIDS: dict[str, dict[str, list[Any]]] = {
     "svm": {
-        "preselect__n_features_total": [10, 15, 20, 30, 50],
         "clf__C": [0.01, 0.1, 1.0, 10.0],
         "clf__kernel": ["linear", "rbf"],
         "clf__gamma": ["scale"],
         "clf__class_weight": [None, "balanced"],
     },
     "rf": {
-        "preselect__n_features_total": [10, 15, 20, 30, 50],
         "clf__n_estimators": [100, 300],
         "clf__max_depth": [None, 5, 10],
         "clf__class_weight": [None, "balanced"],
     },
     "xgb": {
-        "preselect__n_features_total": [10, 15, 20, 30, 50],
         "clf__n_estimators": [100, 300],
         "clf__max_depth": [3, 5],
         "clf__learning_rate": [0.05, 0.1],
         "clf__subsample": [0.8, 1.0],
     },
     "mlp": {
-        "preselect__n_features_total": [10, 15, 20, 30, 50],
         "clf__hidden_layer_sizes": [(64,), (128, 64)],
         "clf__alpha": [1e-4, 1e-3],
         "clf__max_iter": [2000],
@@ -257,46 +237,17 @@ def var_keep_mask(X: np.ndarray, threshold: float = 0.01) -> np.ndarray:
     return keep
 
 
-def mrmr_global(
-    df: pd.DataFrame,
-    y: np.ndarray,
-    *,
-    max_features: int,
-    random_state: int = 0,
-) -> list[str]:
-    """mRMR top-K global (relevância - redundância). Mantém ordem de entrada."""
-    if not HAS_MRMR:
-        raise RuntimeError("feature-engine ausente — mRMR exigido (pip install feature-engine)")
-    # feature-engine exige max_features < n_colunas; senão nada a cortar
-    if df.shape[1] <= max_features:
-        return list(df.columns)
-    selector = MRMR(
-        method="MIQ",
-        regression=False,
-        max_features=max_features,
-        random_state=random_state,
-    )
-    with np.errstate(divide="ignore", invalid="ignore"):  # MIQ: relevance/redundance=0 é benigno
-        selector.fit(df, y)
-    dropped = set(selector.features_to_drop_)  # selecionadas = variables_ - features_to_drop_
-    return [c for c in selector.variables_ if c not in dropped]
-
-
-class CorrVarMRMRSelector(BaseEstimator, TransformerMixin):
+class CorrVarSelector(BaseEstimator, TransformerMixin):
     def __init__(
         self,
         *,
-        use_mrmr: bool = True,
         use_filters: bool = True,
-        n_features_total: int = 20,
         corr_threshold: float = 0.90,
         var_threshold: float = 0.01,
         roi: str = ROI_FILTER_DEFAULT,
         allowed_columns: list[str] | None = None,
     ):
-        self.use_mrmr = use_mrmr
         self.use_filters = use_filters
-        self.n_features_total = n_features_total
         self.corr_threshold = corr_threshold
         self.var_threshold = var_threshold
         self.roi = roi
@@ -306,7 +257,6 @@ class CorrVarMRMRSelector(BaseEstimator, TransformerMixin):
         self.feature_names_in_: list[str] = []
         self.removed_by_stable_pool_: list[str] = []
         self.removed_by_filters_: list[str] = []
-        self.removed_by_mrmr_: list[str] = []
         self.after_stable_pool_names_: list[str] = []
         self.after_filter_names_: list[str] = []
 
@@ -337,27 +287,15 @@ class CorrVarMRMRSelector(BaseEstimator, TransformerMixin):
             X_arr = X_arr[:, cmask]
             vmask = var_keep_mask(X_arr, self.var_threshold)
             names = [n for n, k in zip(names, vmask) if k]
-            X_arr = X_arr[:, vmask]
             self.removed_by_filters_ = [n for n in before if n not in set(names)]
         else:
             self.removed_by_filters_ = []
         self.after_filter_names_ = list(names)
 
-        if self.use_mrmr and names:
-            df_f = pd.DataFrame(X_arr, columns=names)
-            before_mrmr = list(names)
-            selected_names = mrmr_global(df_f, y, max_features=self.n_features_total)
-            if not selected_names:
-                selected_names = names[: min(self.n_features_total, len(names))]
-            self.removed_by_mrmr_ = [n for n in before_mrmr if n not in set(selected_names)]
-        else:
-            selected_names = list(names)
-            self.removed_by_mrmr_ = []
-
+        selected_names = list(names)
         if not selected_names:
-            # ponytail: fallback se corr/var/MRMR zerarem (ex. vol após ICV norm)
+            # ponytail: fallback se corr/var zerarem (ex. vol após ICV norm)
             selected_names = list(self.feature_names_in_)
-            self.removed_by_mrmr_ = []
 
         name_to_idx = {n: i for i, n in enumerate(self.feature_names_in_)}
         self.selected_names_ = selected_names
@@ -372,6 +310,9 @@ class CorrVarMRMRSelector(BaseEstimator, TransformerMixin):
         if self.selected_indices_.size == 0:
             raise ValueError("Nenhuma feature selecionada após pré-filtros.")
         return X_arr[:, self.selected_indices_]
+
+
+CorrVarMRMRSelector = CorrVarSelector  # compat
 
 
 def embedded_selected_names(
@@ -434,14 +375,13 @@ def fold_selection_audit(
     if is_embedded_model(model_key):
         clf = best.named_steps["clf"]
         selected = embedded_selected_names(clf, raw_names)
-        selected_set = set(selected)
         return {
             "after_stable_pool_names_": raw_names,
             "after_filter_names_": raw_names,
             "selected_names_": selected,
             "removed_by_stable_pool_": [],
             "removed_by_filters_": [],
-            "removed_by_mrmr_": [n for n in raw_names if n not in selected_set],
+            "removed_by_mrmr_": [],  # schema compat
             "n_features_selected": len(selected),
         }
 
@@ -462,7 +402,7 @@ def fold_selection_audit(
         "selected_names_": list(preselect.selected_names_),
         "removed_by_stable_pool_": list(preselect.removed_by_stable_pool_),
         "removed_by_filters_": list(preselect.removed_by_filters_),
-        "removed_by_mrmr_": list(preselect.removed_by_mrmr_),
+        "removed_by_mrmr_": [],  # schema compat
         "n_features_selected": int(preselect.transform(X_train).shape[1]),
     }
 
@@ -474,8 +414,7 @@ def make_pipeline(selection_mode: str, model_key: str, *, roi: str, seed: int) -
         steps.append(
             (
                 "preselect",
-                CorrVarMRMRSelector(
-                    use_mrmr=cfg["use_mrmr"],
+                CorrVarSelector(
                     use_filters=cfg["use_filters"],
                     roi=roi,
                 ),
@@ -491,15 +430,7 @@ def make_pipeline(selection_mode: str, model_key: str, *, roi: str, seed: int) -
 
 
 def param_grid_for(model_key: str, selection_mode: str) -> dict[str, Any]:
-    grid = PARAM_GRIDS[model_key]
-    if is_embedded_model(model_key):
-        return dict(grid)
-    return {
-        k: v
-        for k, v in grid.items()
-        if k != "preselect__n_features_total"
-        or selection_mode in ("mrmr", "mrmr_stable")
-    }
+    return dict(PARAM_GRIDS[model_key])
 
 
 def patient_labels_from_long(df_long: pd.DataFrame, task: TaskConfig) -> pd.DataFrame:
@@ -566,7 +497,6 @@ def nested_cv_ablation(
     combat_quiet: bool = True,
     stable_pool_min_pct: int = STABLE_POOL_MIN_PCT,
     stable_pool_min_timepoints: int = STABLE_POOL_MIN_TIMEPOINTS,
-    stable_pool_n_features: int = STABLE_POOL_N_FEATURES,
     stable_pool_bootstrap: int = STABLE_POOL_BOOTSTRAP,
     stable_pool_l1_c: float = STABLE_POOL_L1_C,
     tuner: str = "grid",
@@ -633,11 +563,9 @@ def nested_cv_ablation(
                 X_train,
                 y_train,
                 selection_mode=selection_mode,
-                inner_cv=inner_cv,
                 roi=roi,
                 min_pct=stable_pool_min_pct,
                 min_timepoints=stable_pool_min_timepoints,
-                n_features=stable_pool_n_features,
                 n_bootstrap=stable_pool_bootstrap,
                 l1_c=stable_pool_l1_c,
                 seed=seed + fold,
@@ -744,7 +672,7 @@ def run_full_ablation_suite(
     tasks: tuple[str, ...] = ("cn_ad", "smci_pmci"),
     modalities: tuple[str, ...] = ("vol", "shape", "texture", "disp", "all"),
     models: tuple[str, ...] = ("svm", "rf", "xgb", "mlp"),
-    selection_modes: tuple[str, ...] = ("mrmr",),
+    selection_modes: tuple[str, ...] = ("l1_stable",),
     with_combat_flags: tuple[bool, ...] = (False, True),
     results_dir: Path | str | None = None,
     seed: int = 42,
@@ -753,7 +681,6 @@ def run_full_ablation_suite(
     combat_quiet: bool = True,
     stable_pool_min_pct: int = STABLE_POOL_MIN_PCT,
     stable_pool_min_timepoints: int = STABLE_POOL_MIN_TIMEPOINTS,
-    stable_pool_n_features: int = STABLE_POOL_N_FEATURES,
     stable_pool_bootstrap: int = STABLE_POOL_BOOTSTRAP,
     stable_pool_l1_c: float = STABLE_POOL_L1_C,
     tuner: str = "grid",
@@ -761,9 +688,6 @@ def run_full_ablation_suite(
     representation: str = "wide",
     exclude_features: tuple[str, ...] = (),
 ) -> pd.DataFrame:
-    if not HAS_MRMR and {"mrmr", "mrmr_stable"} & set(selection_modes):
-        raise ImportError("feature-engine necessário para modo mrmr: pip install feature-engine")
-
     stable_pool_min_timepoints = resolve_stable_pool_min_timepoints(
         representation, stable_pool_min_timepoints, log=log,
     )
@@ -853,7 +777,6 @@ def run_full_ablation_suite(
                                 combat_quiet=combat_quiet,
                                 stable_pool_min_pct=stable_pool_min_pct,
                                 stable_pool_min_timepoints=stable_pool_min_timepoints,
-                                stable_pool_n_features=stable_pool_n_features,
                                 stable_pool_bootstrap=stable_pool_bootstrap,
                                 stable_pool_l1_c=stable_pool_l1_c,
                                 tuner=tuner,

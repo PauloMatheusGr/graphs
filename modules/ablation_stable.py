@@ -1,22 +1,26 @@
-"""Stable pool via bootstrap × L1 (corr/var antes de cada fit)."""
+"""Stable pool via bootstrap × L1 (scale → corr/var → L1 em cada boot)."""
 
 from __future__ import annotations
-
-from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import StratifiedKFold
+from sklearn.preprocessing import StandardScaler
 
 from ablation_analysis import estimate_stable_pool_columns
-
-if TYPE_CHECKING:
-    from ablation_runner import CorrVarMRMRSelector
 
 STABLE_POOL_BOOTSTRAP = 50
 STABLE_POOL_L1_C = 0.1
 L1_COEF_TOL = 1e-9
+
+
+def _scale_frame(X: pd.DataFrame) -> pd.DataFrame:
+    """Padroniza colunas com estatísticas só desta amostra (boot ou train)."""
+    if X.empty:
+        return X.copy()
+    arr = np.nan_to_num(X.to_numpy(dtype=float), nan=0.0, posinf=0.0, neginf=0.0)
+    scaled = StandardScaler().fit_transform(arr)
+    return pd.DataFrame(scaled, columns=list(X.columns), index=X.index)
 
 
 def _corr_var_names(
@@ -81,7 +85,7 @@ def inner_selections_l1_bootstrap(
     var_threshold: float = 0.01,
     seed: int = 42,
 ) -> list[list[str]]:
-    """corr/var → L1 em cada bootstrap do outer train."""
+    """Por boot: reposição real → StandardScaler → corr/var → L1."""
     y_train = np.asarray(y_train, dtype=int)
     n = len(y_train)
     if n < 2 or len(np.unique(y_train)) < 2:
@@ -89,10 +93,10 @@ def inner_selections_l1_bootstrap(
     rng = np.random.default_rng(seed)
     inner_selected: list[list[str]] = []
     for b in range(int(n_bootstrap)):
+        # bootstrap com reposição (sem unique — frequência de instâncias conta)
         idx = rng.choice(n, size=n, replace=True)
-        uniq = np.unique(idx)
-        Xb = X_train.iloc[uniq]
-        yb = y_train[uniq]
+        Xb = _scale_frame(X_train.iloc[idx])
+        yb = y_train[idx]
         if len(np.unique(yb)) < 2:
             continue
         names = _corr_var_names(
@@ -114,38 +118,16 @@ def inner_selections_l1_bootstrap(
     if inner_selected:
         return inner_selected
     # ponytail: fallback 1× L1 no treino inteiro se bootstrap falhar
+    Xs = _scale_frame(X_train)
     names = _corr_var_names(
-        X_train,
-        list(X_train.columns),
+        Xs,
+        list(Xs.columns),
         corr_threshold=corr_threshold,
         var_threshold=var_threshold,
     )
     if names:
-        return [l1_selected_feature_names(X_train[names], y_train, C=l1_c, seed=seed)]
+        return [l1_selected_feature_names(Xs[names], y_train, C=l1_c, seed=seed)]
     return []
-
-
-def inner_selections_mrmr_cv(
-    X_train: pd.DataFrame,
-    y_train: np.ndarray,
-    *,
-    inner_cv: StratifiedKFold,
-    roi: str,
-    n_features: int,
-) -> list[list[str]]:
-    from ablation_runner import CorrVarMRMRSelector
-
-    inner_selected: list[list[str]] = []
-    for tr_idx, _ in inner_cv.split(X_train, y_train):
-        pre = CorrVarMRMRSelector(
-            use_mrmr=True,
-            use_filters=True,
-            n_features_total=n_features,
-            roi=roi,
-        )
-        pre.fit(X_train.iloc[tr_idx], y_train[tr_idx])
-        inner_selected.append(list(pre.selected_names_))
-    return inner_selected
 
 
 def stable_pool_for_outer_train(
@@ -153,11 +135,9 @@ def stable_pool_for_outer_train(
     y_train: np.ndarray,
     *,
     selection_mode: str,
-    inner_cv: StratifiedKFold | None = None,
     roi: str = "hippocampus",
     min_pct: int = 70,
     min_timepoints: int = 2,
-    n_features: int = 50,
     n_bootstrap: int = STABLE_POOL_BOOTSTRAP,
     l1_c: float = STABLE_POOL_L1_C,
     seed: int = 42,
@@ -174,15 +154,7 @@ def stable_pool_for_outer_train(
             seed=seed,
         )
     elif cfg.get("use_stable_pool"):
-        if inner_cv is None:
-            raise ValueError("inner_cv obrigatório para mrmr_stable")
-        inner_selected = inner_selections_mrmr_cv(
-            X_train,
-            y_train,
-            inner_cv=inner_cv,
-            roi=roi,
-            n_features=n_features,
-        )
+        raise ValueError("mrmr_stable removido; use l1_stable")
     else:
         return list(X_train.columns), []
 
