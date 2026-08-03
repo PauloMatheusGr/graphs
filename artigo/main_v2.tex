@@ -136,8 +136,8 @@
 	
 	\begin{figure}[htbp]
 		\centering
-		\includegraphics[width=1.0\textwidth]{graphics/diagrama.pdf} % Substitua pelo nome do seu arquivo
-		\caption{Pipeline.} 
+		\includegraphics[width=1.0\textwidth]{graphics/diagrama.pdf}
+		\caption{End-to-end hippocampal prognostic pipeline. (A)~Fixed image preprocessing and multimodal feature extraction precede cross-validation. Patient-level wide tables support baseline-only ($t1\_only$), longitudinal deltas ($t1\_deltas$), and absolute multi-visit ($wide$) representations under modality allowlists. (B)~Sample-dependent modelling (optional fold-wise NeuroComBat with batch $=$ manufacturer $\times$ field strength and biological covariates age/sex, bootstrap L1 stable pool, correlation/variance filters, $z$-score scaling, SVM hyperparameter and class-weight tuning, Youden threshold) is fit on outer-training patients only; outer-test scores feed fold-wise and patient-level AUC. Primary endpoint: ComBat off.}
 		\label{fig:pipeline}
 	\end{figure}
 	
@@ -401,7 +401,7 @@
 	\begin{figure}[htbp]
 		\centering
 		\includegraphics[width=1.0\textwidth]{graphics/nestedcv.pdf}
-		\caption{Patient-level nested cross-validation.}
+		\caption{Patient-level nested cross-validation and leakage boundary. Outer stratified five-fold splits (ten repeats) are defined by participant identifier. Below the dashed line, optional NeuroComBat (batch $=$ manufacturer $\times$ field strength; covariates age and sex; no diagnostic group), L1 bootstrap stable pooling, filters, scaling, hyperparameter tuning, and the Youden threshold use only outer-training data. Primary ranking uses patient-level AUC on subject-averaged out-of-fold scores; mean outer-fold AUC is retained as a descriptive summary.}
 		\label{fig:nestedcv}
 	\end{figure}
 	

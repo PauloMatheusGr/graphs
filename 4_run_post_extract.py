@@ -15,13 +15,13 @@ from ablation_prep import assign_scanner_batch, export_ablation_long_only
 
 # Features vêm da store união; meta/ablation saem no cohort de análise.
 FEATURES_DIR = Path("csvs/cohorts/all_population")
-COHORT = "48m_6m"  # editar só isto → cohort de análise
+COHORT = "48m_12m"  # editar só isto → cohort de análise
 BASE = Path("csvs/cohorts") / COHORT
 LONGITUDINAL = BASE / "adnimerged_longitudinal.csv"
 MERGE_KEYS = ["ID_IMG", "roi", "side", "label"]
 
 # DVF store: visita → template CN (3_feat_gen_dvf.py + 3_feat_dvf.py)
-DISP_FEATURES = "features_displacement.csv"
+DISP_FEATURES = "features_displacement_v2.csv"
 
 VOL_FEAT_COLS = [
     "mask_mm3", "gm_mm3", "gm_norm", "wm_mm3", "wm_norm",
