@@ -18,12 +18,23 @@ def image_ablation_path(base: Path, protocol: str, modality: str) -> Path:
     roots = {
         "abs": base / "ablation_results",
         "t1_only": base / "ablation_results_t1_only",
-        "deltas": base / "ablation_results_deltas",
+        "t1_deltas": base / "ablation_results_deltas",
+        "deltas": base / "ablation_results_deltas",  # alias legado
         "deltas_only": base / "ablation_results_deltas_only",
         "deltas_rel": base / "ablation_results_deltas_rel",
         "global": base / "ablation_results_leaky",
     }
     if protocol not in roots:
+        # cross-mod early fingerprint → ablation_results_fusion/{protocol}/
+        fusion = base / "ablation_results_fusion" / protocol / "ablation_results_all.csv"
+        if fusion.is_file() or (base / "ablation_results_fusion" / protocol).is_dir():
+            return base / "ablation_results_fusion" / protocol / "ablation_results_all.csv"
+        # late__{fingerprint} → ablation_results_late_fusion/{fingerprint}/
+        if protocol.startswith("late__"):
+            fp = protocol[len("late__") :]
+            late = base / "ablation_results_late_fusion" / fp / "ablation_results_all.csv"
+            if late.is_file() or (base / "ablation_results_late_fusion" / fp).is_dir():
+                return late
         raise KeyError(f"protocolo imagem desconhecido: {protocol}")
     return roots[protocol] / modality / "ablation_results_all.csv"
 

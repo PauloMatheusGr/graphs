@@ -25,10 +25,17 @@ from ablation_prep import (
     pivot_long_to_wide,
 )
 from ablation_representation import (
+    FusionSlot,
+    apply_fusion_wide,
     apply_representation_wide,
+    default_crossmod_fusion_results_dir,
     default_results_dir,
+    feature_columns_for_fusion,
     feature_columns_for_representation,
+    fusion_fingerprint,
+    fusion_label,
     resolve_stable_pool_min_timepoints,
+    resolve_stable_pool_min_timepoints_for_fusion,
 )
 from imblearn.pipeline import Pipeline as ImbPipeline
 from sklearn.base import BaseEstimator, TransformerMixin
@@ -456,6 +463,7 @@ def wide_for_fold(
     combat_quiet: bool = True,
     representation: str = "wide",
     roi: str = ROI_FILTER_DEFAULT,
+    fusion_slots: tuple[FusionSlot, ...] | None = None,
 ) -> pd.DataFrame:
     pts = train_pts | test_pts
     sub = df_long[df_long["ID_PT"].astype(str).isin(pts)].copy()
@@ -470,6 +478,8 @@ def wide_for_fold(
             quiet=combat_quiet,
         )
     wide = pivot_long_to_wide(sub)
+    if fusion_slots is not None:
+        return apply_fusion_wide(wide, fusion_slots, roi=roi)
     return apply_representation_wide(wide, representation, roi=roi)
 
 
@@ -503,6 +513,7 @@ def nested_cv_ablation(
     optuna_trials: int = 30,
     verbose: bool = False,
     representation: str = "wide",
+    fusion_slots: tuple[FusionSlot, ...] | None = None,
 ) -> pd.DataFrame:
     pt = patient_labels_from_long(df_long, task)
     y = pt["y"].to_numpy(dtype=int)
@@ -515,6 +526,13 @@ def nested_cv_ablation(
             f"Task {task.task_id}: classe minoritária tem {min_class} pacientes, "
             f"menos que k_out={k_out}. Reduza folds ou exclua a task."
         )
+
+    if fusion_slots is not None:
+        modality = fusion_fingerprint(fusion_slots)
+        modality_label = fusion_label(fusion_slots)
+        representation = "fusion"
+    else:
+        modality_label = MODALITIES[modality]["label"]
 
     outer_cv = StratifiedKFold(k_out, shuffle=True, random_state=seed)
     results: list[dict[str, Any]] = []
@@ -530,16 +548,21 @@ def nested_cv_ablation(
             with_combat=with_combat,
             fold_id=fold,
             combat_quiet=combat_quiet,
-            representation=representation,
+            representation=representation if fusion_slots is None else "wide",
             roi=roi,
+            fusion_slots=fusion_slots,
         )
         wide = wide[wide["GROUP"].astype(str).isin(task.groups)].copy()
         wide["y"] = wide["GROUP"].map(task.label_map).astype(int)
 
-        meta = {"ID_PT", "GROUP", "SEX", "y"}
-        feature_cols = feature_columns_for_representation(
-            wide.columns, modality, roi=roi, representation=representation,
-        )
+        if fusion_slots is not None:
+            feature_cols = feature_columns_for_fusion(
+                wide.columns, fusion_slots, roi=roi,
+            )
+        else:
+            feature_cols = feature_columns_for_representation(
+                wide.columns, modality, roi=roi, representation=representation,
+            )
         if not feature_cols:
             raise ValueError(
                 f"Nenhuma coluna de feature para modalidade={modality!r} roi={roi!r}"
@@ -614,11 +637,16 @@ def nested_cv_ablation(
         )
         row = {
             "representation": representation,
+            "fusion_spec": (
+                ",".join(f"{m}:{r}" for m, r in fusion_slots)
+                if fusion_slots is not None
+                else ""
+            ),
             "task": task.task_id,
             "with_combat": with_combat,
             "selection_mode": selection_mode,
             "modality": modality,
-            "modality_label": MODALITIES[modality]["label"],
+            "modality_label": modality_label,
             "model_key": model_key,
             "tuner": tune_res.tuner,
             "repeat_id": repeat_id,
@@ -809,6 +837,121 @@ def run_full_ablation_suite(
 
     log.info("concluído | %d jobs | %s", job_no, fmt_duration(time.monotonic() - t0))
     return pd.concat(all_results, ignore_index=True) if all_results else pd.DataFrame()
+
+
+def run_fusion_ablation_suite(
+    *,
+    fusion_slots: tuple[FusionSlot, ...],
+    base_dir: Path | str = "csvs/cohorts/36m_6m/ablation/hippocampus",
+    roi: str = ROI_FILTER_DEFAULT,
+    tasks: tuple[str, ...] = ("smci_pmci",),
+    models: tuple[str, ...] = ("svm",),
+    selection_modes: tuple[str, ...] = ("l1_stable",),
+    with_combat_flags: tuple[bool, ...] = (False,),
+    results_dir: Path | str | None = None,
+    seed: int = 42,
+    r_repeats: int = 0,
+    verbose: bool = False,
+    combat_quiet: bool = True,
+    stable_pool_min_pct: int = STABLE_POOL_MIN_PCT,
+    stable_pool_min_timepoints: int = STABLE_POOL_MIN_TIMEPOINTS,
+    stable_pool_bootstrap: int = STABLE_POOL_BOOTSTRAP,
+    stable_pool_l1_c: float = STABLE_POOL_L1_C,
+    tuner: str = "grid",
+    optuna_trials: int = 30,
+) -> pd.DataFrame:
+    """Cross-mod fusion → ablation_results_fusion/{fingerprint}/; protocol label = fingerprint."""
+    stable_pool_min_timepoints = resolve_stable_pool_min_timepoints_for_fusion(
+        fusion_slots, stable_pool_min_timepoints, log=log,
+    )
+    base = Path(base_dir)
+    out_dir = default_crossmod_fusion_results_dir(
+        base, fusion_slots, results_dir=results_dir,
+    )
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    long_path = base / MODALITIES["all"]["long"]
+    if not long_path.is_file():
+        raise FileNotFoundError(f"Long CSV ausente (merge): {long_path}")
+    fp = fusion_fingerprint(fusion_slots)
+    log.info(
+        "fusion %s | protocol=%s | long=%s | out=%s",
+        fusion_label(fusion_slots), fp, long_path, out_dir,
+    )
+    df_long = pd.read_csv(long_path)
+
+    n_reps = len(repeat_ids(r_repeats))
+    total_jobs = (
+        len(tasks) * len(with_combat_flags) * len(selection_modes) * len(models) * n_reps
+    )
+    job_no = 0
+    t0 = time.monotonic()
+    modality_results: list[pd.DataFrame] = []
+
+    for task_id in tasks:
+        task = TASKS[task_id]
+        for with_combat in with_combat_flags:
+            for selection_mode in selection_modes:
+                for model_key in models:
+                    for repeat_id in repeat_ids(r_repeats):
+                        job_no += 1
+                        seed_rep = seed + repeat_id * 1000
+                        rep_label = (
+                            f"rep={repeat_id}" if r_repeats > 0 else "rep=0 (única)"
+                        )
+                        elapsed = time.monotonic() - t0
+                        eta_s = (elapsed / job_no) * (total_jobs - job_no) if job_no else 0
+                        log.info(
+                            "[%d/%d] %s | %s | combat=%s | %s | %s | %s | "
+                            "elapsed=%s eta=%s",
+                            job_no, total_jobs, task_id, fp, with_combat,
+                            selection_mode, model_key, rep_label,
+                            fmt_duration(elapsed), fmt_duration(eta_s),
+                        )
+                        job_t0 = time.monotonic()
+                        res = nested_cv_ablation(
+                            df_long,
+                            task=task,
+                            modality=fp,
+                            model_key=model_key,
+                            selection_mode=selection_mode,
+                            with_combat=with_combat,
+                            roi=roi,
+                            base_dir=base,
+                            seed=seed_rep,
+                            repeat_id=repeat_id,
+                            combat_quiet=combat_quiet,
+                            stable_pool_min_pct=stable_pool_min_pct,
+                            stable_pool_min_timepoints=stable_pool_min_timepoints,
+                            stable_pool_bootstrap=stable_pool_bootstrap,
+                            stable_pool_l1_c=stable_pool_l1_c,
+                            tuner=tuner,
+                            optuna_trials=optuna_trials,
+                            verbose=verbose,
+                            representation="fusion",
+                            fusion_slots=fusion_slots,
+                        )
+                        auc_mean = (
+                            float(res["auc"].mean()) if "auc" in res.columns else float("nan")
+                        )
+                        log.info(
+                            "[%d/%d] ok | auc_mean=%.3f | %d folds | job=%s",
+                            job_no, total_jobs, auc_mean, len(res),
+                            fmt_duration(time.monotonic() - job_t0),
+                        )
+                        modality_results.append(res)
+
+    combined = pd.concat(modality_results, ignore_index=True) if modality_results else pd.DataFrame()
+    if not combined.empty:
+        combined.to_csv(out_dir / "ablation_results_all.csv", index=False)
+        summary = summary_with_pooled(combined)
+        summary.to_csv(out_dir / "ablation_summary.csv", index=False)
+        log.info(
+            "salvo %s (%d linhas, %d configs)",
+            out_dir / "ablation_results_all.csv", len(combined), len(summary),
+        )
+    log.info("concluído fusion | %d jobs | %s", job_no, fmt_duration(time.monotonic() - t0))
+    return combined
 
 
 def fmt_duration(seconds: float) -> str:

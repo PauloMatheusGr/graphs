@@ -22,7 +22,7 @@ SELECTION = "l1_stable"
 PROTOCOL_DIR = {
     "abs": "ablation_results",
     "t1_only": "ablation_results_t1_only",
-    "deltas": "ablation_results_deltas",
+    "t1_deltas": "ablation_results_deltas",  # T1 + D21/D31/D32 (não confundir com deltas_only)
     "deltas_only": "ablation_results_deltas_only",
     "deltas_rel": "ablation_results_deltas_rel",
     "global": "ablation_results_leaky",
@@ -31,6 +31,10 @@ PROTOCOL_DIR = {
     "clinica+img": "ablation_results_clinic_img",
     "clinica+img_t1": "ablation_results_clinic_img_t1_only",
 }
+
+# Cross-mod unions: cada subpasta fingerprint = protocol próprio (ex. t1_shape__deltas_vol)
+FUSION_RESULTS_ROOT = "ablation_results_fusion"
+LATE_FUSION_RESULTS_ROOT = "ablation_results_late_fusion"
 
 # métricas do ablation_summary (mean ± sd quando existir)
 METRIC_PAIRS = [
@@ -153,6 +157,59 @@ def _patient_auc_boot(raw: pd.DataFrame, row: pd.Series, *, n_boot: int) -> tupl
         return float("nan"), float("nan")
 
 
+def _append_summary_rows(
+    rows: list[dict],
+    *,
+    cohort: str,
+    t_janela: int | None,
+    t_imagens: int | None,
+    n_smci: int,
+    n_pmci: int,
+    proto: str,
+    fsum: Path,
+    cohorts_root: Path,
+    n_boot: int,
+) -> None:
+    summary = _filter_l1(pd.read_csv(fsum))
+    if summary.empty:
+        return
+    raw_path = _results_all_for_summary(fsum)
+    raw = pd.read_csv(raw_path) if raw_path is not None else None
+    if raw is not None:
+        raw = _filter_l1(raw)
+
+    for _, r in summary.iterrows():
+        auc_p, auc_p_sd = float("nan"), float("nan")
+        if raw is not None:
+            auc_p, auc_p_sd = _patient_auc_boot(raw, r, n_boot=n_boot)
+        if not np.isfinite(auc_p) and "auc_patient_mean" in summary.columns:
+            auc_p = float(r["auc_patient_mean"]) if pd.notna(r["auc_patient_mean"]) else float("nan")
+
+        out = {
+            "cohort": cohort,
+            "t_janela": t_janela,
+            "t_imagens": t_imagens,
+            "n_smci": n_smci,
+            "n_pmci": n_pmci,
+            "protocol": proto,
+            "task": r.get("task"),
+            "modality": r.get("modality"),
+            "model_key": r.get("model_key"),
+            "with_combat": bool(r["with_combat"]) if "with_combat" in r.index and pd.notna(r["with_combat"]) else r.get("with_combat"),
+            "n_outer_evals": r.get("n_outer_evals"),
+            "n_repeats": r.get("n_repeats"),
+            "n_features_mean": r.get("n_features_mean"),
+            "auc_patient_mean": auc_p,
+            "auc_patient_std": auc_p_sd,
+            "auc_pooled": r.get("auc_pooled"),
+            "source_file": str(fsum.relative_to(cohorts_root)),
+        }
+        for mean_c, std_c in METRIC_PAIRS:
+            out[mean_c] = r.get(mean_c)
+            out[std_c] = r.get(std_c)
+        rows.append(out)
+
+
 def build_cohort_results(
     cohorts: list[str],
     *,
@@ -175,50 +232,56 @@ def build_cohort_results(
             if not root.is_dir():
                 continue
             for fsum in _summary_files(root):
-                summary = _filter_l1(pd.read_csv(fsum))
-                if summary.empty:
-                    continue
-                raw_path = _results_all_for_summary(fsum)
-                raw = pd.read_csv(raw_path) if raw_path is not None else None
-                if raw is not None:
-                    raw = _filter_l1(raw)
+                _append_summary_rows(
+                    rows,
+                    cohort=cohort,
+                    t_janela=t_janela,
+                    t_imagens=t_imagens,
+                    n_smci=n_smci,
+                    n_pmci=n_pmci,
+                    proto=proto,
+                    fsum=fsum,
+                    cohorts_root=cohorts_root,
+                    n_boot=n_boot,
+                )
 
-                for _, r in summary.iterrows():
-                    auc_p, auc_p_sd = float("nan"), float("nan")
-                    if raw is not None:
-                        auc_p, auc_p_sd = _patient_auc_boot(raw, r, n_boot=n_boot)
-                    # fallback: summary já tem auc_patient_mean
-                    if not np.isfinite(auc_p) and "auc_patient_mean" in summary.columns:
-                        auc_p = float(r["auc_patient_mean"]) if pd.notna(r["auc_patient_mean"]) else float("nan")
+        # Cross-mod early: protocol = fingerprint da subpasta (não "fusion")
+        fusion_root = base / FUSION_RESULTS_ROOT
+        if fusion_root.is_dir():
+            for fsum in _summary_files(fusion_root):
+                _append_summary_rows(
+                    rows,
+                    cohort=cohort,
+                    t_janela=t_janela,
+                    t_imagens=t_imagens,
+                    n_smci=n_smci,
+                    n_pmci=n_pmci,
+                    proto=fsum.parent.name,
+                    fsum=fsum,
+                    cohorts_root=cohorts_root,
+                    n_boot=n_boot,
+                )
 
-                    out = {
-                        "cohort": cohort,
-                        "t_janela": t_janela,
-                        "t_imagens": t_imagens,
-                        "n_smci": n_smci,
-                        "n_pmci": n_pmci,
-                        "protocol": proto,
-                        "task": r.get("task"),
-                        "modality": r.get("modality"),
-                        "model_key": r.get("model_key"),
-                        "with_combat": bool(r["with_combat"]) if "with_combat" in r.index and pd.notna(r["with_combat"]) else r.get("with_combat"),
-                        "n_outer_evals": r.get("n_outer_evals"),
-                        "n_repeats": r.get("n_repeats"),
-                        "n_features_mean": r.get("n_features_mean"),
-                        "auc_patient_mean": auc_p,
-                        "auc_patient_std": auc_p_sd,
-                        "auc_pooled": r.get("auc_pooled"),
-                        "source_file": str(fsum.relative_to(cohorts_root)),
-                    }
-                    for mean_c, std_c in METRIC_PAIRS:
-                        out[mean_c] = r.get(mean_c)
-                        out[std_c] = r.get(std_c)
-                    rows.append(out)
+        # Late fusion: protocol = late__{fingerprint}
+        late_root = base / LATE_FUSION_RESULTS_ROOT
+        if late_root.is_dir():
+            for fsum in _summary_files(late_root):
+                _append_summary_rows(
+                    rows,
+                    cohort=cohort,
+                    t_janela=t_janela,
+                    t_imagens=t_imagens,
+                    n_smci=n_smci,
+                    n_pmci=n_pmci,
+                    proto=f"late__{fsum.parent.name}",
+                    fsum=fsum,
+                    cohorts_root=cohorts_root,
+                    n_boot=n_boot,
+                )
 
     if not rows:
         return pd.DataFrame()
     df = pd.DataFrame(rows)
-    # ordenação estável
     sort_cols = [c for c in ("cohort", "protocol", "task", "modality", "model_key", "with_combat") if c in df.columns]
     return df.sort_values(sort_cols).reset_index(drop=True)
 
@@ -260,6 +323,74 @@ def build_cohort_features_long(
                         continue
                     freq = freq.copy()
                     # meta do helper pode repetir — sobrescreve com chaves do groupby
+                    for col in ("task", "modality", "model_key", "with_combat", "selection_mode", "combat_label"):
+                        if col in freq.columns:
+                            freq = freq.drop(columns=col)
+                    freq.insert(0, "cohort", cohort)
+                    freq.insert(1, "t_janela", t_janela)
+                    freq.insert(2, "t_imagens", t_imagens)
+                    freq.insert(3, "protocol", proto)
+                    freq.insert(4, "task", task)
+                    freq.insert(5, "modality", modality)
+                    freq.insert(6, "model_key", model_key)
+                    freq.insert(7, "with_combat", bool(with_combat))
+                    freq = freq.rename(columns={
+                        "feature_group": "anatomical_key",
+                        "coverage_pct": "pct",
+                    })
+                    frames.append(freq)
+
+        fusion_root = base / FUSION_RESULTS_ROOT
+        if fusion_root.is_dir():
+            for raw_path in fusion_root.glob("*/ablation_results_all.csv"):
+                raw = _filter_l1(pd.read_csv(raw_path))
+                if raw.empty or "selected_features" not in raw.columns:
+                    continue
+                raw = prepare_ablation_df(raw)
+                keys = ["task", "modality", "model_key", "with_combat"]
+                if any(c not in raw.columns for c in keys):
+                    continue
+                proto = raw_path.parent.name
+                for key_vals, sub in raw.groupby(keys, dropna=False):
+                    task, modality, model_key, with_combat = key_vals
+                    freq = feature_freq_table_grouped(sub, min_coverage=min_coverage)
+                    if freq.empty:
+                        continue
+                    freq = freq.copy()
+                    for col in ("task", "modality", "model_key", "with_combat", "selection_mode", "combat_label"):
+                        if col in freq.columns:
+                            freq = freq.drop(columns=col)
+                    freq.insert(0, "cohort", cohort)
+                    freq.insert(1, "t_janela", t_janela)
+                    freq.insert(2, "t_imagens", t_imagens)
+                    freq.insert(3, "protocol", proto)
+                    freq.insert(4, "task", task)
+                    freq.insert(5, "modality", modality)
+                    freq.insert(6, "model_key", model_key)
+                    freq.insert(7, "with_combat", bool(with_combat))
+                    freq = freq.rename(columns={
+                        "feature_group": "anatomical_key",
+                        "coverage_pct": "pct",
+                    })
+                    frames.append(freq)
+
+        late_root = base / LATE_FUSION_RESULTS_ROOT
+        if late_root.is_dir():
+            for raw_path in late_root.glob("*/ablation_results_all.csv"):
+                raw = _filter_l1(pd.read_csv(raw_path))
+                if raw.empty or "selected_features" not in raw.columns:
+                    continue
+                raw = prepare_ablation_df(raw)
+                keys = ["task", "modality", "model_key", "with_combat"]
+                if any(c not in raw.columns for c in keys):
+                    continue
+                proto = f"late__{raw_path.parent.name}"
+                for key_vals, sub in raw.groupby(keys, dropna=False):
+                    task, modality, model_key, with_combat = key_vals
+                    freq = feature_freq_table_grouped(sub, min_coverage=min_coverage)
+                    if freq.empty:
+                        continue
+                    freq = freq.copy()
                     for col in ("task", "modality", "model_key", "with_combat", "selection_mode", "combat_label"):
                         if col in freq.columns:
                             freq = freq.drop(columns=col)
