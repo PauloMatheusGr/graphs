@@ -1,117 +1,76 @@
-# Handoff — early vs late fusion (`48m_12m`)
+# TODO — fechar paper (handoff lab → laptop)
 
 **Repo:** `/mnt/study-data/pgirardi/graphs`  
-**Decisão de método:** se late fusion for **melhor que early** (AUC patient + preferencialmente gate vs shape T1), **late vira o método escolhido** do paper.  
-**Late fusion oficial:** só `--combine mean` (média uniforme de probas OOF). Sem weighted no método principal.
+**Estado:** experimentos **`48m_12m` fechados**. Próximo = expansão mínima da âncora late + escrita.
 
 ---
 
-## 1. Goal & gate
+## Achados já consolidados (`48m_12m`, svm, smci, nocombat)
 
-- Tarefa: sMCI vs pMCI · cohort **`48m_12m`** · SVM · `l1_stable` · combat false  
-- Teto transversal: `t1_only` / `shape` ≈ **0.786**  
-- Gate vs shape: ΔAUC>0 **e** IC95 lo>0 → `scripts_compare_fusion_vs_shape.py --mode early|late`  
-- Comparar early vs late no **mesmo** fingerprint de slots (ex. shape T1 ∪ texture t1_deltas)
+| Setup | AUC patient | Nota |
+|-------|------------:|------|
+| Mono teto `t1_only/shape` | **0.786** | baseline |
+| Mono `t1_deltas/shape` | ≈0.787 | empate com T1 |
+| Early concat shape T1 ∪ tex Δ | 0.794 | gate FAIL; early esgotado |
+| Late multi-T1 (ex. shape∪tex T1) | ≈0.76 | **abaixo** do mono |
+| Late âncora shape T1 ∪ tex Δ | **0.823** | gate FAIL (IC cruza 0) |
+| Late tripla shape T1 ∪ vol Δ ∪ tex Δ | **0.829** | melhor ponto; gate FAIL |
 
-| Método | Melhor AUC patient (mesmo par texture) | Gate vs shape |
-|--------|----------------------------------------:|---------------|
-| Early concat | 0.794 | FAIL |
-| Late mean | **0.823** | FAIL (IC lo ≈ −0.01) |
+**Conclusões:** late mean > early; long late > multi-T1 e > mono no ponto; gate vs shape n.s.  
+**Método:** só `--combine mean`. Não weighted / early grid / vol concat.
 
-Late já **ganha early no ponto**. Falta (ideal) gate vs shape; mesmo sem gate, late > early justifica escolher late como fusão.
-
-Scores branches: ambas proba SVM em [0,1] — mean ok.
-
----
-
-## 2. Scripts
-
-| Script | Papel |
-|--------|--------|
-| `5_ablation_late_fusion.py` | **Candidato a método** — média de scores mono-mod |
-| `5_ablation_early_fusion.py` | Baseline de fusão (concat) — já explorado |
-| `scripts_compare_fusion_vs_shape.py` | Gate (`--mode late` / `early`) |
-
-Saída late: `csvs/cohorts/{cohort}/ablation_results_late_fusion/{fingerprint}/`  
-Protocol planilha: `late__{fingerprint}`
+Scripts: `5_ablation_late_fusion.py`, `scripts_compare_fusion_vs_shape.py --mode late`.
 
 ---
 
-## 3. Principais CLIs — late fusion (`mean` only)
+## Enredo do paper (3 atos)
+
+1. Mono por cohort × gap 6m vs 12m (vol/texture ganham com 12m; shape empata; 6m redundante).  
+2. Fusão justa em **48m_12m**: mono | multi-T1 late | long late | early ref.  
+3. Replicação: âncora late nos outros cohorts → claim A (12m consistente) ou B (só 48m_12m).
+
+---
+
+## Fazer agora (laptop / tmux)
 
 ```bash
 cd /mnt/study-data/pgirardi/graphs
 ```
 
-Flags comuns:
-
-```text
---combine mean \
---cohort 48m_12m --tasks smci_pmci --selection l1_stable --models svm --combat false
-```
-
-Default: `--reuse-disk` (rápido). `--run-missing` só se faltar CSV mono-mod.
-
-### 3.1 Obrigatório — âncora (já rodou; re-gate OK)
+### 1. Âncora late nos 3 cohorts restantes
 
 ```bash
-.venv/bin/python 5_ablation_late_fusion.py \
-  --fusion shape:t1_only,texture:t1_deltas --combine mean \
-  --cohort 48m_12m --tasks smci_pmci --selection l1_stable --models svm --combat false
+for co in 36m_6m 36m_12m 48m_6m; do
+  echo "======== LATE ANCHOR $co ========"
+  .venv/bin/python 5_ablation_late_fusion.py \
+    --fusion shape:t1_only,texture:t1_deltas --combine mean \
+    --cohort "$co" --tasks smci_pmci --selection l1_stable \
+    --models svm --combat false \
+    --run-missing --repeats 10 --tuner optuna --optuna-trials 30 \
+    --stable-pool-min-pct 70 --stable-pool-min-timepoints 0 \
+    --stable-bootstrap 50 --stable-l1-c 0.1
 
-.venv/bin/python scripts_compare_fusion_vs_shape.py \
-  --cohort 48m_12m --mode late --fingerprint t1_shape__t1_deltas_texture
+  .venv/bin/python scripts_compare_fusion_vs_shape.py \
+    --cohort "$co" --mode late --fingerprint t1_shape__t1_deltas_texture || true
+done
 ```
 
-Fingerprint: `t1_shape__t1_deltas_texture` · AUC ≈ **0.823**
-
-### 3.2 Controles 2-view (reuse disk)
+### 2. Multi-T1 late (só se §1 subir vs shape local)
 
 ```bash
-# shape T1 ∪ vol t1_deltas
-.venv/bin/python 5_ablation_late_fusion.py \
-  --fusion shape:t1_only,vol:t1_deltas --combine mean \
-  --cohort 48m_12m --tasks smci_pmci --selection l1_stable --models svm --combat false
-.venv/bin/python scripts_compare_fusion_vs_shape.py \
-  --cohort 48m_12m --mode late --fingerprint t1_shape__t1_deltas_vol
-
-# shape T1 ∪ vol deltas_only
-.venv/bin/python 5_ablation_late_fusion.py \
-  --fusion shape:t1_only,vol:deltas_only --combine mean \
-  --cohort 48m_12m --tasks smci_pmci --selection l1_stable --models svm --combat false
-.venv/bin/python scripts_compare_fusion_vs_shape.py \
-  --cohort 48m_12m --mode late --fingerprint t1_shape__deltas_vol
-
-# shape t1_deltas ∪ texture t1_deltas
-.venv/bin/python 5_ablation_late_fusion.py \
-  --fusion shape:t1_deltas,texture:t1_deltas --combine mean \
-  --cohort 48m_12m --tasks smci_pmci --selection l1_stable --models svm --combat false
-.venv/bin/python scripts_compare_fusion_vs_shape.py \
-  --cohort 48m_12m --mode late --fingerprint t1_deltas_shape__t1_deltas_texture
+for co in 36m_6m 36m_12m 48m_6m; do
+  .venv/bin/python 5_ablation_late_fusion.py \
+    --fusion shape:t1_only,texture:t1_only --combine mean \
+    --cohort "$co" --tasks smci_pmci --selection l1_stable \
+    --models svm --combat false \
+    --run-missing --repeats 10 --tuner optuna --optuna-trials 30 \
+    --stable-pool-min-pct 70 --stable-pool-min-timepoints 0
+done
 ```
 
-### 3.3 Tripla (opcional)
+Fingerprint tipicamente `t1_shape__t1_texture`.
 
-```bash
-.venv/bin/python 5_ablation_late_fusion.py \
-  --fusion shape:t1_only,vol:t1_deltas,texture:t1_deltas --combine mean \
-  --cohort 48m_12m --tasks smci_pmci --selection l1_stable --models svm --combat false
-.venv/bin/python scripts_compare_fusion_vs_shape.py \
-  --cohort 48m_12m --mode late --fingerprint t1_shape__t1_deltas_vol__t1_deltas_texture
-```
-
-### 3.4 Se faltar mono-mod (ex. texture deltas_only)
-
-```bash
-.venv/bin/python 5_ablation_late_fusion.py \
-  --fusion shape:t1_only,texture:deltas_only --combine mean \
-  --cohort 48m_12m --tasks smci_pmci --selection l1_stable --models svm --combat false \
-  --run-missing --repeats 10 --tuner optuna --optuna-trials 30
-.venv/bin/python scripts_compare_fusion_vs_shape.py \
-  --cohort 48m_12m --mode late --fingerprint t1_shape__deltas_texture
-```
-
-### 3.5 Rebuild planilha
+### 3. Rebuild planilha
 
 ```bash
 .venv/bin/python - <<'PY'
@@ -128,35 +87,23 @@ print("ok → csvs/cohort_comparison/cohort_results.csv")
 PY
 ```
 
----
-
-## 4. Early fusion (referência — não crowdear)
-
-Melhor early: `t1_shape__t1_deltas_texture` ≈ **0.794**, gate fail. Vol dilui.  
-Script: `5_ablation_early_fusion.py`. Comparar com late no mesmo fingerprint via `--mode early` vs `--mode late`.
-
----
-
-## 5. Critério de escolha late vs early
-
-1. Rodar late `mean` nos CLIs §3 (âncora + controles).  
-2. Para cada fingerprint: AUC late vs AUC early (mesmo slots) e gate vs shape.  
-3. **Escolher late** se AUC late > early no par principal (shape∪texture) — já verdadeiro (0.823 > 0.794).  
-4. Gate vs shape: desejável; se continuar n.s., reportar late como melhor fusão **com** IC / p-value honestos (não claim “significativamente > T1” sem gate).
+### 4. Depois dos runs
+- [ ] Tabela 48m_12m: mono | multi-T1 | long | early + Δ/IC/gate  
+- [ ] Forest Δ âncora late vs shape T1 local (4 cohorts)  
+- [ ] Escrever Results IMRAD (3 atos)  
+- [ ] Commit código se ainda pendente no laptop  
 
 ---
 
-## 6. Não fazer
+## Não fazer
 
+- Reabrir grade pairwise / early / triplas / outros modelos em `48m_12m`  
+- Crowdear early ou full ablation nos outros cohorts  
+- Claim “significativamente > shape T1” sem `gate_pass`  
 - `--combine weighted` como método principal  
-- Mais early-fusion concat (vol / 3×)  
-- Misturar cohorts  
-- Claim “> shape T1” sem `gate_pass`  
-- Grid de stable-pool / Optuna só na fusion  
 
 ---
 
-## 7. Status
+## Status
 
-Late **mean** âncora: **0.823** vs early **0.794** vs shape **0.786**; gate late ainda FAIL.  
-Próximo: controles §3.2–3.3 + rebuild; depois **fixar late como método de fusão** se continuar ≥ early. Weighted fora do plano.
+`48m_12m` late/early/matriz justa **ok**. Falta: **âncora late × 3 cohorts** → rebuild → figuras/texto.
