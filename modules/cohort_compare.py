@@ -426,6 +426,35 @@ def build_cohort_features_long(
     ).reset_index(drop=True)
 
 
+RESULTS_FLOAT_DECIMALS = 4  # 3 casas → LibreOffice pt-BR lê "0.728"/"6.280" como milhar; 4 casas evita
+
+
+def _truncate_float(x: float, decimals: int = RESULTS_FLOAT_DECIMALS) -> float:
+    """0.874652… → 0.8746 (trunca)."""
+    if x is None or (isinstance(x, float) and not np.isfinite(x)):
+        return x
+    factor = 10**decimals
+    return float(np.trunc(float(x) * factor) / factor)
+
+
+def _round_results_floats(df: pd.DataFrame, decimals: int = RESULTS_FLOAT_DECIMALS) -> pd.DataFrame:
+    """Trunca colunas float do cohort_results a N casas. CSV padrão: sep=',' decimal='.'."""
+    if df.empty:
+        return df
+    out = df.copy()
+    float_cols = out.select_dtypes(include=["floating"]).columns
+    for col in float_cols:
+        out[col] = out[col].map(
+            lambda v, d=decimals: _truncate_float(v, d) if pd.notna(v) else v
+        )
+    return out
+
+
+def read_cohort_results(path: Path | str) -> pd.DataFrame:
+    """Lê cohort_results.csv (formato padrão: sep=',' · decimal='.')."""
+    return pd.read_csv(path)
+
+
 def save_cohort_comparison(
     cohorts: list[str],
     out_dir: Path,
@@ -434,11 +463,13 @@ def save_cohort_comparison(
     n_boot: int = 2000,
 ) -> tuple[Path, Path, pd.DataFrame, pd.DataFrame]:
     out_dir.mkdir(parents=True, exist_ok=True)
-    results = build_cohort_results(cohorts, cohorts_root=cohorts_root, n_boot=n_boot)
+    results = _round_results_floats(
+        build_cohort_results(cohorts, cohorts_root=cohorts_root, n_boot=n_boot)
+    )
     features = build_cohort_features_long(cohorts, cohorts_root=cohorts_root)
     p_res = out_dir / "cohort_results.csv"
     p_feat = out_dir / "cohort_features_long.csv"
-    results.to_csv(p_res, index=False)
+    results.to_csv(p_res, index=False, float_format=f"%.{RESULTS_FLOAT_DECIMALS}f")
     features.to_csv(p_feat, index=False)
     return p_res, p_feat, results, features
 
@@ -455,12 +486,14 @@ if __name__ == "__main__":
         if p.is_dir() and COHORT_RE.match(p.name) and (p / "ablation_results").is_dir()
     )
     assert cohorts, "nenhum cohort com ablation_results"
-    res = build_cohort_results(cohorts[:1], n_boot=50)
+    res = _round_results_floats(build_cohort_results(cohorts[:1], n_boot=50))
     assert not res.empty, "cohort_results vazio"
     assert "auc_patient_mean" in res.columns and "auc_patient_std" in res.columns
     assert "selection_mode" not in res.columns
     assert "n_soft_pmci" not in res.columns
-    print(f"ok: results={len(res)} rows cohorts={cohorts[:1]}")
+    assert _truncate_float(0.87465262748343727453654723) == 0.8746
+    assert _truncate_float(-0.1249) == -0.1249
+    print(f"ok: results={len(res)} rows cohorts={cohorts[:1]} truncate={RESULTS_FLOAT_DECIMALS}dp")
     feat = build_cohort_features_long(cohorts[:1])
     print(f"ok: features={len(feat)} rows")
     if not feat.empty:
