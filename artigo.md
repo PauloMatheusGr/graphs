@@ -53,22 +53,22 @@ Representações temporais avaliadas:
 
 | Representação | Definição |
 |---------------|-----------|
-| `t0_only` | apenas baseline |
-| `t0_deltas` | baseline + deltas absolutos entre as 3 visitas |
-| `abs` | visitas concatenadas  |
+| `t0_only` | apenas atributos do baseline |
+| `t0_deltas` | atributos do baseline + deltas absolutos entre as 3 visitas |
+| `abs` | atributos concatenados das visitas  |
 
 
 **Dimensionalidade de atributos do hipocampo L/R:**
 
-| Modalidade | Sufixos | t0 (`t0_only`) | Deltas (`t0_deltas`) |
-|------------|---------|----------------:|---------------------:|
-| vol | gm/wm/csf_norm (3) | 6 | 24 |
-| shape | 6 shape | 12 | 48 |
-| texture | 4 GLCM | 8 | 32 |
-| disp | 4 (mag_mean, strain_fro_*, logjac_var) | 8 | 32 |
-| all | soma | 34 | 136 |
+| Modalidade | Sufixos | baseline (`t0_only`) | Concatenação (`abs`) | Baseline + Deltas (`t0_deltas`) |
+|------------|---------|----------------:|------------:|---------------------:|
+| vol | gm/wm/csf_norm (3) | 6 | 18 | 24 |
+| shape | 6 shape | 12 | 36 | 48 |
+| texture | 4 GLCM | 8 | 24 | 32 |
+| disp | 4 (mag_mean, strain_fro_*, logjac_var) | 8 | 24 | 32 |
+| all | soma | 34 | 102 | 136 |
 
-Protocolo de modelagem fixo nas ablações oficiais: SVM, seleção `l1_stable` (corte de frequência 70%), sem ComBat, nested CV com 10 repetições, métrica primária **AUC patient-level** (média de scores OOF por paciente).
+Protocolo de modelagem fixo nas ablações oficiais: SVM, seleção `l1_stable` (corte de frequência 70%), sem ComBat, nested CV com 10 repetições, métrica primária **AUC patient-level** (média de scores OOF por paciente). AUCs reportadas como média ± desvio padrão (`auc_patient_mean` ± `auc_patient_std`), com 3 casas decimais truncadas.
 
 ---
 
@@ -80,16 +80,16 @@ A estratégia foi: (i) fixar **SVM + seleção L1 Lasso + sem ComBat** como prot
 
 **Hipótese inicial (`36m_6m`).** 
 
-Na coorte primária, o `abs` superava `t0_deltas` em vários blocos, por exemplo, texture `abs` **0.757** ≈ `t0_deltas` **0.756** ≫ `t0_only` **0.708**. Isso sugeriu, a princípio, que concatenar as 3 visitas era um longitudinal “suficiente”.
+Na coorte primária, o `abs` superava `t0_deltas` em vários blocos, por exemplo, texture `abs` **0.757±0.030** ≈ `t0_deltas` **0.756±0.030** ≫ `t0_only` **0.708±0.032**. Isso sugeriu, a princípio, que concatenar as 3 visitas era um longitudinal “suficiente”.
 
 **Expansão (`36m_12m`, `48m_6m`, `48m_12m`).** Com gap **12 m**, o padrão inverte para vol/texture: `t0_deltas` sobe e `abs` deixa de ser o melhor longitudinal. Em `48m_12m`:
 
 | Mod | `t0_only` | `abs` | `t0_deltas` |
 |-----|----------:|------:|------------:|
-| shape | **0.785** | 0.770 | **0.786** |
-| vol | 0.638 | 0.682 | **0.730** |
-| texture | 0.637 | 0.706 | **0.743** |
-| disp | 0.468 | 0.573 | 0.610 |
+| shape | **0.785±0.043** | 0.770±0.044 | **0.786±0.044** |
+| vol | 0.638±0.055 | 0.682±0.054 | **0.730±0.049** |
+| texture | 0.637±0.055 | 0.706±0.052 | **0.743±0.048** |
+| disp | 0.468±0.057 | 0.573±0.058 | 0.610±0.060 |
 
 **Resumo** 
 
@@ -101,25 +101,25 @@ Em **6 m**, `abs` ≈ baseline ou acrescenta pouco além de redundância (pouca 
 
 | Mod | `t0_only` | Melhor long | Protocol long | Δ (long − t0) | Leitura |
 |-----|----------:|------------:|---------------|--------------:|---------|
-| shape | **0.785** | **0.786** | `t0_deltas` | +0.001 | teto estático |
-| vol | 0.638 | **0.730** | `t0_deltas` | +0.092 | long agrega |
-| texture | 0.637 | **0.743** | `t0_deltas` | +0.106 | long agrega |
-| disp | 0.468 | 0.610 | `t0_deltas` | +0.142 | sobe, mas continua fraco |
+| shape | **0.785±0.043** | **0.786±0.044** | `t0_deltas` | +0.001 | teto estático |
+| vol | 0.638±0.055 | **0.730±0.049** | `t0_deltas` | +0.092 | long agrega |
+| texture | 0.637±0.055 | **0.743±0.048** | `t0_deltas` | +0.106 | long agrega |
+| disp | 0.468±0.057 | 0.610±0.060 | `t0_deltas` | +0.142 | sobe, mas continua fraco |
 
 **Top 10 por modalidade (todas as coortes × encodings)** — AUC patient:
 
 | # | shape | vol | texture | disp |
 |--:|-------|-----|---------|------|
-| 1 | **0.786** `48m_12m` / `t0_deltas` | **0.730** `48m_12m` / `t0_deltas` | **0.757** `36m_6m` / `abs` | **0.647** `36m_6m` / `t0_only` |
-| 2 | 0.785 `36m_6m` / `t0_only` | 0.727 `36m_6m` / `t0_only` | 0.756 `36m_6m` / `t0_deltas` | 0.610 `48m_12m` / `t0_deltas` |
-| 3 | 0.785 `48m_12m` / `t0_only` | 0.719 `48m_6m` / `abs` | 0.743 `48m_12m` / `t0_deltas` | 0.580 `36m_6m` / `t0_deltas` |
-| 4 | 0.781 `48m_6m` / `t0_only` | 0.718 `36m_6m` / `t0_deltas` | 0.739 `36m_12m` / `t0_deltas` | 0.573 `48m_12m` / `abs` |
-| 5 | 0.777 `48m_6m` / `abs` | 0.714 `36m_6m` / `abs` | 0.735 `48m_6m` / `abs` | 0.564 `48m_6m` / `t0_only` |
-| 6 | 0.770 `48m_12m` / `abs` | 0.710 `48m_6m` / `t0_deltas` | 0.732 `48m_6m` / `t0_deltas` | 0.558 `36m_6m` / `abs` |
-| 7 | 0.767 `36m_6m` / `abs` | 0.709 `48m_6m` / `t0_only` | 0.728 `36m_12m` / `abs` | 0.554 `48m_6m` / `abs` |
-| 8 | 0.766 `36m_6m` / `t0_deltas` | 0.699 `36m_12m` / `t0_deltas` | 0.708 `36m_6m` / `t0_only` | 0.540 `48m_6m` / `t0_deltas` |
-| 9 | 0.762 `48m_6m` / `t0_deltas` | 0.682 `48m_12m` / `abs` | 0.706 `48m_12m` / `abs` | 0.468 `48m_12m` / `t0_only` |
-| 10 | 0.757 `36m_12m` / `abs` | 0.678 `36m_12m` / `t0_only` | 0.705 `48m_6m` / `t0_only` | 0.385 `36m_12m` / `t0_only` |
+| 1 | **0.786±0.044** `48m_12m` / `t0_deltas` | **0.730±0.049** `48m_12m` / `t0_deltas` | **0.757±0.030** `36m_6m` / `abs` | **0.647±0.035** `36m_6m` / `t0_only` |
+| 2 | 0.785±0.029 `36m_6m` / `t0_only` | 0.727±0.033 `36m_6m` / `t0_only` | 0.756±0.030 `36m_6m` / `t0_deltas` | 0.610±0.060 `48m_12m` / `t0_deltas` |
+| 3 | 0.785±0.043 `48m_12m` / `t0_only` | 0.719±0.034 `48m_6m` / `abs` | 0.743±0.048 `48m_12m` / `t0_deltas` | 0.580±0.036 `36m_6m` / `t0_deltas` |
+| 4 | 0.781±0.032 `48m_6m` / `t0_only` | 0.718±0.034 `36m_6m` / `t0_deltas` | 0.739±0.065 `36m_12m` / `t0_deltas` | 0.573±0.058 `48m_12m` / `abs` |
+| 5 | 0.777±0.033 `48m_6m` / `abs` | 0.714±0.033 `36m_6m` / `abs` | 0.735±0.035 `48m_6m` / `abs` | 0.564±0.040 `48m_6m` / `t0_only` |
+| 6 | 0.770±0.044 `48m_12m` / `abs` | 0.710±0.035 `48m_6m` / `t0_deltas` | 0.732±0.035 `48m_6m` / `t0_deltas` | 0.558±0.038 `36m_6m` / `abs` |
+| 7 | 0.767±0.030 `36m_6m` / `abs` | 0.709±0.036 `48m_6m` / `t0_only` | 0.728±0.064 `36m_12m` / `abs` | 0.554±0.041 `48m_6m` / `abs` |
+| 8 | 0.766±0.031 `36m_6m` / `t0_deltas` | 0.699±0.070 `36m_12m` / `t0_deltas` | 0.708±0.032 `36m_6m` / `t0_only` | 0.540±0.041 `48m_6m` / `t0_deltas` |
+| 9 | 0.762±0.034 `48m_6m` / `t0_deltas` | 0.682±0.054 `48m_12m` / `abs` | 0.706±0.052 `48m_12m` / `abs` | 0.468±0.057 `48m_12m` / `t0_only` |
+| 10 | 0.757±0.056 `36m_12m` / `abs` | 0.678±0.067 `36m_12m` / `t0_only` | 0.705±0.036 `48m_6m` / `t0_only` | 0.385±0.067 `36m_12m` / `t0_only` |
 
 **Leitura para a reunião:**
 - **Shape:** melhor bloco absoluto; t0 ≈ deltas — teto do estudo.
@@ -131,35 +131,35 @@ Em **6 m**, `abs` ≈ baseline ou acrescenta pouco além de redundância (pouca 
 
 **Top 10 união baseline:**
 
-Referência: teto baseline shape = **0.785**
+Referência: teto baseline shape = **0.785±0.043**
 
 | # | Spec (todos t0) | AUC | vs shape t0 |
 |--:|-----------------|----:|------------:|
-| 1 | shape ∪ disp | **0.769** | −0.016 |
-| 2 | shape ∪ vol | **0.766** | −0.019 |
-| 3 | shape ∪ texture | **0.763** | −0.022 |
-| 4 | shape ∪ texture ∪ disp | **0.760** | −0.025 |
-| 5 | shape ∪ vol ∪ texture | **0.757** | −0.028 |
-| 6 | shape ∪ vol ∪ disp | **0.754** | −0.031 |
-| 7 | shape ∪ vol ∪ texture ∪ disp | **0.747** | −0.038 |
-| 8 | vol ∪ texture | **0.668** | −0.117 |
-| 9 | vol ∪ texture ∪ disp | **0.651** | −0.134 |
-| 10 | vol ∪ disp | **0.614** | −0.171 |
+| 1 | shape ∪ disp | **0.769±0.046** | −0.016 |
+| 2 | shape ∪ vol | **0.766±0.045** | −0.019 |
+| 3 | shape ∪ texture | **0.763±0.048** | −0.022 |
+| 4 | shape ∪ texture ∪ disp | **0.760±0.048** | −0.025 |
+| 5 | shape ∪ vol ∪ texture | **0.757±0.047** | −0.028 |
+| 6 | shape ∪ vol ∪ disp | **0.754±0.049** | −0.031 |
+| 7 | shape ∪ vol ∪ texture ∪ disp | **0.747±0.045** | −0.038 |
+| 8 | vol ∪ texture | **0.668±0.052** | −0.117 |
+| 9 | vol ∪ texture ∪ disp | **0.651±0.054** | −0.134 |
+| 10 | vol ∪ disp | **0.614±0.056** | −0.171 |
 
 **Top 10 longitudinal:**
 
 | # | Spec | AUC | Nota |
 |--:|------|----:|------|
-| 1 | shape t0 ∪ tex Δ ∪ **disp Δ** | **0.837** | exploratório; mono disp fraco |
-| 2 | shape t0 ∪ vol Δ ∪ tex Δ ∪ disp Δ | **0.835** | idem |
-| 3 | todas 4 mods em Δ | **0.833** | multi-Δ denso |
-| 4 | shape t0 ∪ vol Δ ∪ tex Δ | **0.828** | long sem disp |
-| 5 | shape t0 ∪ vol Δ ∪ tex Δ ∪ disp t0 | **0.823** | disp só t0 |
-| 6 | shape Δ ∪ tex Δ ∪ disp Δ | **0.823** | sem teto t0 shape |
-| 7 | **âncora** shape t0 ∪ tex Δ | **0.823** | **claim oficial** |
-| 8 | shape Δ ∪ vol Δ ∪ tex Δ | **0.820** | multi-Δ sem disp |
-| 9 | shape t0 ∪ vol t0 ∪ tex Δ ∪ disp Δ | **0.819** | misto |
-| 10 | shape Δ ∪ vol t0 ∪ tex Δ ∪ disp Δ | **0.818** | misto |
+| 1 | shape t0 ∪ tex Δ ∪ **disp Δ** | **0.837±0.038** | exploratório; mono disp fraco |
+| 2 | shape t0 ∪ vol Δ ∪ tex Δ ∪ disp Δ | **0.835±0.037** | idem |
+| 3 | todas 4 mods em Δ | **0.833±0.037** | multi-Δ denso |
+| 4 | shape t0 ∪ vol Δ ∪ tex Δ | **0.828±0.038** | long sem disp |
+| 5 | shape t0 ∪ vol Δ ∪ tex Δ ∪ disp t0 | **0.823±0.039** | disp só t0 |
+| 6 | shape Δ ∪ tex Δ ∪ disp Δ | **0.823±0.041** | sem teto t0 shape |
+| 7 | **âncora** shape t0 ∪ tex Δ | **0.823±0.039** | **claim oficial** |
+| 8 | shape Δ ∪ vol Δ ∪ tex Δ | **0.820±0.040** | multi-Δ sem disp |
+| 9 | shape t0 ∪ vol t0 ∪ tex Δ ∪ disp Δ | **0.819±0.039** | misto |
+| 10 | shape Δ ∪ vol t0 ∪ tex Δ ∪ disp Δ | **0.818±0.041** | misto |
 
 
 #### Early fusion vs late fusion em `48m_12m` no mesmo protocolo
@@ -167,14 +167,14 @@ Referência: teto baseline shape = **0.785**
 
 | Atributos | Early | Late | Δ (late−early) |
 |--------------|------:|-----:|---------------:|
-| **shape t0 ∪ tex Δ (âncora)** | **0.794** | **0.823** | **+0.029** |
-| shape t0 ∪ vol Δ ∪ tex Δ | 0.771 | 0.828 | +0.057 |
-| shape Δ ∪ vol Δ ∪ tex Δ | 0.767 | 0.820 | +0.053 |
-| shape Δ ∪ tex Δ | 0.777 | 0.814 | +0.037 |
-| shape t0 ∪ vol Δ (`deltas_vol`) | 0.779 | 0.805 | +0.026 |
-| vol Δ ∪ tex Δ | 0.766 | 0.793 | +0.027 |
-| shape Δ ∪ vol Δ | 0.772 | 0.793 | +0.021 |
-| shape t0 ∪ vol Δ (`t0_deltas_vol`) | 0.761 | 0.785 | +0.024 |
+| **shape t0 ∪ tex Δ (âncora)** | **0.794±0.043** | **0.823±0.039** | **+0.029** |
+| shape t0 ∪ vol Δ ∪ tex Δ | 0.771±0.047 | 0.828±0.038 | +0.057 |
+| shape Δ ∪ vol Δ ∪ tex Δ | 0.767±0.049 | 0.820±0.040 | +0.053 |
+| shape Δ ∪ tex Δ | 0.777±0.048 | 0.814±0.041 | +0.037 |
+| shape t0 ∪ vol Δ (`deltas_vol`) | 0.779±0.047 | 0.805±0.046 | +0.026 |
+| vol Δ ∪ tex Δ | 0.766±0.046 | 0.793±0.046 | +0.027 |
+| shape Δ ∪ vol Δ | 0.772±0.046 | 0.793±0.042 | +0.021 |
+| shape t0 ∪ vol Δ (`t0_deltas_vol`) | 0.761±0.049 | 0.785±0.045 | +0.024 |
 
 **Definição da agregação multimodal** 
 No early fusion, atributos de diferentes modalidades são concatenados num único espaço de features e submetidos à mesma seleção/classificação, o que pode diluir a contribuição de um bloco forte, por exemplo, o shape perante outro de maior dimensionalidade.
@@ -202,7 +202,3 @@ No late fusion, cada modalidade de atributo é modelada de forma independente e 
 - **Texture:** Contrast estável; JointEntropy rara (instabilidade de seleção, não de visita).
 - **Disp:** pool estável muito fino — alinha com AUC unimodal fraca.
 - **All:** herda estabilidade dos blocos dominantes.
-
-
-
-
