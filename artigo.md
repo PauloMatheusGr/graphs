@@ -4,7 +4,7 @@ No hipocampo, para sMCI→pMCI, o quanto a representação longitudinal com 3 vi
 
 ## Definição e seleção populacional
 
-A população de análise deriva do ADNI. Antes de qualquer definição de coorte sMCI/pMCI, constrói-se uma tabela longitudinal limpa a partir dos dados brutos. Cada exame de RM é alinhado ao diagnóstico clínico e às escalas cognitivas/funcionais (ADAS, CDR, MMSE, FAQ) por correspondência temporal, exigindo distância absoluta ≤ 3 meses entre a data da MRI e a data do diagnóstico, de modo que o rótulo clínico corresponda, na prática, à mesma visita.
+A população de análise deriva do **ADNI**. Também se exploraram as bases **AIBL** e **OASIS** sob a mesma lógica de elegibilidade, mas sem número suficiente de conjuntos longitudinais com três imagens (ver limitação abaixo). Antes de qualquer definição de coorte sMCI/pMCI, constrói-se uma tabela longitudinal limpa a partir dos dados brutos. Cada exame de RM é alinhado ao diagnóstico clínico e às escalas cognitivas/funcionais (ADAS, CDR, MMSE, FAQ) por correspondência temporal, exigindo distância absoluta ≤ 3 meses entre a data da MRI e a data do diagnóstico, de modo que o rótulo clínico corresponda, na prática, à mesma visita.
 
 Removem-se registos com sexo inválido, demência diferente de AD, diagnóstico ou datas em falta, e pacientes com regressão diagnóstica nas fases contínuas da AD (retorno a CN ou MCI após o primeiro AD; retorno a CN após o primeiro MCI). Imagens de repetição são excluídas. Outliers de qualidade de imagem identificados por MRQy são retirados.
 
@@ -78,9 +78,9 @@ A estratégia foi: (i) fixar **SVM + seleção L1 Lasso + sem ComBat** como prot
 
 ### Ablação unimodal: baseline vs longitudinal
 
-**Hipótese inicial (`36m_6m`).** 
+**Hipótese inicial (`36m_6m`).**
 
-Na coorte primária, o `abs` superava `t0_deltas` em vários blocos, por exemplo, texture `abs` **0.757±0.030** ≈ `t0_deltas` **0.756±0.030** ≫ `t0_only` **0.708±0.032**. Isso sugeriu, a princípio, que concatenar as 3 visitas era um longitudinal “suficiente”.
+O `abs` superava `t0_deltas`. Isso sugeriu, a princípio, que concatenar as 3 visitas era um longitudinal “suficiente”.
 
 **Expansão (`36m_12m`, `48m_6m`, `48m_12m`).** Com gap **12 m**, o padrão inverte para vol/texture: `t0_deltas` sobe e `abs` deixa de ser o melhor longitudinal. Em `48m_12m`:
 
@@ -95,7 +95,7 @@ Na coorte primária, o `abs` superava `t0_deltas` em vários blocos, por exemplo
 
 Em **6 m**, `abs` ≈ baseline ou acrescenta pouco além de redundância (pouca alteração estrutural entre visitas próximas). Em **12 m**, deltas absolutos (`t0_deltas`) capturam melhor a progressão; `abs` piora relativo a deltas. Shape permanece teto estático ($\Delta \approx 0$ entre t0 e deltas). Disp unimodal permanece fraco.
 
-**Melhores resultados por modalidade (svm, nocombat)** — o que o orientador pede: ranking **dentro** de cada família, não um top global (que seria só shape).
+**Melhores resultados por modalidade (svm, nocombat)**
 
 **Contraste t0 vs melhor longitudinal — coorte de fusão `48m_12m`:**
 
@@ -202,3 +202,7 @@ No late fusion, cada modalidade de atributo é modelada de forma independente e 
 - **Texture:** Contrast estável; JointEntropy rara (instabilidade de seleção, não de visita).
 - **Disp:** pool estável muito fino — alinha com AUC unimodal fraca.
 - **All:** herda estabilidade dos blocos dominantes.
+
+### Limitação — outras bases (AIBL, OASIS)
+
+O estudo usa **ADNI** como única fonte com contagens viáveis sob a definição populacional adoptada: três RM elegíveis a partir do mesmo baseline $t_0$, gaps nominais de ~6 ou ~12 meses, e rótulos sMCI/pMCI na janela clínica de 36 ou 48 meses. **AIBL** e **OASIS** foram analisadas no mesmo pipeline de alinhamento temporal e filtros; contudo, após a exigência de **conjuntos com 3 imagens**, restavam poucos sujeitos — em especial **pMCI**, onde conversão a AD dentro da janela e série tricíclica de RM coincidem raramente. Sem $n$ relevante nessas classes, treino/avaliação multi-coorte ou validação externa nessas bases fica inviável sem relaxar a definição (ex. 1–2 visitas), o que quebraria a comparabilidade com o encoding longitudinal $t_0$+deltas. Trata-se, portanto, de uma **limitação das bases disponíveis face ao desenho**, não de uma falha do protocolo de modelagem: o desenho longitudinal tricíclico restringe a amostra a repositórios com follow-up imagiológico denso o suficiente, hoje sobretudo o ADNI.
