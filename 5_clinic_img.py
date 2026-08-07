@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Comparação nested CV: clínico baseline vs fusão (imagem + clínico).
+"""Nested CV: clínico/demográfico only vs fusão (imagem + clínico).
 
-Imagem only: use 2_run_ablation.py.
+--feature-set clinical → SEX, AGE, MMSE, ADAS, FAQ (sem imagem).
+--feature-set fusion   → imagem (rep escolhida) + mesmas cols clínicas.
 
-Fusão: hiperparâmetros do classificador são tunados só na imagem (mesmo
-pipeline da ablação); depois o clf é reajustado em [clínico + imagem].
+Imagem only: 5_ablation.py. Nome antigo: 5_baseline_comparison.py
+('baseline' confundia com t1_only / encoding temporal).
 """
 
 from __future__ import annotations
@@ -60,9 +61,9 @@ from ablation_runner import (
     wide_for_fold,
 )
 
-log = logging.getLogger("baseline_comparison")
+log = logging.getLogger("clinic_img")
 
-COHORT = "36m_6m"  # editar só isto → csvs/cohorts/{COHORT}/
+COHORT = "36m_6m"  # default se --cohort omitido
 
 CLINICAL_COLS = ("SEX", "AGE", "MMSE_SCORE", "ADAS_SCORE", "FAQ_SCORE") #, "CDR_GLOBAL")
 
@@ -464,7 +465,7 @@ def nested_cv_fusion(
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Baseline clínico vs fusão (imagem+clínico).")
+    p = argparse.ArgumentParser(description="Clínico/demográfico vs fusão imagem+clínico.")
     p.add_argument("--feature-set", choices=["clinical", "fusion"], required=True)
     p.add_argument("--tasks", default="smci_pmci")
     p.add_argument(
@@ -478,6 +479,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--repeats", "-r", type=int, default=10)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--roi", default=ROI_FILTER_DEFAULT)
+    p.add_argument(
+        "--cohort",
+        default=COHORT,
+        help="Pasta em csvs/cohorts/{cohort}/",
+    )
     p.add_argument("--stable-pool-min-pct", type=int, default=STABLE_POOL_MIN_PCT)
     p.add_argument("--stable-pool-min-timepoints", type=int, default=STABLE_POOL_MIN_TIMEPOINTS,
                    help="0 = sem filtro temporal no pool")
@@ -514,14 +520,15 @@ def main(argv: list[str] | None = None) -> int:
     modalities = _parse_modalities(args.modality)
     with_combat = args.combat == "true"
     representation = args.representation
-    base = Path(f"csvs/cohorts/{COHORT}/ablation/{args.roi}")
+    cohort = args.cohort
+    base = Path(f"csvs/cohorts/{cohort}/ablation/{args.roi}")
     stable_pool_min_timepoints = resolve_stable_pool_min_timepoints(
         representation, args.stable_pool_min_timepoints, log=log,
     )
     if args.results_dir is not None:
         out_dir = args.results_dir
     elif args.feature_set == "clinical":
-        out_dir = Path(f"csvs/cohorts/{COHORT}/ablation_results_clinic")
+        out_dir = Path(f"csvs/cohorts/{cohort}/ablation_results_clinic")
     else:
         out_dir = default_fusion_results_dir(base, representation, results_dir=args.results_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -597,6 +604,6 @@ if __name__ == "__main__":
         pipe.fit(X, y)
         names = _clinical_selected_names("logreg_l1", pipe.named_steps["clf"], list(CLINICAL_COLS))
         assert 1 <= len(names) <= len(CLINICAL_COLS)
-        print("OK baseline_comparison self-check")
+        print("OK clinic_img self-check")
         sys.exit(0)
     sys.exit(main())

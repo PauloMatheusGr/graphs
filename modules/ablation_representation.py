@@ -254,7 +254,7 @@ def default_fusion_results_dir(
     *,
     results_dir: Path | str | None = None,
 ) -> Path:
-    """Clinic+img fusion roots (legado 5_run_baseline_comparison)."""
+    """Clinic+img fusion roots (5_clinic_img.py; ex-5_baseline_comparison)."""
     if results_dir is not None:
         return Path(results_dir)
     base = Path(base_dir)
