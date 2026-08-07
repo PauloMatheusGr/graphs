@@ -8,29 +8,47 @@ A população de análise deriva do **ADNI**. Também se exploraram as bases **A
 
 Removem-se registos com sexo inválido, demência diferente de AD, diagnóstico ou datas em falta, e pacientes com regressão diagnóstica nas fases contínuas da AD (retorno a CN ou MCI após o primeiro AD; retorno a CN após o primeiro MCI). Imagens de repetição são excluídas. Outliers de qualidade de imagem identificados por MRQy são retirados.
 
-Para cada paciente, a data do primeiro MRI define a imagem de baseline $i_1$ no tempo $t_0$. O conjunto longitudinal usa as três primeiras imagens elegíveis
+Para cada paciente, a data do primeiro MRI define a imagem de baseline $i_1$ no tempo $t_0$. O conjunto longitudinal contém **exactamente três** imagens preditoras
 
 $$
 i=\{i_{1,t_0},\,i_{2,t_1},\,i_{3,t_2}\},
 $$
 
-sempre a partir do mesmo baseline $i_{1,t_0}$, respeitando um intervalo mínimo entre aquisições (nominalmente próximo de 6 ou 12 meses, conforme a coorte). A janela de observação clínica inicia-se em $t_0$ e é de **36 meses** ou **48 meses**.
+seleccionadas pelo protocolo **`forward_band_pm2`**: $i_1$ é o baseline (primeira imagem do pool preditor em $t_0$); $i_2$ é a **próxima** aquisição cujo intervalo face a $i_1$ cai na banda nominal; $i_3$ é a **próxima** após $i_2$ com gap na **mesma** banda. Não se trata de “três imagens *depois* do baseline” (o que seriam quatro visitas): são três no total — baseline + duas seguintes na banda. As bandas adoptadas (±2 meses) são disjuntas e evitam a ambiguidade do bordo aos 9 meses que surgiria com ±3 fechado:
+
+| Gap nominal | Banda (meses) |
+|-------------|----------------|
+| 6 m | $[4,\ 8]$ |
+| 12 m | $[10,\ 14]$ |
+
+A janela de observação clínica inicia-se em $t_0$ e é de **36 meses** ou **48 meses**.
 
 Definiram-se quatro grupos: CN, sMCI, pMCI e AD.
 
 - **CN:** todos os diagnósticos na janela são CN.
-- **sMCI:** todos os diagnósticos na janela são MCI, com pelo menos uma avaliação pós-janela ainda MCI. A definição não implica que o paciente nunca converterá; exige apenas ausência de conversão no horizonte pré-especificado, com confirmação na primeira imagem pós-janela.
+- **sMCI:** ausência de AD até $t_{\mathrm{end}}=t_0+$ janela (36 ou 48 meses); existe pelo menos uma visita com data $\ge t_{\mathrm{end}}$; a **primeira** dessas visitas pós-janela deve permanecer **MCI**. A definição não implica que o paciente nunca converterá; exige apenas ausência de conversão no horizonte pré-especificado, com confirmação na primeira avaliação após o fim da janela.
 - **pMCI:** baseline MCI e, dentro da janela, pelo menos um diagnóstico de AD. Composições admitidas (respeitando janela e gap de imagem): $\{\mathrm{MCI},\mathrm{MCI},\mathrm{MCI}\}$ com ≥1 AD na janela, ou $\{\mathrm{MCI},\mathrm{MCI},\mathrm{AD}\}$ tratando esse AD como rótulo de conversão no conjunto. Não se admite $\{\mathrm{MCI},\mathrm{AD},\mathrm{AD}\}$: apenas o primeiro AD classifica o grupo, e um segundo AD afastaria o último MCI do limite de 12 meses, com alterações estruturais adicionais.
 - **AD:** todos os diagnósticos na janela são AD.
+
+**Confirmação sMCI (rótulo clínico, independente da banda ±2).** O rótulo sMCI/pMCI é decidido em `classify_patient` **antes** da selecção das imagens preditoras:
+
+1. Sem AD até $t_{\mathrm{end}}$.
+2. Existe visita com `MRI_DATE` $\ge t_{\mathrm{end}}$.
+3. A primeira dessas visitas é MCI → **sMCI**.
+4. Se essa primeira visita pós-janela for AD (ou outro diagnóstico não-MCI) → **excluído** (`desfecho_intervalado`).
+5. Sem visita pós-janela → **excluído** (`sem_confirmacao_pos_janela`).
+6. Se a primeira AD ocorre **dentro** da janela → **pMCI** (não se trata de “sMCI falhou”).
+
+A confirmação **não** usa o range ±2 meses. A banda ±2 aplica-se apenas à escolha das três imagens preditoras (para sMCI: no intervalo até $t_{\mathrm{end}}$, com DIAG MCI). A visita de confirmação pode situar-se fora desse espaçamento entre aquisições.
 
 **Coortes de estudo (contagens sMCI/pMCI em conjuntos):**
 
 | Janela | Gap imagens | sMCI / pMCI |
 |--------|-------------|-------------|
-| 36 m | ~6 m | 153 / 90 |
-| 36 m | ~12 m | 69 / 21 |
-| 48 m | ~6 m | 96 / 109 |
-| 48 m | ~12 m | **71 / 40** |
+| 36 m | 6±2 $[4,8]$ | 125 / 106 |
+| 36 m | 12±2 $[10,14]$ | 121 / 33 |
+| 48 m | 6±2 $[4,8]$ | 73 / 120 |
+| 48 m | 12±2 $[10,14]$ | **72 / 48** |
 
 A tarefa principal é a classificação **sMCI vs pMCI**. 
 A coorte inicial foi **36m6m**, porém foi expandida para **36m6m**,**36m12m**,**48m6m**,**48m12m** para diferentes cenários.
@@ -38,6 +56,8 @@ A coorte inicial foi **36m6m**, porém foi expandida para **36m6m**,**36m12m**,*
 A coorte **48m_12m** para analise multimodal, visto que em vol e texture houve maior agrgação longitudinal.
 
 Comparações 36m_6m vs 48m_12m para constraste de gap entre as imagens de 6 vs 12 meses.
+
+**Janela 36 vs 48 no mesmo gap (leitura de `t1_only` / baseline).** Não se deve esperar AUC idêntica em `36m_6m` vs `48m_6m` (nem em `36m_12m` vs `48m_12m`) só porque o encoding usa a visita baseline. Na **intersecção** de pacientes presentes nas duas coortes com o mesmo espaçamento nominal, o `ID_IMG` de $t_0$ coincide (e o triplo $t_0$–$t_1$–$t_2$ também), com o mesmo rótulo de grupo. Contudo as **populações não são as mesmas**: a janela clínica altera a elegibilidade (quem entra ou sai). Exemplos no protocolo actual (banda ±2, selecção forward): sMCI 125 vs 73 (gap 6 m) e 121 vs 72 (gap 12 m), com dezenas de IDs exclusivos de uma das janelas. Logo diferem $n$, balanço sMCI/pMCI, partições de CV e AUC — inclusive em `t1_only` — mesmo com overlap de baselines.
 
 ---
 

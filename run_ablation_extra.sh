@@ -31,7 +31,7 @@ echo "=== CN_AD $PRIMARY $REP vol ==="
 "$PY" 5_ablation.py --cohort "$PRIMARY" --representation "$REP" \
   --modality vol --tasks cn_ad \
   --selection l1_stable --models svm --combat false \
-  --repeats 10 --tuner optuna --optuna-trials 10 \
+  --repeats 10 --tuner optuna --optuna-trials 30 \
   --stable-pool-min-pct 70 --stable-pool-min-timepoints 0 \
   --stable-bootstrap 50 --stable-l1-c 0.1 \
   || { echo "FAIL cn_ad"; exit 1; }
