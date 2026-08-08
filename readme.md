@@ -52,14 +52,14 @@ Resto = ablação / sensibilidade / controle — **não** substitui o primary.
 | **A. Wide** | `smci_pmci` | wide | `vol,shape,texture,disp,all` | `svm,rf,elasticnet` | `both` | sim |
 | **B. T1-only** | `smci_pmci` | t1_only | `vol,shape,texture,disp,all` | **`svm` só** | `both` | sim (claim wide vs T1) |
 | **C. Clínica** | `smci_pmci` | clinic | — | `svm,rf,elasticnet` | — | sim |
-| **D. Fusion** | `smci_pmci` | fusion wide | **`vol` só** | **`svm` só** (rf/en opcional) | `false` | sim |
-| **E. Sanity** | `cn_ad` | wide | **`vol` só** | **`svm` só** | `false` | recomendado |
-| **F. Leaky** | `smci_pmci` | leaky wide | **`vol` só** | **`svm` só** | `false` | opcional / suplemento |
+| **D. Fusion** | `smci_pmci` | fusion `t1_deltas` | **`shape`** (claim) | **`svm` só** | `false` | sim |
+| **E. Sanity** | `cn_ad` | `t1_deltas` | **`vol` só** | **`svm` só** | `false` | recomendado |
+| **F. Leaky** | `smci_pmci` | leaky `t1_deltas` | **`vol` só** | **`svm` só** | `false` | opcional / suplemento |
 
 ### Cortar (não rodar no paper)
 
 - Tasks: `cn_smci`, `cn_pmci`, `smci_ad`, `pmci_ad`
-- Fusion / leaky / deltas em shape|texture|disp|all
+- Fusion / leaky em texture|disp|all (fusion claim = shape; leaky/CN×AD = vol)
 - T1-only com rf/elasticnet (svm basta)
 - Deltas (só se sobrar tempo)
 - Optuna/repeats acima de 10
@@ -165,13 +165,13 @@ python 5_ablation.py \
 
 Saída: `ablation_results_t1_only/{modality}/`
 
-### 3. Fusion — vol + SVM (`t1_deltas`)
+### 3. Fusion — shape + SVM (`t1_deltas`; teto unimodal na claim)
 
 ```bash
 python 5_clinic_img.py \
   --cohort 48m_12m \
   --feature-set fusion \
-  --modality vol \
+  --modality shape \
   --tasks smci_pmci \
   --representation t1_deltas \
   --selection l1_stable \

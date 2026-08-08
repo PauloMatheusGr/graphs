@@ -7,23 +7,25 @@
 
 ## Estado (2026-08-07)
 
-**Protocolo gap:** `forward_band_pm2` adoptado (±2: 6→`[4,8]`, 12→`[10,14]`). Coortes novas em `csvs/cohorts/{36,48}m_{6,12}m/` (pastas `*_old` = legado só-mínimo).
+**Protocolo gap:** `forward_band_pm2` (±2: 6→`[4,8]`, 12→`[10,14]`). Coortes em `csvs/cohorts/{36,48}m_{6,12}m/` (`*_old` = legado).
 
-**Contagens sMCI/pMCI (actual):** 125/106, 121/33, 73/120, **72/48** (`48m_12m`).
+**Contagens sMCI/pMCI:** 125/106, 121/33, 73/120, **72/48** (`48m_12m` = **claim** multimodal/extras).
 
-**Pré-requisito runs:** features + `4_run_post_extract.py` nas 4 coortes (e primary para extra).
+**Pré-requisito:** features + `4_run_post_extract.py` nas 4 coortes.
 
-**AUCs em `artigo.md`:** provisórios até rerun nestas coortes — não misturar com `*_old`.
+**AUCs em `artigo.md`:** provisórios até rerun ±2 — não misturar com `*_old`.
+
+**Experimentos para o paper:** `full` + `extra` **fecham a grade**. Depois disso **não** falta ablação nova — só consolidar, stats, escrever, tabelas, figuras. Único re-run possível: fusion clinic+img se o teto unimodal da claim ≠ shape.
 
 ---
 
-## Runs — o que executar
+## 1) Runs (última grade experimental)
 
-Ambos **já executáveis** (`chmod +x` feito: `-rwxrwxr-x`).
+Ambos executáveis (`-rwx`).
 
-### 1. Core — `./run_ablation_full.sh`
+### Core — `./run_ablation_full.sh`
 
-Mono (4 coortes × `t1_only`/`t1_deltas`/`wide`) → late (72 specs) → early (7 specs, `48m_12m`).
+Mono (4 coortes × `t1_only`/`t1_deltas`/`wide`, ComBat **both**) → late (72 specs × 4, **nocombat**) → early (7 specs, claim, nocombat).
 
 ```bash
 cd /mnt/study-data/pgirardi/graphs
@@ -31,32 +33,50 @@ cd /mnt/study-data/pgirardi/graphs
 ```
 
 - [ ] Correr `run_ablation_full.sh`
-- [ ] Verificar logs sem `FAIL`
+- [ ] Logs sem `FAIL`
+- [ ] Anotar teto unimodal em `48m_12m` (mod × rep) → decide `FUSION_MOD` do extra
 
-### 2. Extra — `./run_ablation_extra.sh`
+### Extra — `./run_ablation_extra.sh`
 
-Só primary (`PRIMARY=48m_12m`, `REP=t1_deltas`): CN×AD → clínica → fusion clinic+img (vol) → leaky.
-
-Script: `5_clinic_img.py` (ex-`5_baseline_comparison.py`; `--cohort` OK).
+Claim `PRIMARY=48m_12m`, `REP=t1_deltas`: CN×AD (vol) → clínica → fusion clinic+img (`FUSION_MOD=shape` default) → leaky (vol). Optuna 10.
 
 ```bash
 ./run_ablation_extra.sh 2>&1 | tee logs/ablation_extra_$(date +%Y%m%d).log
-# opcional: PRIMARY=36m_6m REP=t1_deltas ./run_ablation_extra.sh
+# se teto ≠ shape: FUSION_MOD=<mod> REP=<rep> ./run_ablation_extra.sh
 ```
 
-- [ ] Correr `run_ablation_extra.sh` (pode em paralelo / outro terminal vs full)
-- [ ] Verificar logs sem `FAIL`
+- [ ] Correr `run_ablation_extra.sh` (paralelo ao full OK)
+- [ ] Logs sem `FAIL`
+- [ ] Se mono claim mostrou outro teto: re-correr **só** fusion clinic+img com `FUSION_MOD` certo (não reabrir grade)
 
-**Não** meter clínica/leaky/CN×AD nas 4 coortes (YAGNI paper).
+**Não** expandir clínica/leaky/CN×AD às 4 coortes.
 
 ---
 
-## Depois dos runs
+## 2) Próximos passos (pós-runs) — sem novos experimentos
 
-- [ ] `6_results.ipynb` / `7_stats.ipynb` nas pastas novas
-- [ ] Actualizar números em `artigo.md` (mono teto, late, early, clínica, CN×AD, leaky)
-- [ ] Tabela resumo âncora: mono | multi-T1 | late | early + Δ/IC/gate
-- [ ] Forest Δ âncora vs shape T1 (4 cohorts) se ainda no plano
+Ordem sugerida:
+
+### A. Consolidar planilhas
+Resultados **não** estão num único ficheiro após os bash; cada protocolo/mod/coorte tem pasta. Consolidar:
+
+- [ ] `6_results.ipynb` → `all_protocols_summary.csv` (por coorte) + comparação multi-cohort  
+- [ ] ou CLI equivalente via `cohort_compare.save_cohort_comparison` →  
+  `csvs/cohort_comparison/cohort_results.csv` + `cohort_features_long.csv`  
+  (atributos seleccionados / freqs; união de mods = agregar esse long)
+
+### B. Stats / claims
+- [ ] `7_stats.ipynb` — Δ, IC, FDR, **gate_pass** antes de claim “> shape”
+- [ ] Tabela âncora: mono | multi-T1 | late | early + Δ/IC/gate
+
+### C. Escrever artigo
+- [ ] Actualizar **todos** os números em `artigo.md` / draft (mono, late, early, clínica, CN×AD, leaky)
+- [ ] Métodos já OK em grande parte; Results + discussão alinhados aos ±2
+- [ ] Tabelas de texto (não só plots)
+- [ ] Parágrafo atributos estáveis (de `cohort_features_long`)
+- [ ] Figuras: forest Δ âncora vs shape T1 (4 cohorts), barras mono, early vs late, etc.
+
+---
 
 ## Não fazer
 
@@ -64,10 +84,11 @@ Script: `5_clinic_img.py` (ex-`5_baseline_comparison.py`; `--cohort` OK).
 - Grade early completa / weighted late  
 - Claim “significativamente > shape” sem `gate_pass`  
 - Misturar AUC `*_old` com coortes ±2  
-- `5_ablation_deltas.py` — redundante (`5_ablation.py --representation t1_deltas`)
+- Nova ablação além de full+extra (+ opcional `FUSION_MOD`)  
+- `5_ablation_deltas.py` — redundante  
 
 ---
 
-## Nota histórica (resolvido)
+## Nota
 
-Debate só-mínimo vs banda ±2/±3 → **fechado com ±2**. Secções longas de estimativa lab estão obsoletas; ver git history se precisares dos números pré-adopção.
+Gap ±2 **fechado**. Claim = `48m_12m`; `36m_6m` = arranque unimodal histórico, não primary dos extras.
