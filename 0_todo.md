@@ -38,11 +38,12 @@ cd /mnt/study-data/pgirardi/graphs
 
 ### Extra — `./run_ablation_extra.sh`
 
-Claim `PRIMARY=48m_12m`, `REP=t1_deltas`: CN×AD (vol) → clínica → fusion clinic+img (`FUSION_MOD=shape` default) → leaky (vol). Optuna 10.
+Claim `PRIMARY=48m_12m`: sensibilidade (`t1_only`/`t1_deltas` × `svm,rf,elasticnet`) → CN×AD (vol) → clínica → fusion clinic+img (`FUSION_MOD`) → leaky (vol).
+
+Correr **depois** do full; ajustar `FUSION_MOD`/`REP` ao teto SVM nocombat.
 
 ```bash
-./run_ablation_extra.sh 2>&1 | tee logs/ablation_extra_$(date +%Y%m%d).log
-# se teto ≠ shape: FUSION_MOD=<mod> REP=<rep> ./run_ablation_extra.sh
+FUSION_MOD=shape REP=t1_deltas ./run_ablation_extra.sh 2>&1 | tee logs/ablation_extra_$(date +%Y%m%d).log
 ```
 
 - [ ] Correr `run_ablation_extra.sh` (paralelo ao full OK)
