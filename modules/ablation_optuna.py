@@ -88,10 +88,11 @@ def suggest_sklearn_params(
             "clf__class_weight", [None, "balanced"]
         )
     elif model_key == "svm":
-        params["clf__C"] = trial.suggest_float("clf__C", 1e-4, 1e4, log=True)
+        # Align with PARAM_GRIDS["svm"]: unbounded C/gamma + max_iter=-1 hung overnight.
+        params["clf__C"] = trial.suggest_float("clf__C", 1e-2, 1e1, log=True)
         params["clf__kernel"] = trial.suggest_categorical("clf__kernel", ["linear", "rbf"])
-        if params["clf__kernel"] == "rbf":
-            params["clf__gamma"] = trial.suggest_float("clf__gamma", 1e-4, 1.0, log=True)
+        params["clf__gamma"] = "scale"
+        params["clf__max_iter"] = 2000
         params["clf__class_weight"] = trial.suggest_categorical(
             "clf__class_weight", [None, "balanced"]
         )
@@ -274,4 +275,17 @@ if __name__ == "__main__":
             pipe, X, y, cv, model_key="logreg_l1", tuner="optuna", n_trials=5, seed=0
         )
         assert res_o.tuner == "optuna" and "clf__C" in res_o.best_params
+        pipe_svm = ImbPipeline(
+            [("scaler", StandardScaler()), ("clf", make_classifier("svm", seed=0))]
+        )
+        assert pipe_svm.named_steps["clf"].max_iter == 2000
+        p_svm = suggest_sklearn_params(
+            optuna.trial.FixedTrial(
+                {"clf__C": 1.0, "clf__kernel": "rbf", "clf__class_weight": None}
+            ),
+            "svm",
+            "raw",
+        )
+        assert p_svm["clf__gamma"] == "scale" and p_svm["clf__max_iter"] == 2000
+        assert 1e-2 <= p_svm["clf__C"] <= 1e1
     print("ablation_optuna self-check ok")

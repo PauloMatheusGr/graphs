@@ -336,7 +336,8 @@ def embedded_selected_names(
 
 def make_classifier(model_key: str, *, seed: int):
     clf_map = {
-        "svm": SVC(probability=True, random_state=seed),
+        # ponytail: max_iter=2000 — libsvm default -1 can hang forever on bad (C,gamma)
+        "svm": SVC(probability=True, random_state=seed, max_iter=2000),
         "rf": RandomForestClassifier(random_state=seed),
         "xgb": XGBClassifier(eval_metric="logloss", n_jobs=-1, random_state=seed),
         "mlp": MLPClassifier(
