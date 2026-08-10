@@ -1,0 +1,1890 @@
+\documentclass[review]{elsarticle}
+%\documentclass[3p,times,twocolumn,authoryear]{elsarticle}
+
+\usepackage{amssymb}
+\usepackage{multirow}
+\usepackage{booktabs}
+\usepackage[colorlinks,urlcolor=blue]{hyperref}
+\usepackage{subfig}
+\usepackage{scalefnt}
+\usepackage[brazilian]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{units}
+\usepackage{url}
+\usepackage{amsbsy}
+\usepackage{amstext}
+\usepackage{graphicx}
+\usepackage{rotating}
+\usepackage{xcolor}
+\usepackage{float}
+\usepackage[section]{placeins}
+\usepackage{verbatim}
+\usepackage{apalike}
+\restylefloat{figure}
+\restylefloat{table}
+
+% Inserted by pgirardi
+\usepackage{amsmath}
+\usepackage[normalem]{ulem}
+% ponytail: \texttt só — \seqsplit quebra com \_ / babel brazilian
+\newcommand{\code}[1]{\texttt{#1}}
+
+\newcommand{\sugestao}[1]{\textcolor{green!40!black}{#1}}
+
+\newcommand{\corrigir}[2]{%
+	\textcolor{red}{\sout{#1}}%
+	\textcolor{blue}{#2}%
+}
+
+%%%%%%%%%%%%%%%
+
+\makeatletter
+
+\journal{Expert Systems with Applications}
+
+\@ifundefined{showcaptionsetup}{}{%
+	\PassOptionsToPackage{caption=false}{subfig}}
+\usepackage{pdflscape}
+\@ifundefined{showcaptionsetup}{}{%
+	\PassOptionsToPackage{caption=false}{subfig}}
+\makeatother
+
+
+\begin{document}
+	\begin{frontmatter}
+		
+		\title{Representação longitudinal hipocampal para sMCI versus pMCI:
+			alteração temporal, coortes multi-janela e fusão multimodal}
+		
+		\author[ufscar]{Paulo Matheus da Costa Girardi}
+		\ead{paulogirardi@estudante.ufscar.br}
+		
+		\author[ufscar]{Ricardo José Ferrari\corref{cor1}}
+		\ead{rferrari@ufscar.br}
+		
+		\cortext[cor1]{Corresponding author}
+		
+		\address[ufscar]{Department of Computing, Federal University of São Carlos, Rod.\ Washington Luis, Km 235, 13565-905, São Carlos, SP, Brazil}
+		
+		\author[]{for the Alzheimer's Disease Neuroimaging Initiative\corref{adni}}
+		\cortext[adni]{Data used in preparation of this article were obtained from the Alzheimer's Disease Neuroimaging Initiative (ADNI) database (\url{adni.loni.usc.edu}). Investigators within ADNI contributed to the design and implementation of ADNI and/or provided data but did not participate in analysis or writing of this report. A complete listing of ADNI investigators is available at \url{http://adni.loni.usc.edu/wp-content/uploads/how_to_apply/ADNI_Acknowledgement_List.pdf}.}
+		
+		\begin{abstract}
+			No hipocampo, para a distinção sMCI$\rightarrow$pMCI, avalia-se se a representação longitudinal \code{t1\_deltas} ($t_0$ + deltas absolutos entre três visitas) agrega face ao baseline transversal \code{t1\_only}, em atributos unimodais e em fusão late multimodal, e como esse ganho se comporta em quatro coortes (janelas clínicas 36/48\,meses $\times$ gaps de imagem 6/12\,meses, banda $\pm 2$).
+			O contraste primary de alteração temporal é \textbf{\code{t1\_deltas} vs \code{t1\_only}}; concatenação wide/\code{abs} entra só como âncora metodológica, não como encoding de mudança.
+			Protocolo fixo: SVM, selecção \code{l1\_stable}, sem ComBat, nested CV; métrica AUC patient-level.
+			Na coorte claim \code{48m\_12m}, texture e volume ganham com deltas; shape permanece teto estático; late fusion com braço texture-$\Delta$ supera o teto shape baseline.
+		\end{abstract}
+		
+		\begin{keyword}
+			Longitudinal MRI \sep hippocampus \sep Mild Cognitive Impairment \sep Radiomics \sep Machine Learning \sep Nested cross-validation \sep Late fusion
+		\end{keyword}
+		
+	\end{frontmatter}
+	
+	% =============================================================================
+	\section{Pergunta principal}
+	\label{sec:pergunta}
+	
+	No hipocampo, para sMCI$\rightarrow$pMCI, há alteração útil no tempo?
+	Quantifica-se o ganho de \code{t1\_deltas} face a \code{t1\_only} em atributos unimodais e em fusão late multimodal, e como isso varia com a janela clínica e o intervalo entre imagens.
+	
+	% =============================================================================
+	\section{Definição e seleção populacional}
+	\label{sec:populacao}
+	
+	
+	Os dados utilizados neste estudo foram obtidos da base de dados da Alzheimer's Disease Neuroimaging Initiative (ADNI)~\cite{petersen-2009,jr-2008}.
+	A ADNI foi lançada em 2003 como parceria público privada para avaliar marcadores clínicos, genéticos, bioquímicos e de neuroimagem longitudinais da doença de Alzheimer (AD).
+	Este estudo utilizou RM estrutural T1-ponderada adquirida com sequências tridimensionais Magnetization-Prepared Rapid Gradient-Echo (MP-RAGE) das fases ADNI-1, ADNI-2 e ADNI-GO.
+	As imagens foram recolhidas em centros nos Estados Unidos e no Canadá, em scanners de 1.5~T e 3~T da GE Healthcare, Philips Medical Systems e Siemens Medical Solutions conforme ilustra a Tabela~\ref{tab:adni_study}.
+	
+	\begin{table}[htbp]
+		\centering
+		\footnotesize
+		\caption{Imagens T1w MP-RAGE por fase ADNI (união das quatro coortes; imagens únicas por \code{ID\_IMG}).}
+		\label{tab:adni_study}
+		\resizebox{\textwidth}{!}{%
+			\begin{tabular}{lrrcccc}
+				\toprule
+				Fase ADNI & Imagens & Pacientes & Sexo (M/F) & Idade (anos) & Campo (1.5T / 3T) & Fabricante (n) \\
+				\midrule
+				ADNI~1  & 1349 & 370 & 203/167 & $76.14\pm6.91$ & 1261 / 88  & GE (768); Siemens (579); Philips (2) \\
+				ADNI~GO & 51   & 27  & 16/11   & $70.61\pm6.76$ & 0 / 51     & Siemens (44); Philips (7) \\
+				ADNI~2  & 638  & 190 & 101/89  & $73.63\pm7.02$ & 0 / 638    & Siemens (483); Philips (155) \\
+				\midrule
+				Total   & 2038 & 560 & 304/256 & $75.21\pm7.07$ & 1261 / 777 & GE (768); Siemens (1106); Philips (164) \\
+				\bottomrule
+			\end{tabular}%
+		}
+		\begin{flushleft}
+			\footnotesize
+			\textit{Nota:} Contagens sem duplicar a mesma imagem entre coortes (overlap janela$\times$gap).
+			Idade = média $\pm$ DP no momento da aquisição.
+			Sexo por paciente único dentro de cada fase (um paciente pode contribuir imagens a mais do que uma fase; $370+27+190=587>560$).
+			Modelos de equipamento (n imagens): 
+			ADNI~1 --- SIGNA EXCITE (445), Symphony (233), SIGNA HDx (196), Sonata (146), GENESIS\_SIGNA (123), Avanto (100), Trio (34), SymphonyTim (25), Allegra (17), SonataVision (13), TrioTim (11);
+			ADNI~GO --- Verio (25), TrioTim (18), Intera (4), Achieva (3), Skyra (1);
+			ADNI~2 --- TrioTim (297), Achieva (95), Verio (95), Skyra (90), Intera (38), Ingenia (17).
+		\end{flushleft}
+	\end{table}	
+	
+	Originalmente, os diagnósticos dos pacientes estão relacionados a primeira visita (baseline), ou seja, embora o paciente ao longo do tempo possa progredir o diagnóstico para as fases mais avançadas da forma continua da doença de alzheimer, o diagnóstico é relacionado ao dia da primeira visita. Para resolver esse problema, cada exame de RM é alinhado ao diagnóstico clínico e às escalas cognitivas/funcionais (ADAS, CDR, MMSE, FAQ) por correspondência temporal, exigindo distância absoluta $\leq 3$ meses entre a data de aquisição da imagem e a data do diagnóstico, uma vez que a data de diagnóstico é diferente da data de aquisição da imagem, de modo que o rótulo clínico corresponda de maneira mais próxima possível a data de aquisição da imagem. Assim, todas as imagens do dataset passar a ter rótulos clinicos, que podem ser diferentes para o mesmo paciente.
+	Em seguida, são removidos registos com sexo inválido, demência diferente da doença de alzheimer, diagnóstico ou datas em falta, e pacientes com regressão diagnóstica nas fases contínuas da doença de alzheimer, ou seja, pacientes que previamente foram diagnosticados como MCI que regrediram para CN ou pacientes diagnosticados previamente com AD que regrediram para MCI ou CN.
+	Posteriormente, as imagens de repetição cuja aquisição foi feita no mesmo dia da imagem original foram excluídas.
+	Por fim, para identificar possiveis imagens defeituosas, métricas de qualidade de imagem (IQMs) foram calculadas por meio do método \code{MRQy}~\citep{sadri-2020}.
+	Candidatos a outliers foram encontrados com as métricas \code{VRX}, \code{COL}, \code{NUM}, \code{CPP}, \code{PSNR}, \code{SNR7}, \code{CNR}, \code{CVP}, \code{CJV}, \code{EFC} e \code{FBER}.
+	Para cada métrica, outliers foram definidos pelas fences de Tukey~\citep{tukey-1977},
+	\begin{equation}
+		\left[Q_1 - \alpha\,\mathrm{IQR},\, Q_3 + \alpha\,\mathrm{IQR}\right],
+		\qquad \mathrm{IQR} = Q_3 - Q_1,
+		\label{eq:tukey}
+	\end{equation}
+	com $\alpha = 1.5$ e direcionalidade específica da métrica (baixo-mau, alto-mau ou bilateral).
+	Cada volume recebeu um score de não conformidade igual ao número de IQMs sinalizadas; volumes com score $\geq 3$ entraram na shortlist ($69/15{,}014$; $0.46\%$).
+	Os quartis e os limites de IQR foram estimados uma única vez a partir do pool completo de 15{,}014 volumes, sem rótulos diagnósticos, antes da construção das coortes e da validação cruzada; não foram recalculados nos folds externos.
+	Este screening ao nível do conjunto de dados foi, portanto, distinto da modelagem ajustada por fold.
+	Todas as imagens identificadas como outlier foram inspeccionados visualmente no ITK-SNAP~\citep{yushkevich-2006} (v4.2.0).
+	Após esse processo 13 foram removidas do dataset final por apresentarem defeitos oriundos do processo de aquisição das imagens, como cropp ou obstrução da região do campo de visão e faixas de ruído.
+	
+	
+	\subsection{Formação dos conjuntos}
+	
+	Para cada paciente, a data do primeiro MRI define a imagem de baseline $i_1$ no tempo $t_0$.
+	O conjunto longitudinal contém \textbf{exactamente três} imagens preditoras
+	\begin{equation}
+		i=\{i_1,\,i_2,\,i_3\},
+		\quad t(i_1)<t(i_2)<t(i_3),
+	\end{equation}
+	seleccionadas pelo protocolo \code{forward\_band\_pm2}: $i_1$ é o baseline (primeira imagem do pool preditor em $t_0$); $i_2$ é a \textbf{próxima} aquisição cujo intervalo face a $i_1$ cai na banda nominal; $i_3$ é a \textbf{próxima} após $i_2$ com gap na \textbf{mesma} banda.
+	Não se trata de ``três imagens \emph{depois} do baseline'' (o que seriam quatro visitas): são três no total --- baseline + duas seguintes na banda.
+	As bandas adoptadas ($\pm 2$ meses) são disjuntas e evitam a ambiguidade do bordo aos 9 meses que surgiria com $\pm 3$ fechado:
+	
+	\begin{table}[htbp]
+		\centering
+		\caption{Bandas nominais de intervalo entre aquisições.}
+		\label{tab:bandas}
+		\begin{tabular}{ll}
+			\toprule
+			Gap nominal & Banda (meses) \\
+			\midrule
+			6\,m  & $[4,\ 8]$ \\
+			12\,m & $[10,\ 14]$ \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
+	A janela de observação clínica inicia-se em $t_0$ e é de \textbf{36 meses} ou \textbf{48 meses}.
+	
+	Definiram-se quatro grupos: CN, sMCI, pMCI e AD.
+	\begin{itemize}
+		\item \textbf{CN:} todos os diagnósticos na janela são CN.
+		\item \textbf{sMCI:} ausência de AD até $t_{\mathrm{end}}=t_0+$ janela (36 ou 48 meses); existe pelo menos uma visita com data $\ge t_{\mathrm{end}}$; a \textbf{primeira} dessas visitas pós-janela deve permanecer \textbf{MCI}.
+		A definição não implica que o paciente nunca converterá; exige apenas ausência de conversão no horizonte pré-especificado, com confirmação na primeira avaliação após o fim da janela.
+		\item \textbf{pMCI:} baseline MCI e, dentro da janela, pelo menos um diagnóstico de AD.
+		Composições admitidas (respeitando janela e gap de imagem): $\{\mathrm{MCI},\mathrm{MCI},\mathrm{MCI}\}$ com $\ge 1$ AD na janela, ou $\{\mathrm{MCI},\mathrm{MCI},\mathrm{AD}\}$ tratando esse AD como rótulo de conversão no conjunto.
+		Não se admite $\{\mathrm{MCI},\mathrm{AD},\mathrm{AD}\}$: apenas o primeiro AD classifica o grupo, e um segundo AD afastaria o último MCI do limite de 12 meses, com alterações estruturais adicionais.
+		\item \textbf{AD:} todos os diagnósticos na janela são AD.
+	\end{itemize}
+	
+	\subsection{Confirmação sMCI}
+	\label{subsec:confirmacao-smci}
+	
+	O rótulo sMCI/pMCI é decidido em \code{classify\_patient} \textbf{antes} da selecção das imagens preditoras (rótulo clínico, independente da banda $\pm 2$):
+	\begin{enumerate}
+		\item Sem AD até $t_{\mathrm{end}}$.
+		\item Existe visita com \code{MRI\_DATE} $\ge t_{\mathrm{end}}$.
+		\item A primeira dessas visitas é MCI $\rightarrow$ \textbf{sMCI}.
+		\item Se essa primeira visita pós-janela for AD (ou outro diagnóstico não-MCI) $\rightarrow$ \textbf{excluído} (\code{desfecho\_intervalado}).
+		\item Sem visita pós-janela $\rightarrow$ \textbf{excluído} (\code{sem\_confirmacao\_pos\_janela}).
+		\item Se a primeira AD ocorre \textbf{dentro} da janela $\rightarrow$ \textbf{pMCI} (não se trata de ``sMCI falhou'').
+	\end{enumerate}
+	
+	A confirmação \textbf{não} usa o range $\pm 2$ meses.
+	A banda $\pm 2$ aplica-se apenas à escolha das três imagens preditoras (para sMCI: no intervalo até $t_{\mathrm{end}}$, com DIAG MCI).
+	A visita de confirmação pode situar-se fora desse espaçamento entre aquisições.
+	
+	\subsection{Coortes de estudo}
+	\label{subsec:coortes}
+	
+	\begin{table}[htbp]
+		\centering
+		\caption{Contagens sMCI/pMCI em conjuntos (protocolo actual, banda $\pm 2$).}
+		\label{tab:coortes}
+		\begin{tabular}{lll}
+			\toprule
+			Janela & Gap imagens & sMCI / pMCI \\
+			\midrule
+			36\,m & $6\pm 2\ [4,8]$   & 125 / 106 \\
+			36\,m & $12\pm 2\ [10,14]$ & 121 / 33 \\
+			48\,m & $6\pm 2\ [4,8]$   & 73 / 120 \\
+			48\,m & $12\pm 2\ [10,14]$ & \textbf{72 / 48} \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
+	A Tabela~\ref{tab:clin_cohorts} resume demografia e scores cognitivos/funcionais nas três visitas preditoras ($t_0$, $t_1$, $t_2$) para sMCI e pMCI nas quatro coortes.
+	CN/AD e CDR global omitidos (continuum de sanidade / constante 0{,}50 no baseline MCI).
+	Valores contínuos: média $\pm$ desvio-padrão; $n$ só na coluna pacientes.
+	
+	\begin{table}[htbp]
+		\centering
+		\footnotesize
+		\caption{Características clínicas sMCI/pMCI nas quatro coortes (banda $\pm 2$, soft pMCI activo).}
+		\label{tab:clin_cohorts}
+		\resizebox{\textwidth}{!}{%
+			\begin{tabular}{lllrrccccc}
+				\toprule
+				Coorte & Grupo & Slot & $n$ & Sexo M/F & Idade & MMSE & ADAS & CDR-SB & FAQ \\
+				\midrule
+				\multirow{6}{*}{\code{36m\_6m}}
+				& \multirow{3}{*}{sMCI}
+				& $t_0$ & 125 & 80/45 & $72.63\pm7.18$ & $27.78\pm1.75$ & $9.05\pm3.61$ & $1.22\pm0.64$ & $1.93\pm3.09$ \\
+				& & $t_1$ & 125 & 80/45 & $73.16\pm7.16$ & $28.04\pm1.77$ & $8.79\pm3.64$ & $1.23\pm0.77$ & $2.22\pm3.33$ \\
+				& & $t_2$ & 125 & 80/45 & $73.67\pm7.19$ & $27.99\pm1.88$ & $8.47\pm4.11$ & $1.36\pm0.95$ & $2.53\pm3.56$ \\
+				\cmidrule{2-10}
+				& \multirow{3}{*}{pMCI}
+				& $t_0$ & 106 & 56/50 & $74.39\pm7.33$ & $26.64\pm1.74$ & $13.54\pm4.49$ & $1.94\pm1.00$ & $5.34\pm4.42$ \\
+				& & $t_1$ & 106 & 56/50 & $74.90\pm7.26$ & $25.32\pm2.65$ & $14.84\pm5.00$ & $2.44\pm1.01$ & $6.79\pm4.75$ \\
+				& & $t_2$ & 106 & 56/50 & $75.44\pm7.30$ & $24.68\pm2.70$ & $15.75\pm5.83$ & $3.19\pm1.41$ & $8.95\pm5.66$ \\
+				\midrule
+				\multirow{6}{*}{\code{36m\_12m}}
+				& \multirow{3}{*}{sMCI}
+				& $t_0$ & 121 & 80/41 & $73.15\pm7.06$ & $27.80\pm1.74$ & $9.05\pm3.60$ & $1.21\pm0.63$ & $1.85\pm3.01$ \\
+				& & $t_1$ & 121 & 80/41 & $74.21\pm7.07$ & $28.02\pm1.87$ & $8.62\pm4.20$ & $1.33\pm0.88$ & $2.58\pm3.48$ \\
+				& & $t_2$ & 121 & 80/41 & $75.22\pm7.05$ & $27.85\pm2.17$ & $9.08\pm4.54$ & $1.51\pm1.20$ & $2.70\pm3.65$ \\
+				\cmidrule{2-10}
+				& \multirow{3}{*}{pMCI}
+				& $t_0$ & 33 & 22/11 & $74.30\pm7.35$ & $27.00\pm1.62$ & $12.30\pm2.85$ & $2.09\pm1.17$ & $5.45\pm4.90$ \\
+				& & $t_1$ & 33 & 22/11 & $75.33\pm7.34$ & $25.88\pm2.13$ & $13.31\pm4.07$ & $2.67\pm1.19$ & $7.55\pm4.94$ \\
+				& & $t_2$ & 33 & 22/11 & $76.39\pm7.34$ & $23.33\pm2.91$ & $17.24\pm4.78$ & $4.45\pm1.40$ & $12.76\pm6.02$ \\
+				\midrule
+				\multirow{6}{*}{\code{48m\_6m}}
+				& \multirow{3}{*}{sMCI}
+				& $t_0$ & 73 & 48/25 & $72.29\pm6.80$ & $27.89\pm1.65$ & $8.80\pm3.53$ & $1.11\pm0.61$ & $1.88\pm3.32$ \\
+				& & $t_1$ & 73 & 48/25 & $72.84\pm6.74$ & $28.30\pm1.40$ & $8.33\pm3.40$ & $1.09\pm0.71$ & $2.07\pm3.40$ \\
+				& & $t_2$ & 73 & 48/25 & $73.30\pm6.81$ & $28.16\pm1.84$ & $7.83\pm3.49$ & $1.16\pm0.95$ & $2.30\pm3.36$ \\
+				\cmidrule{2-10}
+				& \multirow{3}{*}{pMCI}
+				& $t_0$ & 120 & 62/58 & $74.35\pm7.20$ & $26.65\pm1.71$ & $13.20\pm4.41$ & $1.89\pm0.98$ & $5.17\pm4.46$ \\
+				& & $t_1$ & 120 & 62/58 & $74.85\pm7.15$ & $25.43\pm2.60$ & $14.44\pm4.99$ & $2.37\pm1.00$ & $6.46\pm4.81$ \\
+				& & $t_2$ & 120 & 62/58 & $75.40\pm7.18$ & $24.89\pm2.65$ & $15.38\pm5.65$ & $3.04\pm1.43$ & $8.53\pm5.81$ \\
+				\midrule
+				\multirow{6}{*}{\textbf{\code{48m\_12m}}}
+				& \multirow{3}{*}{sMCI}
+				& $t_0$ & 72 & 49/23 & $72.88\pm6.70$ & $28.00\pm1.63$ & $8.71\pm3.40$ & $1.07\pm0.59$ & $1.85\pm3.30$ \\
+				& & $t_1$ & 72 & 49/23 & $73.93\pm6.73$ & $28.32\pm1.69$ & $8.07\pm3.65$ & $1.17\pm0.89$ & $2.43\pm3.37$ \\
+				& & $t_2$ & 72 & 49/23 & $74.96\pm6.68$ & $28.29\pm1.86$ & $8.65\pm3.59$ & $1.29\pm1.03$ & $2.26\pm3.26$ \\
+				\cmidrule{2-10}
+				& \multirow{3}{*}{pMCI}
+				& $t_0$ & 48 & 28/20 & $73.98\pm6.83$ & $26.94\pm1.56$ & $12.18\pm2.95$ & $1.93\pm1.10$ & $4.83\pm4.88$ \\
+				& & $t_1$ & 48 & 28/20 & $75.00\pm6.83$ & $25.90\pm1.95$ & $13.24\pm3.79$ & $2.45\pm1.18$ & $6.77\pm5.36$ \\
+				& & $t_2$ & 48 & 28/20 & $76.06\pm6.86$ & $23.90\pm2.81$ & $16.44\pm4.81$ & $3.76\pm1.61$ & $10.56\pm6.51$ \\
+				\bottomrule
+			\end{tabular}%
+		}
+		\begin{flushleft}
+			\footnotesize
+			\textit{Nota:} Soft pMCI (último slot = primeiro AD): 46 em \code{36m\_6m}/\code{48m\_6m}; 33 em \code{36m\_12m}/\code{48m\_12m}.
+			MMSE: Mini-Mental State Examination; ADAS: Alzheimer's Disease Assessment Scale; CDR-SB: Clinical Dementia Rating -- Sum of Boxes; FAQ: Functional Activities Questionnaire.
+			Coorte claim = \code{48m\_12m}.
+		\end{flushleft}
+	\end{table}
+	
+	Também se exploraram as bases \textbf{AIBL} e \textbf{OASIS} sob a mesma lógica de elegibilidade, mas sem número suficiente de conjuntos longitudinais com três imagens.
+	
+	A tarefa principal é a classificação \textbf{sMCI vs pMCI}.
+	As quatro coortes \code{36m\_6m}, \code{36m\_12m}, \code{48m\_6m}, \code{48m\_12m} cobrem o gradiente janela $\times$ gap.
+	A coorte claim para crowning longitudinal e multimodal é \textbf{\code{48m\_12m}} (janela longa + gap 12\,m), onde vol/texture mostram maior agregação de \code{t1\_deltas} face a \code{t1\_only}.
+	Demografia e contrastes metodológicos wide/\code{abs} usam sobretudo \code{36m\_6m} (maior $n$).
+	
+	\paragraph{Janela 36 vs 48 no mesmo gap (leitura de \code{t1\_only} / baseline).}
+	Não se deve esperar AUC idêntica em \code{36m\_6m} vs \code{48m\_6m} (nem em \code{36m\_12m} vs \code{48m\_12m}) só porque o encoding usa a visita baseline.
+	Na \textbf{intersecção} de pacientes presentes nas duas coortes com o mesmo espaçamento nominal, o \code{ID\_IMG} de $t_0$ coincide (e o triplo $t_0$--$t_1$--$t_2$ também), com o mesmo rótulo de grupo.
+	Contudo as \textbf{populações não são as mesmas}: a janela clínica altera a elegibilidade (quem entra ou sai).
+	Exemplos no protocolo actual (banda $\pm 2$, selecção forward): sMCI 125 vs 73 (gap 6\,m) e 121 vs 72 (gap 12\,m), com dezenas de IDs exclusivos de uma das janelas.
+	Logo diferem $n$, balanço sMCI/pMCI, partições de CV e AUC --- inclusive em \code{t1\_only} --- mesmo com overlap de baselines.
+	
+	% =============================================================================
+	\section{Pré-processamento e atributos}
+	\label{sec:atributos}
+	
+	Após tratamento das imagens, alinhamento temporal e filtro de ROI hipocampal, extraem-se quatro famílias de atributos por visita:
+	\begin{itemize}
+		\item volume (frações teciduais normalizadas + \code{MeshVolume});
+		\item shape (descritores geométricos; \code{MeshVolume} ficou no bloco vol);
+		\item texture (GLCM canónico);
+		\item deslocamento/DVF.
+	\end{itemize}
+	
+	Representações temporais:
+	
+	\begin{table}[htbp]
+		\centering
+		\caption{Representações temporais (nomenclatura CLI).}
+		\label{tab:reps}
+		\begin{tabular}{lll}
+			\toprule
+			CLI & Papel & Definição \\
+			\midrule
+			\code{t1\_only}    & baseline (claim B) & só atributos de $t_0$ \\
+			\code{t1\_deltas}  & longitudinal primary & $t_0$ + deltas absolutos (D21/D31/D32) \\
+			\code{wide}/\code{abs} & âncora metodológica & concatenação T1+T2+T3 (níveis, não mudança) \\
+			\code{t1\_deltas\_rel} & sensibilidade & deltas relativos; não crownear \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
+	\paragraph{Dimensionalidade de atributos do hipocampo L/R.}
+	
+	\begin{table}[htbp]
+		\centering
+		\caption{Número de atributos por modalidade e encoding (L+R; allowlist actual).}
+		\label{tab:dims}
+		\begin{tabular}{llrrr}
+			\toprule
+			Modalidade & Sufixos (por lado) & \code{t1\_only} & \code{wide} & \code{t1\_deltas} \\
+			\midrule
+			vol     & gm/wm/csf\_norm + MeshVolume (4) & 8  & 24  & 32 \\
+			shape   & 5 shape & 10 & 30  & 40 \\
+			texture & 4 GLCM & 8  & 24  & 32 \\
+			disp    & 4 (mag\_mean, strain\_fro\_*, logjac\_var) & 8 & 24 & 32 \\
+			all     & soma early-fusion & 34 & 102 & 136 \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
+	A modalidade \code{all} (early-fusion de todos os blocos) entra nas ablações unimodais de referência, mas \textbf{não} no contraste estatístico claim B: esse contraste compara encodings temporais \emph{dentro} de cada família (vol/shape/texture/disp).
+	
+	Protocolo de modelagem fixo nas ablações oficiais: SVM, selecção \code{l1\_stable} (corte de frequência 70\%), sem ComBat, nested CV com 10 repetições, métrica primária \textbf{AUC patient-level} (média de scores OOF por paciente).
+	AUCs reportadas como média $\pm$ desvio padrão (\code{auc\_patient\_mean} $\pm$ \code{auc\_patient\_std}), com 3 casas decimais.
+	
+	% =============================================================================
+	\section{Principais resultados}
+	\label{sec:resultados}
+	
+	Estratégia: (i) protocolo fixo \textbf{SVM + \code{l1\_stable} + sem ComBat}; (ii) unimodal nas quatro coortes; (iii) claim longitudinal e multimodal em \code{48m\_12m}; (iv) late fusion com braços só em \{\code{t1\_only}, \code{t1\_deltas}\} (sem escolher encoding pós-hoc a partir do melhor unimodal).
+	RF/MLP e ComBat ficam na sensibilidade unimodal.
+	
+	\subsection{Ablação unimodal: \texorpdfstring{\code{t1\_deltas}}{t1\_deltas} vs \texorpdfstring{\code{t1\_only}}{t1\_only}}
+	\label{subsec:unimodal}
+	
+	\paragraph{Contraste primary.}
+	Pergunta de alteração temporal = $\Delta\mathrm{AUC} = \mathrm{AUC}(\code{t1\_deltas}) - \mathrm{AUC}(\code{t1\_only})$.
+	\code{wide}/\code{abs} pode ter AUC alta (níveis multi-visita), mas \textbf{não} responde ``há mudança útil?''; reporta-se à parte.
+	
+	\paragraph{Coorte claim \code{48m\_12m}.}
+	
+	\begin{table}[htbp]
+		\centering
+		\caption{AUC patient-level em \code{48m\_12m} (svm, nocombat).}
+		\label{tab:48m12_uni}
+		\begin{tabular}{lrrr}
+			\toprule
+			Mod & \code{t1\_only} & \code{wide} & \code{t1\_deltas} \\
+			\midrule
+			shape   & \textbf{0.761$\pm$0.043} & \textbf{0.783$\pm$0.041} & 0.736$\pm$0.046 \\
+			vol     & 0.633$\pm$0.053 & 0.671$\pm$0.049 & \textbf{0.661$\pm$0.051} \\
+			texture & 0.695$\pm$0.051 & 0.761$\pm$0.047 & \textbf{0.753$\pm$0.047} \\
+			disp    & 0.486$\pm$0.053 & 0.525$\pm$0.052 & 0.504$\pm$0.053 \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
+	\begin{table}[htbp]
+		\centering
+		\caption{Ganho longitudinal primary na coorte claim ($\Delta = \code{t1\_deltas} - \code{t1\_only}$).}
+		\label{tab:delta_long}
+		\begin{tabular}{lrrr}
+			\toprule
+			Mod & \code{t1\_only} & \code{t1\_deltas} & $\Delta$ \\
+			\midrule
+			shape   & \textbf{0.761$\pm$0.043} & 0.736$\pm$0.046 & $-0.024$ \\
+			vol     & 0.633$\pm$0.053 & \textbf{0.661$\pm$0.051} & $+0.029$ \\
+			texture & 0.695$\pm$0.051 & \textbf{0.753$\pm$0.047} & $+0.057$ \\
+			disp    & 0.486$\pm$0.053 & 0.504$\pm$0.053 & $+0.018$ \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
+	\paragraph{Gradiente janela $\times$ gap ($\Delta = \code{t1\_deltas} - \code{t1\_only}$).}
+	
+	\begin{table}[htbp]
+		\centering
+		\caption{$\Delta$AUC patient-level por coorte (svm, nocombat).}
+		\label{tab:gradient}
+		\begin{tabular}{lrrrr}
+			\toprule
+			Mod & \code{36m\_6m} & \code{36m\_12m} & \code{48m\_6m} & \code{48m\_12m} \\
+			\midrule
+			vol     & $+0.022$ & $-0.022$ & $+0.035$ & $+0.029$ \\
+			shape   & $+0.000$ & $-0.030$ & $-0.011$ & $-0.024$ \\
+			texture & $+0.032$ & $+0.027$ & $+0.047$ & $+0.057$ \\
+			disp    & $-0.038$ & $-0.121$ & $-0.035$ & $+0.018$ \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
+	\paragraph{Resumo unimodal.}
+	\begin{itemize}
+		\item \textbf{Texture:} ganho de deltas em \emph{todas} as quatro coortes; máximo em \code{48m\_12m} ($+0.057$).
+		\item \textbf{Vol:} ganho em três coortes; excepção \code{36m\_12m} ($-0.022$).
+		\item \textbf{Shape:} teto estático --- baseline $\ge$ deltas em quase todo o gradiente; em \code{48m\_12m} o wide ainda sobe um pouco (níveis), mas deltas não batem $t_0$.
+		\item \textbf{Disp:} fraco e instável; não crownear.
+		\item \code{t1\_deltas\_rel}: sensibilidade; em texture pode igualar/superar deltas absolutos, mas em vol/disp costuma colapsar --- primary permanece \code{t1\_deltas}.
+	\end{itemize}
+	
+	\paragraph{Top 10 por modalidade (coortes $\times$ \{\code{t1\_only}, \code{t1\_deltas}, \code{wide}\}).}
+	
+	\begin{table}[htbp]
+		\centering
+		\caption{Top-10 unimodal por modalidade (svm, nocombat).}
+		\label{tab:top10_uni}
+		\resizebox{\textwidth}{!}{%
+			\begin{tabular}{cllll}
+				\toprule
+				\# & shape & vol & texture & disp \\
+				\midrule
+				1 & \textbf{0.815$\pm$0.034} \code{48m\_6m}/\code{wide}
+				& \textbf{0.761$\pm$0.032} \code{36m\_6m}/\code{wide}
+				& \textbf{0.779$\pm$0.033} \code{48m\_6m}/\code{t1\_deltas}
+				& \textbf{0.664$\pm$0.035} \code{36m\_6m}/\code{t1\_only} \\
+				2 & 0.804$\pm$0.029 \code{36m\_6m}/\code{wide}
+				& 0.760$\pm$0.032 \code{36m\_6m}/\code{t1\_deltas}
+				& 0.772$\pm$0.034 \code{48m\_6m}/\code{wide}
+				& 0.661$\pm$0.035 \code{36m\_6m}/\code{wide} \\
+				3 & 0.802$\pm$0.034 \code{48m\_6m}/\code{t1\_only}
+				& 0.753$\pm$0.035 \code{48m\_6m}/\code{t1\_deltas}
+				& 0.772$\pm$0.047 \code{36m\_12m}/\code{wide}
+				& 0.637$\pm$0.042 \code{48m\_6m}/\code{t1\_only} \\
+				4 & 0.791$\pm$0.035 \code{48m\_6m}/\code{t1\_deltas}
+				& 0.753$\pm$0.037 \code{48m\_6m}/\code{wide}
+				& 0.761$\pm$0.047 \code{48m\_12m}/\code{wide}
+				& 0.628$\pm$0.041 \code{48m\_6m}/\code{wide} \\
+				5 & 0.789$\pm$0.030 \code{36m\_6m}/\code{t1\_deltas}
+				& 0.738$\pm$0.033 \code{36m\_6m}/\code{t1\_only}
+				& 0.760$\pm$0.048 \code{36m\_12m}/\code{t1\_deltas}
+				& 0.626$\pm$0.036 \code{36m\_6m}/\code{t1\_deltas} \\
+				6 & 0.788$\pm$0.030 \code{36m\_6m}/\code{t1\_only}
+				& 0.719$\pm$0.039 \code{48m\_6m}/\code{t1\_only}
+				& 0.759$\pm$0.032 \code{36m\_6m}/\code{wide}
+				& 0.608$\pm$0.051 \code{36m\_12m}/\code{t1\_only} \\
+				7 & 0.783$\pm$0.041 \code{48m\_12m}/\code{wide}
+				& 0.707$\pm$0.048 \code{36m\_12m}/\code{t1\_only}
+				& 0.754$\pm$0.032 \code{36m\_6m}/\code{t1\_deltas}
+				& 0.602$\pm$0.042 \code{48m\_6m}/\code{t1\_deltas} \\
+				8 & 0.761$\pm$0.043 \code{48m\_12m}/\code{t1\_only}
+				& 0.699$\pm$0.052 \code{36m\_12m}/\code{wide}
+				& 0.753$\pm$0.047 \code{48m\_12m}/\code{t1\_deltas}
+				& 0.577$\pm$0.058 \code{36m\_12m}/\code{wide} \\
+				9 & 0.754$\pm$0.043 \code{36m\_12m}/\code{wide}
+				& 0.685$\pm$0.055 \code{36m\_12m}/\code{t1\_deltas}
+				& 0.733$\pm$0.049 \code{36m\_12m}/\code{t1\_only}
+				& 0.525$\pm$0.052 \code{48m\_12m}/\code{wide} \\
+				10 & 0.741$\pm$0.045 \code{36m\_12m}/\code{t1\_only}
+				& 0.671$\pm$0.049 \code{48m\_12m}/\code{wide}
+				& 0.732$\pm$0.037 \code{48m\_6m}/\code{t1\_only}
+				& 0.504$\pm$0.053 \code{48m\_12m}/\code{t1\_deltas} \\
+				\bottomrule
+			\end{tabular}%
+		}
+	\end{table}
+	
+	\paragraph{Leitura.}
+	Hierarquia prática no melhor de cada bloco: shape $\gg$ texture $\gtrsim$ vol $\gg$ disp.
+	Para a pergunta temporal, o sinal útil concentra-se em \textbf{texture} (e vol em janelas/gaps favoráveis), não em shape.
+	
+	\subsection{Ablação multimodal: baseline vs.\ longitudinal em \texorpdfstring{\code{48m\_12m}}{48m\_12m}}
+	\label{subsec:multimodal}
+	
+	Late fusion: média de scores OOF por modalidade; braços só \code{t1\_only} ou \code{t1\_deltas}.
+	Teto baseline shape = \textbf{0.761$\pm$0.043}.
+	
+	\paragraph{Top 10 união só baseline.}
+	
+	\begin{table}[htbp]
+		\centering
+		\caption{Top-10 late fusion só \code{t1\_only} em \code{48m\_12m}.}
+		\label{tab:late_base}
+		\begin{tabular}{clrr}
+			\toprule
+			\# & Spec (todos $t_1$) & AUC & vs shape $t_1$ \\
+			\midrule
+			1 & vol $\cup$ shape $\cup$ texture & \textbf{0.773$\pm$0.043} & $+0.012$ \\
+			2 & vol $\cup$ shape $\cup$ texture $\cup$ disp & 0.770$\pm$0.043 & $+0.009$ \\
+			3 & shape $\cup$ texture & 0.764$\pm$0.044 & $+0.003$ \\
+			4 & shape $\cup$ texture $\cup$ disp & 0.762$\pm$0.045 & $+0.001$ \\
+			5 & vol $\cup$ shape & 0.757$\pm$0.044 & $-0.003$ \\
+			6 & shape $\cup$ disp & 0.757$\pm$0.044 & $-0.004$ \\
+			7 & vol $\cup$ shape $\cup$ disp & 0.750$\pm$0.044 & $-0.011$ \\
+			8 & vol $\cup$ texture & 0.719$\pm$0.048 & $-0.042$ \\
+			9 & vol $\cup$ texture $\cup$ disp & 0.714$\pm$0.047 & $-0.047$ \\
+			10 & texture $\cup$ disp & 0.686$\pm$0.051 & $-0.075$ \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
+	\paragraph{Top 10 com braço longitudinal.}
+	
+	\begin{table}[htbp]
+		\centering
+		\caption{Top-10 late fusion com pelo menos um braço \code{t1\_deltas} em \code{48m\_12m}.}
+		\label{tab:late_long}
+		\resizebox{\textwidth}{!}{%
+			\begin{tabular}{clrl}
+				\toprule
+				\# & Spec & AUC & Nota \\
+				\midrule
+				1 & shape $t_1$ $\cup$ tex $\Delta$ $\cup$ disp $\Delta$ & \textbf{0.803$\pm$0.039} & exploratório (mono disp fraco) \\
+				2 & \textbf{shape $t_1$ $\cup$ tex $\Delta$} & \textbf{0.801$\pm$0.040} & \textbf{âncora pré-especificada} \\
+				3 & shape $t_1$ $\cup$ tex $\Delta$ $\cup$ disp $t_1$ & 0.801$\pm$0.040 & \\
+				4 & shape $t_1$ $\cup$ vol $\Delta$ $\cup$ tex $\Delta$ & 0.799$\pm$0.040 & \\
+				5 & shape $t_1$ $\cup$ vol $t_1$ $\cup$ tex $\Delta$ & 0.798$\pm$0.038 & \\
+				6 & shape $t_1$ $\cup$ vol $\Delta$ $\cup$ tex $\Delta$ $\cup$ disp $t_1$ & 0.798$\pm$0.040 & \\
+				7 & shape $t_1$ $\cup$ vol $\Delta$ $\cup$ tex $\Delta$ $\cup$ disp $\Delta$ & 0.797$\pm$0.041 & \\
+				8 & shape $t_1$ $\cup$ vol $t_1$ $\cup$ tex $\Delta$ $\cup$ disp $\Delta$ & 0.794$\pm$0.041 & \\
+				9 & shape $t_1$ $\cup$ vol $t_1$ $\cup$ tex $\Delta$ $\cup$ disp $t_1$ & 0.794$\pm$0.040 & \\
+				10 & shape $\Delta$ $\cup$ tex $\Delta$ $\cup$ disp $\Delta$ & 0.786$\pm$0.040 & sem teto shape $t_1$ \\
+				\bottomrule
+			\end{tabular}%
+		}
+	\end{table}
+	
+	Late só-baseline fica $\approx$ teto shape ($+0.01$).
+	Com texture-$\Delta$, sobe para $\sim$0.80 --- ganho multimodal alinhado ao sinal unimodal de alteração.
+	
+	\subsubsection{Early fusion vs.\ late fusion em \texorpdfstring{\code{48m\_12m}}{48m\_12m}}
+	\label{subsubsec:early-late}
+	
+	\begin{table}[htbp]
+		\centering
+		\caption{Early vs late nos specs pré-especificados (claim).}
+		\label{tab:early_late}
+		\resizebox{\textwidth}{!}{%
+			\begin{tabular}{lrrr}
+				\toprule
+				Atributos & Early & Late & $\Delta$ (late$-$early) \\
+				\midrule
+				\textbf{shape $t_1$ $\cup$ tex $\Delta$ (âncora)} & \textbf{0.772$\pm$0.043} & \textbf{0.801$\pm$0.040} & \textbf{$+0.029$} \\
+				shape $t_1$ $\cup$ vol $\Delta$ $\cup$ tex $\Delta$ & 0.755$\pm$0.044 & 0.799$\pm$0.040 & $+0.044$ \\
+				shape $\Delta$ $\cup$ vol $\Delta$ $\cup$ tex $\Delta$ & 0.760$\pm$0.043 & 0.785$\pm$0.041 & $+0.025$ \\
+				shape $\Delta$ $\cup$ tex $\Delta$ & 0.750$\pm$0.044 & 0.785$\pm$0.042 & $+0.035$ \\
+				shape $t_1$ $\cup$ vol $\Delta$ & 0.752$\pm$0.045 & 0.759$\pm$0.044 & $+0.007$ \\
+				vol $\Delta$ $\cup$ tex $\Delta$ & 0.751$\pm$0.046 & 0.759$\pm$0.044 & $+0.008$ \\
+				shape $\Delta$ $\cup$ vol $\Delta$ & 0.754$\pm$0.043 & 0.740$\pm$0.044 & $-0.014$ \\
+				\bottomrule
+			\end{tabular}%
+		}
+	\end{table}
+	
+	\paragraph{Definição da agregação multimodal.}
+	No early fusion, atributos de diferentes modalidades são concatenados num único espaço de features e submetidos à mesma selecção/classificação, o que pode diluir a contribuição de um bloco forte (ex.\ shape) perante outro de maior dimensionalidade.
+	
+	No late fusion, cada modalidade é modelada de forma independente e as previsões agregam-se a posteriori pela média simples dos scores, preservando melhor o sinal específico de cada família --- em particular o braço texture-$\Delta$.
+	
+	% =============================================================================
+	\section{Análises adicionais}
+	\label{sec:adicionais}
+	
+	\paragraph{Sanidade CN$\times$AD.}
+	(\code{36m\_6m}, wide): AUC alta em vol/shape/texture --- valida pipeline; a dificuldade é prognóstico sMCI/pMCI.
+	
+	\paragraph{Demografia.}
+	Idade/sexo equilibrados entre sMCI e pMCI na âncora \code{36m\_6m}; modelos só demográficos $\approx$ acaso; imagem $>$ demografia no $\Delta\mathrm{AUC}$ bootstrap.
+	
+	\paragraph{ComBat / outros modelos.}
+	Sensibilidade unimodal (não na grade de fusão); primary de imagem permanece SVM sem ComBat.
+	
+	\paragraph{Global/leaky.}
+	Controlo de integridade do nested CV (coorte claim, onde há pasta leaky).
+	
+	\paragraph{Clínico / clínica+imagem.}
+	Disponível em \code{48m\_12m}; RM hipocampal como \textbf{adjunto}, não first-line clínico.
+	Manter como contexto/suplemento se o artigo for centrado em encoding de imagem.
+	
+	\paragraph{Sensibilidade $\tau \in \{50,70,90\}$ (\code{48m\_12m}).}
+	Performance não monótona; $\tau=70\%$ frequentemente ótimo ou próximo; $\tau=90\%$ não garante melhora.
+	
+	\paragraph{Estabilidade de atributos.}
+	\begin{itemize}
+		\item \textbf{Volume:} gm\_norm/csf\_norm e MeshVolume no allowlist; wm\_norm frequentemente menos estável.
+		\item \textbf{Shape:} descritores geométricos estáveis em $t_0$; teto classificatório sem ganho temporal.
+		\item \textbf{Texture:} Contrast estável; JointEntropy mais rara na selecção.
+		\item \textbf{Disp:} pool estável fino --- alinha com AUC unimodal fraca.
+	\end{itemize}
+	
+	% =============================================================================
+	\section{Limitação --- outras bases (AIBL, OASIS)}
+	\label{sec:limitacao}
+	
+	O estudo usa \textbf{ADNI} como única fonte com contagens viáveis sob a definição populacional adoptada: três RM elegíveis a partir do mesmo baseline $t_0$, gaps nominais de $\sim$6 ou $\sim$12 meses, e rótulos sMCI/pMCI na janela clínica de 36 ou 48 meses.
+	\textbf{AIBL} e \textbf{OASIS} foram analisadas no mesmo pipeline de alinhamento temporal e filtros; contudo, após a exigência de \textbf{conjuntos com 3 imagens}, restavam poucos sujeitos --- em especial \textbf{pMCI}, onde conversão a AD dentro da janela e série tricíclica de RM coincidem raramente.
+	Sem $n$ relevante nessas classes, treino/avaliação multi-coorte ou validação externa nessas bases fica inviável sem relaxar a definição (ex.\ 1--2 visitas), o que quebraria a comparabilidade com o encoding longitudinal $t_0$+deltas.
+	Trata-se, portanto, de uma \textbf{limitação das bases disponíveis face ao desenho}, não de uma falha do protocolo de modelagem: o desenho longitudinal tricíclico restringe a amostra a repositórios com follow-up imagiológico denso o suficiente, hoje sobretudo o ADNI.
+	
+	\bibliographystyle{cas-model2-names-short}
+	\biboptions{authoryear}
+	\bibliography{cas-refs}
+\end{document}
+
+\documentclass[review]{elsarticle}
+%\documentclass[3p,times,twocolumn,authoryear]{elsarticle}
+
+\usepackage{amssymb}
+\usepackage{multirow}
+\usepackage{booktabs}
+\usepackage[colorlinks,urlcolor=blue]{hyperref}
+\usepackage{subfig}
+\usepackage{scalefnt}
+\usepackage[brazilian]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{units}
+\usepackage{url}
+\usepackage{amsbsy}
+\usepackage{amstext}
+\usepackage{graphicx}
+\usepackage{rotating}
+\usepackage{xcolor}
+\usepackage{float}
+\usepackage[section]{placeins}
+\usepackage{verbatim}
+\usepackage{apalike}
+\restylefloat{figure}
+\restylefloat{table}
+
+% Inserted by pgirardi
+\usepackage{amsmath}
+\usepackage[normalem]{ulem}
+% ponytail: \texttt só — \seqsplit quebra com \_ / babel brazilian
+\newcommand{\code}[1]{\texttt{#1}}
+
+\newcommand{\sugestao}[1]{\textcolor{green!40!black}{#1}}
+
+\newcommand{\corrigir}[2]{%
+	\textcolor{red}{\sout{#1}}%
+	\textcolor{blue}{#2}%
+}
+
+%%%%%%%%%%%%%%%
+
+\makeatletter
+
+\journal{Expert Systems with Applications}
+
+\@ifundefined{showcaptionsetup}{}{%
+	\PassOptionsToPackage{caption=false}{subfig}}
+\usepackage{pdflscape}
+\@ifundefined{showcaptionsetup}{}{%
+	\PassOptionsToPackage{caption=false}{subfig}}
+\makeatother
+
+
+\begin{document}
+	\begin{frontmatter}
+		
+		\title{Representação longitudinal hipocampal para sMCI versus pMCI:
+			alteração temporal, coortes multi-janela e fusão multimodal}
+		
+		\author[ufscar]{Paulo Matheus da Costa Girardi}
+		\ead{paulogirardi@estudante.ufscar.br}
+		
+		\author[ufscar]{Ricardo José Ferrari\corref{cor1}}
+		\ead{rferrari@ufscar.br}
+		
+		\cortext[cor1]{Corresponding author}
+		
+		\address[ufscar]{Department of Computing, Federal University of São Carlos, Rod.\ Washington Luis, Km 235, 13565-905, São Carlos, SP, Brazil}
+		
+		\author[]{for the Alzheimer's Disease Neuroimaging Initiative\corref{adni}}
+		\cortext[adni]{Data used in preparation of this article were obtained from the Alzheimer's Disease Neuroimaging Initiative (ADNI) database (\url{adni.loni.usc.edu}). Investigators within ADNI contributed to the design and implementation of ADNI and/or provided data but did not participate in analysis or writing of this report. A complete listing of ADNI investigators is available at \url{http://adni.loni.usc.edu/wp-content/uploads/how_to_apply/ADNI_Acknowledgement_List.pdf}.}
+		
+		\begin{abstract}
+			No hipocampo, para a distinção sMCI$\rightarrow$pMCI, avalia-se se a representação longitudinal \code{t1\_deltas} ($t_0$ + deltas absolutos entre três visitas) agrega face ao baseline transversal \code{t1\_only}, em atributos unimodais e em fusão late multimodal, e como esse ganho se comporta em quatro coortes (janelas clínicas 36/48\,meses $\times$ gaps de imagem 6/12\,meses, banda $\pm 2$).
+			O contraste primary de alteração temporal é \textbf{\code{t1\_deltas} vs \code{t1\_only}}; concatenação wide/\code{abs} entra só como âncora metodológica, não como encoding de mudança.
+			Protocolo fixo: SVM, selecção \code{l1\_stable}, sem ComBat, nested CV; métrica AUC patient-level.
+			Na coorte claim \code{48m\_12m}, texture e volume ganham com deltas; shape permanece teto estático; late fusion com braço texture-$\Delta$ supera o teto shape baseline.
+		\end{abstract}
+		
+		\begin{keyword}
+			Longitudinal MRI \sep hippocampus \sep Mild Cognitive Impairment \sep Radiomics \sep Machine Learning \sep Nested cross-validation \sep Late fusion
+		\end{keyword}
+		
+	\end{frontmatter}
+	
+	% =============================================================================
+	\section{Pergunta principal}
+	\label{sec:pergunta}
+	
+	No hipocampo, para sMCI$\rightarrow$pMCI, há alteração útil no tempo?
+	Quantifica-se o ganho de \code{t1\_deltas} face a \code{t1\_only} em atributos unimodais e em fusão late multimodal, e como isso varia com a janela clínica e o intervalo entre imagens.
+	
+	% =============================================================================
+	\section{Definição e seleção populacional}
+	\label{sec:populacao}
+	
+	
+	Os dados utilizados neste estudo foram obtidos da base de dados da Alzheimer's Disease Neuroimaging Initiative (ADNI)~\cite{petersen-2009,jr-2008}.
+	A ADNI foi lançada em 2003 como parceria público privada para avaliar marcadores clínicos, genéticos, bioquímicos e de neuroimagem longitudinais da doença de Alzheimer (AD).
+	Este estudo utilizou RM estrutural T1-ponderada adquirida com sequências tridimensionais Magnetization-Prepared Rapid Gradient-Echo (MP-RAGE) das fases ADNI-1, ADNI-2 e ADNI-GO.
+	As imagens foram recolhidas em centros nos Estados Unidos e no Canadá, em scanners de 1.5~T e 3~T da GE Healthcare, Philips Medical Systems e Siemens Medical Solutions conforme ilustra a Tabela~\ref{tab:adni_study}.
+	
+	\begin{table}[htbp]
+		\centering
+		\footnotesize
+		\caption{Imagens T1w MP-RAGE por fase ADNI (união das quatro coortes; imagens únicas por \code{ID\_IMG}).}
+		\label{tab:adni_study}
+		\resizebox{\textwidth}{!}{%
+			\begin{tabular}{lrrcccc}
+				\toprule
+				Fase ADNI & Imagens & Pacientes & Sexo (M/F) & Idade (anos) & Campo (1.5T / 3T) & Fabricante (n) \\
+				\midrule
+				ADNI~1  & 1349 & 370 & 203/167 & $76.14\pm6.91$ & 1261 / 88  & GE (768); Siemens (579); Philips (2) \\
+				ADNI~GO & 51   & 27  & 16/11   & $70.61\pm6.76$ & 0 / 51     & Siemens (44); Philips (7) \\
+				ADNI~2  & 638  & 190 & 101/89  & $73.63\pm7.02$ & 0 / 638    & Siemens (483); Philips (155) \\
+				\midrule
+				Total   & 2038 & 560 & 304/256 & $75.21\pm7.07$ & 1261 / 777 & GE (768); Siemens (1106); Philips (164) \\
+				\bottomrule
+			\end{tabular}%
+		}
+		\begin{flushleft}
+			\footnotesize
+			\textit{Nota:} Contagens sem duplicar a mesma imagem entre coortes (overlap janela$\times$gap).
+			Idade = média $\pm$ DP no momento da aquisição.
+			Sexo por paciente único dentro de cada fase (um paciente pode contribuir imagens a mais do que uma fase; $370+27+190=587>560$).
+			Modelos de equipamento (n imagens): 
+			ADNI~1 --- SIGNA EXCITE (445), Symphony (233), SIGNA HDx (196), Sonata (146), GENESIS\_SIGNA (123), Avanto (100), Trio (34), SymphonyTim (25), Allegra (17), SonataVision (13), TrioTim (11);
+			ADNI~GO --- Verio (25), TrioTim (18), Intera (4), Achieva (3), Skyra (1);
+			ADNI~2 --- TrioTim (297), Achieva (95), Verio (95), Skyra (90), Intera (38), Ingenia (17).
+		\end{flushleft}
+	\end{table}	
+	
+	Originalmente, os diagnósticos dos pacientes estão relacionados a primeira visita (baseline), ou seja, embora o paciente ao longo do tempo possa progredir o diagnóstico para as fases mais avançadas da forma continua da doença de alzheimer, o diagnóstico é relacionado ao dia da primeira visita. Para resolver esse problema, cada exame de RM é alinhado ao diagnóstico clínico e às escalas cognitivas/funcionais (ADAS, CDR, MMSE, FAQ) por correspondência temporal, exigindo distância absoluta $\leq 3$ meses entre a data de aquisição da imagem e a data do diagnóstico, uma vez que a data de diagnóstico é diferente da data de aquisição da imagem, de modo que o rótulo clínico corresponda de maneira mais próxima possível a data de aquisição da imagem. Assim, todas as imagens do dataset passar a ter rótulos clinicos, que podem ser diferentes para o mesmo paciente.
+	Em seguida, são removidos registos com sexo inválido, demência diferente da doença de alzheimer, diagnóstico ou datas em falta, e pacientes com regressão diagnóstica nas fases contínuas da doença de alzheimer, ou seja, pacientes que previamente foram diagnosticados como MCI que regrediram para CN ou pacientes diagnosticados previamente com AD que regrediram para MCI ou CN.
+	Posteriormente, as imagens de repetição cuja aquisição foi feita no mesmo dia da imagem original foram excluídas.
+	Por fim, para identificar possiveis imagens defeituosas, métricas de qualidade de imagem (IQMs) foram calculadas por meio do método \code{MRQy}~\citep{sadri-2020}.
+	Candidatos a outliers foram encontrados com as métricas \code{VRX}, \code{COL}, \code{NUM}, \code{CPP}, \code{PSNR}, \code{SNR7}, \code{CNR}, \code{CVP}, \code{CJV}, \code{EFC} e \code{FBER}.
+	Para cada métrica, outliers foram definidos pelas fences de Tukey~\citep{tukey-1977},
+	\begin{equation}
+		\left[Q_1 - \alpha\,\mathrm{IQR},\, Q_3 + \alpha\,\mathrm{IQR}\right],
+		\qquad \mathrm{IQR} = Q_3 - Q_1,
+		\label{eq:tukey}
+	\end{equation}
+	com $\alpha = 1.5$ e direcionalidade específica da métrica (baixo-mau, alto-mau ou bilateral).
+	Cada volume recebeu um score de não conformidade igual ao número de IQMs sinalizadas; volumes com score $\geq 3$ entraram na shortlist ($69/15{,}014$; $0.46\%$).
+	Os quartis e os limites de IQR foram estimados uma única vez a partir do pool completo de 15{,}014 volumes, sem rótulos diagnósticos, antes da construção das coortes e da validação cruzada; não foram recalculados nos folds externos.
+	Este screening ao nível do conjunto de dados foi, portanto, distinto da modelagem ajustada por fold.
+	Todas as imagens identificadas como outlier foram inspeccionados visualmente no ITK-SNAP~\citep{yushkevich-2006} (v4.2.0).
+	Após esse processo 13 foram removidas do dataset final por apresentarem defeitos oriundos do processo de aquisição das imagens, como cropp ou obstrução da região do campo de visão e faixas de ruído.
+	
+	
+	\subsection{Formação dos conjuntos}
+	
+	Para cada paciente, a data do primeiro MRI define a imagem de baseline $i_1$ no tempo $t_0$.
+	O conjunto longitudinal contém \textbf{exactamente três} imagens preditoras
+	\begin{equation}
+		i=\{i_1,\,i_2,\,i_3\},
+		\quad t(i_1)<t(i_2)<t(i_3),
+	\end{equation}
+	seleccionadas pelo protocolo \code{forward\_band\_pm2}: $i_1$ é o baseline (primeira imagem do pool preditor em $t_0$); $i_2$ é a \textbf{próxima} aquisição cujo intervalo face a $i_1$ cai na banda nominal; $i_3$ é a \textbf{próxima} após $i_2$ com gap na \textbf{mesma} banda.
+	Não se trata de ``três imagens \emph{depois} do baseline'' (o que seriam quatro visitas): são três no total --- baseline + duas seguintes na banda.
+	As bandas adoptadas ($\pm 2$ meses) são disjuntas e evitam a ambiguidade do bordo aos 9 meses que surgiria com $\pm 3$ fechado:
+	
+	\begin{table}[htbp]
+		\centering
+		\caption{Bandas nominais de intervalo entre aquisições.}
+		\label{tab:bandas}
+		\begin{tabular}{ll}
+			\toprule
+			Gap nominal & Banda (meses) \\
+			\midrule
+			6\,m  & $[4,\ 8]$ \\
+			12\,m & $[10,\ 14]$ \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
+	A janela de observação clínica inicia-se em $t_0$ e é de \textbf{36 meses} ou \textbf{48 meses}.
+	
+	Definiram-se quatro grupos: CN, sMCI, pMCI e AD.
+	\begin{itemize}
+		\item \textbf{CN:} todos os diagnósticos na janela são CN.
+		\item \textbf{sMCI:} ausência de AD até $t_{\mathrm{end}}=t_0+$ janela (36 ou 48 meses); existe pelo menos uma visita com data $\ge t_{\mathrm{end}}$; a \textbf{primeira} dessas visitas pós-janela deve permanecer \textbf{MCI}.
+		A definição não implica que o paciente nunca converterá; exige apenas ausência de conversão no horizonte pré-especificado, com confirmação na primeira avaliação após o fim da janela.
+		\item \textbf{pMCI:} baseline MCI e, dentro da janela, pelo menos um diagnóstico de AD.
+		Composições admitidas (respeitando janela e gap de imagem): $\{\mathrm{MCI},\mathrm{MCI},\mathrm{MCI}\}$ com $\ge 1$ AD na janela, ou $\{\mathrm{MCI},\mathrm{MCI},\mathrm{AD}\}$ tratando esse AD como rótulo de conversão no conjunto.
+		Não se admite $\{\mathrm{MCI},\mathrm{AD},\mathrm{AD}\}$: apenas o primeiro AD classifica o grupo, e um segundo AD afastaria o último MCI do limite de 12 meses, com alterações estruturais adicionais.
+		\item \textbf{AD:} todos os diagnósticos na janela são AD.
+	\end{itemize}
+	
+	\subsection{Confirmação sMCI}
+	\label{subsec:confirmacao-smci}
+	
+	O rótulo sMCI/pMCI é decidido em \code{classify\_patient} \textbf{antes} da selecção das imagens preditoras (rótulo clínico, independente da banda $\pm 2$):
+	\begin{enumerate}
+		\item Sem AD até $t_{\mathrm{end}}$.
+		\item Existe visita com \code{MRI\_DATE} $\ge t_{\mathrm{end}}$.
+		\item A primeira dessas visitas é MCI $\rightarrow$ \textbf{sMCI}.
+		\item Se essa primeira visita pós-janela for AD (ou outro diagnóstico não-MCI) $\rightarrow$ \textbf{excluído} (\code{desfecho\_intervalado}).
+		\item Sem visita pós-janela $\rightarrow$ \textbf{excluído} (\code{sem\_confirmacao\_pos\_janela}).
+		\item Se a primeira AD ocorre \textbf{dentro} da janela $\rightarrow$ \textbf{pMCI} (não se trata de ``sMCI falhou'').
+	\end{enumerate}
+	
+	A confirmação \textbf{não} usa o range $\pm 2$ meses.
+	A banda $\pm 2$ aplica-se apenas à escolha das três imagens preditoras (para sMCI: no intervalo até $t_{\mathrm{end}}$, com DIAG MCI).
+	A visita de confirmação pode situar-se fora desse espaçamento entre aquisições.
+	
+	\subsection{Coortes de estudo}
+	\label{subsec:coortes}
+	
+	\begin{table}[htbp]
+		\centering
+		\caption{Contagens sMCI/pMCI em conjuntos (protocolo actual, banda $\pm 2$).}
+		\label{tab:coortes}
+		\begin{tabular}{lll}
+			\toprule
+			Janela & Gap imagens & sMCI / pMCI \\
+			\midrule
+			36\,m & $6\pm 2\ [4,8]$   & 125 / 106 \\
+			36\,m & $12\pm 2\ [10,14]$ & 121 / 33 \\
+			48\,m & $6\pm 2\ [4,8]$   & 73 / 120 \\
+			48\,m & $12\pm 2\ [10,14]$ & \textbf{72 / 48} \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
+	A Tabela~\ref{tab:clin_cohorts} resume demografia e scores cognitivos/funcionais nas três visitas preditoras ($t_0$, $t_1$, $t_2$) para sMCI e pMCI nas quatro coortes.
+	CN/AD e CDR global omitidos (continuum de sanidade / constante 0{,}50 no baseline MCI).
+	Valores contínuos: média $\pm$ desvio-padrão; $n$ só na coluna pacientes.
+	
+	\begin{table}[htbp]
+		\centering
+		\footnotesize
+		\caption{Características clínicas sMCI/pMCI nas quatro coortes (banda $\pm 2$, soft pMCI activo).}
+		\label{tab:clin_cohorts}
+		\resizebox{\textwidth}{!}{%
+			\begin{tabular}{lllrrccccc}
+				\toprule
+				Coorte & Grupo & Slot & $n$ & Sexo M/F & Idade & MMSE & ADAS & CDR-SB & FAQ \\
+				\midrule
+				\multirow{6}{*}{\code{36m\_6m}}
+				& \multirow{3}{*}{sMCI}
+				& $t_0$ & 125 & 80/45 & $72.63\pm7.18$ & $27.78\pm1.75$ & $9.05\pm3.61$ & $1.22\pm0.64$ & $1.93\pm3.09$ \\
+				& & $t_1$ & 125 & 80/45 & $73.16\pm7.16$ & $28.04\pm1.77$ & $8.79\pm3.64$ & $1.23\pm0.77$ & $2.22\pm3.33$ \\
+				& & $t_2$ & 125 & 80/45 & $73.67\pm7.19$ & $27.99\pm1.88$ & $8.47\pm4.11$ & $1.36\pm0.95$ & $2.53\pm3.56$ \\
+				\cmidrule{2-10}
+				& \multirow{3}{*}{pMCI}
+				& $t_0$ & 106 & 56/50 & $74.39\pm7.33$ & $26.64\pm1.74$ & $13.54\pm4.49$ & $1.94\pm1.00$ & $5.34\pm4.42$ \\
+				& & $t_1$ & 106 & 56/50 & $74.90\pm7.26$ & $25.32\pm2.65$ & $14.84\pm5.00$ & $2.44\pm1.01$ & $6.79\pm4.75$ \\
+				& & $t_2$ & 106 & 56/50 & $75.44\pm7.30$ & $24.68\pm2.70$ & $15.75\pm5.83$ & $3.19\pm1.41$ & $8.95\pm5.66$ \\
+				\midrule
+				\multirow{6}{*}{\code{36m\_12m}}
+				& \multirow{3}{*}{sMCI}
+				& $t_0$ & 121 & 80/41 & $73.15\pm7.06$ & $27.80\pm1.74$ & $9.05\pm3.60$ & $1.21\pm0.63$ & $1.85\pm3.01$ \\
+				& & $t_1$ & 121 & 80/41 & $74.21\pm7.07$ & $28.02\pm1.87$ & $8.62\pm4.20$ & $1.33\pm0.88$ & $2.58\pm3.48$ \\
+				& & $t_2$ & 121 & 80/41 & $75.22\pm7.05$ & $27.85\pm2.17$ & $9.08\pm4.54$ & $1.51\pm1.20$ & $2.70\pm3.65$ \\
+				\cmidrule{2-10}
+				& \multirow{3}{*}{pMCI}
+				& $t_0$ & 33 & 22/11 & $74.30\pm7.35$ & $27.00\pm1.62$ & $12.30\pm2.85$ & $2.09\pm1.17$ & $5.45\pm4.90$ \\
+				& & $t_1$ & 33 & 22/11 & $75.33\pm7.34$ & $25.88\pm2.13$ & $13.31\pm4.07$ & $2.67\pm1.19$ & $7.55\pm4.94$ \\
+				& & $t_2$ & 33 & 22/11 & $76.39\pm7.34$ & $23.33\pm2.91$ & $17.24\pm4.78$ & $4.45\pm1.40$ & $12.76\pm6.02$ \\
+				\midrule
+				\multirow{6}{*}{\code{48m\_6m}}
+				& \multirow{3}{*}{sMCI}
+				& $t_0$ & 73 & 48/25 & $72.29\pm6.80$ & $27.89\pm1.65$ & $8.80\pm3.53$ & $1.11\pm0.61$ & $1.88\pm3.32$ \\
+				& & $t_1$ & 73 & 48/25 & $72.84\pm6.74$ & $28.30\pm1.40$ & $8.33\pm3.40$ & $1.09\pm0.71$ & $2.07\pm3.40$ \\
+				& & $t_2$ & 73 & 48/25 & $73.30\pm6.81$ & $28.16\pm1.84$ & $7.83\pm3.49$ & $1.16\pm0.95$ & $2.30\pm3.36$ \\
+				\cmidrule{2-10}
+				& \multirow{3}{*}{pMCI}
+				& $t_0$ & 120 & 62/58 & $74.35\pm7.20$ & $26.65\pm1.71$ & $13.20\pm4.41$ & $1.89\pm0.98$ & $5.17\pm4.46$ \\
+				& & $t_1$ & 120 & 62/58 & $74.85\pm7.15$ & $25.43\pm2.60$ & $14.44\pm4.99$ & $2.37\pm1.00$ & $6.46\pm4.81$ \\
+				& & $t_2$ & 120 & 62/58 & $75.40\pm7.18$ & $24.89\pm2.65$ & $15.38\pm5.65$ & $3.04\pm1.43$ & $8.53\pm5.81$ \\
+				\midrule
+				\multirow{6}{*}{\textbf{\code{48m\_12m}}}
+				& \multirow{3}{*}{sMCI}
+				& $t_0$ & 72 & 49/23 & $72.88\pm6.70$ & $28.00\pm1.63$ & $8.71\pm3.40$ & $1.07\pm0.59$ & $1.85\pm3.30$ \\
+				& & $t_1$ & 72 & 49/23 & $73.93\pm6.73$ & $28.32\pm1.69$ & $8.07\pm3.65$ & $1.17\pm0.89$ & $2.43\pm3.37$ \\
+				& & $t_2$ & 72 & 49/23 & $74.96\pm6.68$ & $28.29\pm1.86$ & $8.65\pm3.59$ & $1.29\pm1.03$ & $2.26\pm3.26$ \\
+				\cmidrule{2-10}
+				& \multirow{3}{*}{pMCI}
+				& $t_0$ & 48 & 28/20 & $73.98\pm6.83$ & $26.94\pm1.56$ & $12.18\pm2.95$ & $1.93\pm1.10$ & $4.83\pm4.88$ \\
+				& & $t_1$ & 48 & 28/20 & $75.00\pm6.83$ & $25.90\pm1.95$ & $13.24\pm3.79$ & $2.45\pm1.18$ & $6.77\pm5.36$ \\
+				& & $t_2$ & 48 & 28/20 & $76.06\pm6.86$ & $23.90\pm2.81$ & $16.44\pm4.81$ & $3.76\pm1.61$ & $10.56\pm6.51$ \\
+				\bottomrule
+			\end{tabular}%
+		}
+		\begin{flushleft}
+			\footnotesize
+			\textit{Nota:} Soft pMCI (último slot = primeiro AD): 46 em \code{36m\_6m}/\code{48m\_6m}; 33 em \code{36m\_12m}/\code{48m\_12m}.
+			MMSE: Mini-Mental State Examination; ADAS: Alzheimer's Disease Assessment Scale; CDR-SB: Clinical Dementia Rating -- Sum of Boxes; FAQ: Functional Activities Questionnaire.
+			Coorte claim = \code{48m\_12m}.
+		\end{flushleft}
+	\end{table}
+	
+	Também se exploraram as bases \textbf{AIBL} e \textbf{OASIS} sob a mesma lógica de elegibilidade, mas sem número suficiente de conjuntos longitudinais com três imagens.
+	
+	A tarefa principal é a classificação \textbf{sMCI vs pMCI}.
+	As quatro coortes \code{36m\_6m}, \code{36m\_12m}, \code{48m\_6m}, \code{48m\_12m} cobrem o gradiente janela $\times$ gap.
+	A coorte claim para crowning longitudinal e multimodal é \textbf{\code{48m\_12m}} (janela longa + gap 12\,m), onde vol/texture mostram maior agregação de \code{t1\_deltas} face a \code{t1\_only}.
+	Demografia e contrastes metodológicos wide/\code{abs} usam sobretudo \code{36m\_6m} (maior $n$).
+	
+	\paragraph{Janela 36 vs 48 no mesmo gap (leitura de \code{t1\_only} / baseline).}
+	Não se deve esperar AUC idêntica em \code{36m\_6m} vs \code{48m\_6m} (nem em \code{36m\_12m} vs \code{48m\_12m}) só porque o encoding usa a visita baseline.
+	Na \textbf{intersecção} de pacientes presentes nas duas coortes com o mesmo espaçamento nominal, o \code{ID\_IMG} de $t_0$ coincide (e o triplo $t_0$--$t_1$--$t_2$ também), com o mesmo rótulo de grupo.
+	Contudo as \textbf{populações não são as mesmas}: a janela clínica altera a elegibilidade (quem entra ou sai).
+	Exemplos no protocolo actual (banda $\pm 2$, selecção forward): sMCI 125 vs 73 (gap 6\,m) e 121 vs 72 (gap 12\,m), com dezenas de IDs exclusivos de uma das janelas.
+	Logo diferem $n$, balanço sMCI/pMCI, partições de CV e AUC --- inclusive em \code{t1\_only} --- mesmo com overlap de baselines.
+	
+	% =============================================================================
+	\section{Pré-processamento e atributos}
+	\label{sec:atributos}
+	
+	Após tratamento das imagens, alinhamento temporal e filtro de ROI hipocampal, extraem-se quatro famílias de atributos por visita:
+	\begin{itemize}
+		\item volume (frações teciduais normalizadas + \code{MeshVolume});
+		\item shape (descritores geométricos; \code{MeshVolume} ficou no bloco vol);
+		\item texture (GLCM canónico);
+		\item deslocamento/DVF.
+	\end{itemize}
+	
+	Representações temporais:
+	
+	\begin{table}[htbp]
+		\centering
+		\caption{Representações temporais (nomenclatura CLI).}
+		\label{tab:reps}
+		\begin{tabular}{lll}
+			\toprule
+			CLI & Papel & Definição \\
+			\midrule
+			\code{t1\_only}    & baseline (claim B) & só atributos de $t_0$ \\
+			\code{t1\_deltas}  & longitudinal primary & $t_0$ + deltas absolutos (D21/D31/D32) \\
+			\code{wide}/\code{abs} & âncora metodológica & concatenação T1+T2+T3 (níveis, não mudança) \\
+			\code{t1\_deltas\_rel} & sensibilidade & deltas relativos; não crownear \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
+	\paragraph{Dimensionalidade de atributos do hipocampo L/R.}
+	
+	\begin{table}[htbp]
+		\centering
+		\caption{Número de atributos por modalidade e encoding (L+R; allowlist actual).}
+		\label{tab:dims}
+		\begin{tabular}{llrrr}
+			\toprule
+			Modalidade & Sufixos (por lado) & \code{t1\_only} & \code{wide} & \code{t1\_deltas} \\
+			\midrule
+			vol     & gm/wm/csf\_norm + MeshVolume (4) & 8  & 24  & 32 \\
+			shape   & 5 shape & 10 & 30  & 40 \\
+			texture & 4 GLCM & 8  & 24  & 32 \\
+			disp    & 4 (mag\_mean, strain\_fro\_*, logjac\_var) & 8 & 24 & 32 \\
+			all     & soma early-fusion & 34 & 102 & 136 \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
+	A modalidade \code{all} (early-fusion de todos os blocos) entra nas ablações unimodais de referência, mas \textbf{não} no contraste estatístico claim B: esse contraste compara encodings temporais \emph{dentro} de cada família (vol/shape/texture/disp).
+	
+	Protocolo de modelagem fixo nas ablações oficiais: SVM, selecção \code{l1\_stable} (corte de frequência 70\%), sem ComBat, nested CV com 10 repetições, métrica primária \textbf{AUC patient-level} (média de scores OOF por paciente).
+	AUCs reportadas como média $\pm$ desvio padrão (\code{auc\_patient\_mean} $\pm$ \code{auc\_patient\_std}), com 3 casas decimais.
+	
+	% =============================================================================
+	\section{Principais resultados}
+	\label{sec:resultados}
+	
+	Estratégia: (i) protocolo fixo \textbf{SVM + \code{l1\_stable} + sem ComBat}; (ii) unimodal nas quatro coortes; (iii) claim longitudinal e multimodal em \code{48m\_12m}; (iv) late fusion com braços só em \{\code{t1\_only}, \code{t1\_deltas}\} (sem escolher encoding pós-hoc a partir do melhor unimodal).
+	RF/MLP e ComBat ficam na sensibilidade unimodal.
+	
+	\subsection{Ablação unimodal: \texorpdfstring{\code{t1\_deltas}}{t1\_deltas} vs \texorpdfstring{\code{t1\_only}}{t1\_only}}
+	\label{subsec:unimodal}
+	
+	\paragraph{Contraste primary.}
+	Pergunta de alteração temporal = $\Delta\mathrm{AUC} = \mathrm{AUC}(\code{t1\_deltas}) - \mathrm{AUC}(\code{t1\_only})$.
+	\code{wide}/\code{abs} pode ter AUC alta (níveis multi-visita), mas \textbf{não} responde ``há mudança útil?''; reporta-se à parte.
+	
+	\paragraph{Coorte claim \code{48m\_12m}.}
+	
+	\begin{table}[htbp]
+		\centering
+		\caption{AUC patient-level em \code{48m\_12m} (svm, nocombat).}
+		\label{tab:48m12_uni}
+		\begin{tabular}{lrrr}
+			\toprule
+			Mod & \code{t1\_only} & \code{wide} & \code{t1\_deltas} \\
+			\midrule
+			shape   & \textbf{0.761$\pm$0.043} & \textbf{0.783$\pm$0.041} & 0.736$\pm$0.046 \\
+			vol     & 0.633$\pm$0.053 & 0.671$\pm$0.049 & \textbf{0.661$\pm$0.051} \\
+			texture & 0.695$\pm$0.051 & 0.761$\pm$0.047 & \textbf{0.753$\pm$0.047} \\
+			disp    & 0.486$\pm$0.053 & 0.525$\pm$0.052 & 0.504$\pm$0.053 \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
+	\begin{table}[htbp]
+		\centering
+		\caption{Ganho longitudinal primary na coorte claim ($\Delta = \code{t1\_deltas} - \code{t1\_only}$).}
+		\label{tab:delta_long}
+		\begin{tabular}{lrrr}
+			\toprule
+			Mod & \code{t1\_only} & \code{t1\_deltas} & $\Delta$ \\
+			\midrule
+			shape   & \textbf{0.761$\pm$0.043} & 0.736$\pm$0.046 & $-0.024$ \\
+			vol     & 0.633$\pm$0.053 & \textbf{0.661$\pm$0.051} & $+0.029$ \\
+			texture & 0.695$\pm$0.051 & \textbf{0.753$\pm$0.047} & $+0.057$ \\
+			disp    & 0.486$\pm$0.053 & 0.504$\pm$0.053 & $+0.018$ \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
+	\paragraph{Gradiente janela $\times$ gap ($\Delta = \code{t1\_deltas} - \code{t1\_only}$).}
+	
+	\begin{table}[htbp]
+		\centering
+		\caption{$\Delta$AUC patient-level por coorte (svm, nocombat).}
+		\label{tab:gradient}
+		\begin{tabular}{lrrrr}
+			\toprule
+			Mod & \code{36m\_6m} & \code{36m\_12m} & \code{48m\_6m} & \code{48m\_12m} \\
+			\midrule
+			vol     & $+0.022$ & $-0.022$ & $+0.035$ & $+0.029$ \\
+			shape   & $+0.000$ & $-0.030$ & $-0.011$ & $-0.024$ \\
+			texture & $+0.032$ & $+0.027$ & $+0.047$ & $+0.057$ \\
+			disp    & $-0.038$ & $-0.121$ & $-0.035$ & $+0.018$ \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
+	\paragraph{Resumo unimodal.}
+	\begin{itemize}
+		\item \textbf{Texture:} ganho de deltas em \emph{todas} as quatro coortes; máximo em \code{48m\_12m} ($+0.057$).
+		\item \textbf{Vol:} ganho em três coortes; excepção \code{36m\_12m} ($-0.022$).
+		\item \textbf{Shape:} teto estático --- baseline $\ge$ deltas em quase todo o gradiente; em \code{48m\_12m} o wide ainda sobe um pouco (níveis), mas deltas não batem $t_0$.
+		\item \textbf{Disp:} fraco e instável; não crownear.
+		\item \code{t1\_deltas\_rel}: sensibilidade; em texture pode igualar/superar deltas absolutos, mas em vol/disp costuma colapsar --- primary permanece \code{t1\_deltas}.
+	\end{itemize}
+	
+	\paragraph{Top 10 por modalidade (coortes $\times$ \{\code{t1\_only}, \code{t1\_deltas}, \code{wide}\}).}
+	
+	\begin{table}[htbp]
+		\centering
+		\caption{Top-10 unimodal por modalidade (svm, nocombat).}
+		\label{tab:top10_uni}
+		\resizebox{\textwidth}{!}{%
+			\begin{tabular}{cllll}
+				\toprule
+				\# & shape & vol & texture & disp \\
+				\midrule
+				1 & \textbf{0.815$\pm$0.034} \code{48m\_6m}/\code{wide}
+				& \textbf{0.761$\pm$0.032} \code{36m\_6m}/\code{wide}
+				& \textbf{0.779$\pm$0.033} \code{48m\_6m}/\code{t1\_deltas}
+				& \textbf{0.664$\pm$0.035} \code{36m\_6m}/\code{t1\_only} \\
+				2 & 0.804$\pm$0.029 \code{36m\_6m}/\code{wide}
+				& 0.760$\pm$0.032 \code{36m\_6m}/\code{t1\_deltas}
+				& 0.772$\pm$0.034 \code{48m\_6m}/\code{wide}
+				& 0.661$\pm$0.035 \code{36m\_6m}/\code{wide} \\
+				3 & 0.802$\pm$0.034 \code{48m\_6m}/\code{t1\_only}
+				& 0.753$\pm$0.035 \code{48m\_6m}/\code{t1\_deltas}
+				& 0.772$\pm$0.047 \code{36m\_12m}/\code{wide}
+				& 0.637$\pm$0.042 \code{48m\_6m}/\code{t1\_only} \\
+				4 & 0.791$\pm$0.035 \code{48m\_6m}/\code{t1\_deltas}
+				& 0.753$\pm$0.037 \code{48m\_6m}/\code{wide}
+				& 0.761$\pm$0.047 \code{48m\_12m}/\code{wide}
+				& 0.628$\pm$0.041 \code{48m\_6m}/\code{wide} \\
+				5 & 0.789$\pm$0.030 \code{36m\_6m}/\code{t1\_deltas}
+				& 0.738$\pm$0.033 \code{36m\_6m}/\code{t1\_only}
+				& 0.760$\pm$0.048 \code{36m\_12m}/\code{t1\_deltas}
+				& 0.626$\pm$0.036 \code{36m\_6m}/\code{t1\_deltas} \\
+				6 & 0.788$\pm$0.030 \code{36m\_6m}/\code{t1\_only}
+				& 0.719$\pm$0.039 \code{48m\_6m}/\code{t1\_only}
+				& 0.759$\pm$0.032 \code{36m\_6m}/\code{wide}
+				& 0.608$\pm$0.051 \code{36m\_12m}/\code{t1\_only} \\
+				7 & 0.783$\pm$0.041 \code{48m\_12m}/\code{wide}
+				& 0.707$\pm$0.048 \code{36m\_12m}/\code{t1\_only}
+				& 0.754$\pm$0.032 \code{36m\_6m}/\code{t1\_deltas}
+				& 0.602$\pm$0.042 \code{48m\_6m}/\code{t1\_deltas} \\
+				8 & 0.761$\pm$0.043 \code{48m\_12m}/\code{t1\_only}
+				& 0.699$\pm$0.052 \code{36m\_12m}/\code{wide}
+				& 0.753$\pm$0.047 \code{48m\_12m}/\code{t1\_deltas}
+				& 0.577$\pm$0.058 \code{36m\_12m}/\code{wide} \\
+				9 & 0.754$\pm$0.043 \code{36m\_12m}/\code{wide}
+				& 0.685$\pm$0.055 \code{36m\_12m}/\code{t1\_deltas}
+				& 0.733$\pm$0.049 \code{36m\_12m}/\code{t1\_only}
+				& 0.525$\pm$0.052 \code{48m\_12m}/\code{wide} \\
+				10 & 0.741$\pm$0.045 \code{36m\_12m}/\code{t1\_only}
+				& 0.671$\pm$0.049 \code{48m\_12m}/\code{wide}
+				& 0.732$\pm$0.037 \code{48m\_6m}/\code{t1\_only}
+				& 0.504$\pm$0.053 \code{48m\_12m}/\code{t1\_deltas} \\
+				\bottomrule
+			\end{tabular}%
+		}
+	\end{table}
+	
+	\paragraph{Leitura.}
+	Hierarquia prática no melhor de cada bloco: shape $\gg$ texture $\gtrsim$ vol $\gg$ disp.
+	Para a pergunta temporal, o sinal útil concentra-se em \textbf{texture} (e vol em janelas/gaps favoráveis), não em shape.
+	
+	\subsection{Ablação multimodal: baseline vs.\ longitudinal em \texorpdfstring{\code{48m\_12m}}{48m\_12m}}
+	\label{subsec:multimodal}
+	
+	Late fusion: média de scores OOF por modalidade; braços só \code{t1\_only} ou \code{t1\_deltas}.
+	Teto baseline shape = \textbf{0.761$\pm$0.043}.
+	
+	\paragraph{Top 10 união só baseline.}
+	
+	\begin{table}[htbp]
+		\centering
+		\caption{Top-10 late fusion só \code{t1\_only} em \code{48m\_12m}.}
+		\label{tab:late_base}
+		\begin{tabular}{clrr}
+			\toprule
+			\# & Spec (todos $t_1$) & AUC & vs shape $t_1$ \\
+			\midrule
+			1 & vol $\cup$ shape $\cup$ texture & \textbf{0.773$\pm$0.043} & $+0.012$ \\
+			2 & vol $\cup$ shape $\cup$ texture $\cup$ disp & 0.770$\pm$0.043 & $+0.009$ \\
+			3 & shape $\cup$ texture & 0.764$\pm$0.044 & $+0.003$ \\
+			4 & shape $\cup$ texture $\cup$ disp & 0.762$\pm$0.045 & $+0.001$ \\
+			5 & vol $\cup$ shape & 0.757$\pm$0.044 & $-0.003$ \\
+			6 & shape $\cup$ disp & 0.757$\pm$0.044 & $-0.004$ \\
+			7 & vol $\cup$ shape $\cup$ disp & 0.750$\pm$0.044 & $-0.011$ \\
+			8 & vol $\cup$ texture & 0.719$\pm$0.048 & $-0.042$ \\
+			9 & vol $\cup$ texture $\cup$ disp & 0.714$\pm$0.047 & $-0.047$ \\
+			10 & texture $\cup$ disp & 0.686$\pm$0.051 & $-0.075$ \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
+	\paragraph{Top 10 com braço longitudinal.}
+	
+	\begin{table}[htbp]
+		\centering
+		\caption{Top-10 late fusion com pelo menos um braço \code{t1\_deltas} em \code{48m\_12m}.}
+		\label{tab:late_long}
+		\resizebox{\textwidth}{!}{%
+			\begin{tabular}{clrl}
+				\toprule
+				\# & Spec & AUC & Nota \\
+				\midrule
+				1 & shape $t_1$ $\cup$ tex $\Delta$ $\cup$ disp $\Delta$ & \textbf{0.803$\pm$0.039} & exploratório (mono disp fraco) \\
+				2 & \textbf{shape $t_1$ $\cup$ tex $\Delta$} & \textbf{0.801$\pm$0.040} & \textbf{âncora pré-especificada} \\
+				3 & shape $t_1$ $\cup$ tex $\Delta$ $\cup$ disp $t_1$ & 0.801$\pm$0.040 & \\
+				4 & shape $t_1$ $\cup$ vol $\Delta$ $\cup$ tex $\Delta$ & 0.799$\pm$0.040 & \\
+				5 & shape $t_1$ $\cup$ vol $t_1$ $\cup$ tex $\Delta$ & 0.798$\pm$0.038 & \\
+				6 & shape $t_1$ $\cup$ vol $\Delta$ $\cup$ tex $\Delta$ $\cup$ disp $t_1$ & 0.798$\pm$0.040 & \\
+				7 & shape $t_1$ $\cup$ vol $\Delta$ $\cup$ tex $\Delta$ $\cup$ disp $\Delta$ & 0.797$\pm$0.041 & \\
+				8 & shape $t_1$ $\cup$ vol $t_1$ $\cup$ tex $\Delta$ $\cup$ disp $\Delta$ & 0.794$\pm$0.041 & \\
+				9 & shape $t_1$ $\cup$ vol $t_1$ $\cup$ tex $\Delta$ $\cup$ disp $t_1$ & 0.794$\pm$0.040 & \\
+				10 & shape $\Delta$ $\cup$ tex $\Delta$ $\cup$ disp $\Delta$ & 0.786$\pm$0.040 & sem teto shape $t_1$ \\
+				\bottomrule
+			\end{tabular}%
+		}
+	\end{table}
+	
+	Late só-baseline fica $\approx$ teto shape ($+0.01$).
+	Com texture-$\Delta$, sobe para $\sim$0.80 --- ganho multimodal alinhado ao sinal unimodal de alteração.
+	
+	\subsubsection{Early fusion vs.\ late fusion em \texorpdfstring{\code{48m\_12m}}{48m\_12m}}
+	\label{subsubsec:early-late}
+	
+	\begin{table}[htbp]
+		\centering
+		\caption{Early vs late nos specs pré-especificados (claim).}
+		\label{tab:early_late}
+		\resizebox{\textwidth}{!}{%
+			\begin{tabular}{lrrr}
+				\toprule
+				Atributos & Early & Late & $\Delta$ (late$-$early) \\
+				\midrule
+				\textbf{shape $t_1$ $\cup$ tex $\Delta$ (âncora)} & \textbf{0.772$\pm$0.043} & \textbf{0.801$\pm$0.040} & \textbf{$+0.029$} \\
+				shape $t_1$ $\cup$ vol $\Delta$ $\cup$ tex $\Delta$ & 0.755$\pm$0.044 & 0.799$\pm$0.040 & $+0.044$ \\
+				shape $\Delta$ $\cup$ vol $\Delta$ $\cup$ tex $\Delta$ & 0.760$\pm$0.043 & 0.785$\pm$0.041 & $+0.025$ \\
+				shape $\Delta$ $\cup$ tex $\Delta$ & 0.750$\pm$0.044 & 0.785$\pm$0.042 & $+0.035$ \\
+				shape $t_1$ $\cup$ vol $\Delta$ & 0.752$\pm$0.045 & 0.759$\pm$0.044 & $+0.007$ \\
+				vol $\Delta$ $\cup$ tex $\Delta$ & 0.751$\pm$0.046 & 0.759$\pm$0.044 & $+0.008$ \\
+				shape $\Delta$ $\cup$ vol $\Delta$ & 0.754$\pm$0.043 & 0.740$\pm$0.044 & $-0.014$ \\
+				\bottomrule
+			\end{tabular}%
+		}
+	\end{table}
+	
+	\paragraph{Definição da agregação multimodal.}
+	No early fusion, atributos de diferentes modalidades são concatenados num único espaço de features e submetidos à mesma selecção/classificação, o que pode diluir a contribuição de um bloco forte (ex.\ shape) perante outro de maior dimensionalidade.
+	
+	No late fusion, cada modalidade é modelada de forma independente e as previsões agregam-se a posteriori pela média simples dos scores, preservando melhor o sinal específico de cada família --- em particular o braço texture-$\Delta$.
+	
+	% =============================================================================
+	\section{Análises adicionais}
+	\label{sec:adicionais}
+	
+	\paragraph{Sanidade CN$\times$AD.}
+	(\code{36m\_6m}, wide): AUC alta em vol/shape/texture --- valida pipeline; a dificuldade é prognóstico sMCI/pMCI.
+	
+	\paragraph{Demografia.}
+	Idade/sexo equilibrados entre sMCI e pMCI na âncora \code{36m\_6m}; modelos só demográficos $\approx$ acaso; imagem $>$ demografia no $\Delta\mathrm{AUC}$ bootstrap.
+	
+	\paragraph{ComBat / outros modelos.}
+	Sensibilidade unimodal (não na grade de fusão); primary de imagem permanece SVM sem ComBat.
+	
+	\paragraph{Global/leaky.}
+	Controlo de integridade do nested CV (coorte claim, onde há pasta leaky).
+	
+	\paragraph{Clínico / clínica+imagem.}
+	Disponível em \code{48m\_12m}; RM hipocampal como \textbf{adjunto}, não first-line clínico.
+	Manter como contexto/suplemento se o artigo for centrado em encoding de imagem.
+	
+	\paragraph{Sensibilidade $\tau \in \{50,70,90\}$ (\code{48m\_12m}).}
+	Performance não monótona; $\tau=70\%$ frequentemente ótimo ou próximo; $\tau=90\%$ não garante melhora.
+	
+	\paragraph{Estabilidade de atributos.}
+	\begin{itemize}
+		\item \textbf{Volume:} gm\_norm/csf\_norm e MeshVolume no allowlist; wm\_norm frequentemente menos estável.
+		\item \textbf{Shape:} descritores geométricos estáveis em $t_0$; teto classificatório sem ganho temporal.
+		\item \textbf{Texture:} Contrast estável; JointEntropy mais rara na selecção.
+		\item \textbf{Disp:} pool estável fino --- alinha com AUC unimodal fraca.
+	\end{itemize}
+	
+	% =============================================================================
+	\section{Limitação --- outras bases (AIBL, OASIS)}
+	\label{sec:limitacao}
+	
+	O estudo usa \textbf{ADNI} como única fonte com contagens viáveis sob a definição populacional adoptada: três RM elegíveis a partir do mesmo baseline $t_0$, gaps nominais de $\sim$6 ou $\sim$12 meses, e rótulos sMCI/pMCI na janela clínica de 36 ou 48 meses.
+	\textbf{AIBL} e \textbf{OASIS} foram analisadas no mesmo pipeline de alinhamento temporal e filtros; contudo, após a exigência de \textbf{conjuntos com 3 imagens}, restavam poucos sujeitos --- em especial \textbf{pMCI}, onde conversão a AD dentro da janela e série tricíclica de RM coincidem raramente.
+	Sem $n$ relevante nessas classes, treino/avaliação multi-coorte ou validação externa nessas bases fica inviável sem relaxar a definição (ex.\ 1--2 visitas), o que quebraria a comparabilidade com o encoding longitudinal $t_0$+deltas.
+	Trata-se, portanto, de uma \textbf{limitação das bases disponíveis face ao desenho}, não de uma falha do protocolo de modelagem: o desenho longitudinal tricíclico restringe a amostra a repositórios com follow-up imagiológico denso o suficiente, hoje sobretudo o ADNI.
+	
+	\bibliographystyle{cas-model2-names-short}
+	\biboptions{authoryear}
+	\bibliography{cas-refs}
+\end{document}
+
+\documentclass[review]{elsarticle}
+%\documentclass[3p,times,twocolumn,authoryear]{elsarticle}
+
+\usepackage{amssymb}
+\usepackage{multirow}
+\usepackage{booktabs}
+\usepackage[colorlinks,urlcolor=blue]{hyperref}
+\usepackage{subfig}
+\usepackage{scalefnt}
+\usepackage[brazilian]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{units}
+\usepackage{url}
+\usepackage{amsbsy}
+\usepackage{amstext}
+\usepackage{graphicx}
+\usepackage{rotating}
+\usepackage{xcolor}
+\usepackage{float}
+\usepackage[section]{placeins}
+\usepackage{verbatim}
+\usepackage{apalike}
+\restylefloat{figure}
+\restylefloat{table}
+
+% Inserted by pgirardi
+\usepackage{amsmath}
+\usepackage[normalem]{ulem}
+% ponytail: \texttt só — \seqsplit quebra com \_ / babel brazilian
+\newcommand{\code}[1]{\texttt{#1}}
+
+\newcommand{\sugestao}[1]{\textcolor{green!40!black}{#1}}
+
+\newcommand{\corrigir}[2]{%
+	\textcolor{red}{\sout{#1}}%
+	\textcolor{blue}{#2}%
+}
+
+%%%%%%%%%%%%%%%
+
+\makeatletter
+
+\journal{Expert Systems with Applications}
+
+\@ifundefined{showcaptionsetup}{}{%
+	\PassOptionsToPackage{caption=false}{subfig}}
+\usepackage{pdflscape}
+\@ifundefined{showcaptionsetup}{}{%
+	\PassOptionsToPackage{caption=false}{subfig}}
+\makeatother
+
+
+\begin{document}
+	\begin{frontmatter}
+		
+		\title{Representação longitudinal hipocampal para sMCI versus pMCI:
+			alteração temporal, coortes multi-janela e fusão multimodal}
+		
+		\author[ufscar]{Paulo Matheus da Costa Girardi}
+		\ead{paulogirardi@estudante.ufscar.br}
+		
+		\author[ufscar]{Ricardo José Ferrari\corref{cor1}}
+		\ead{rferrari@ufscar.br}
+		
+		\cortext[cor1]{Corresponding author}
+		
+		\address[ufscar]{Department of Computing, Federal University of São Carlos, Rod.\ Washington Luis, Km 235, 13565-905, São Carlos, SP, Brazil}
+		
+		\author[]{for the Alzheimer's Disease Neuroimaging Initiative\corref{adni}}
+		\cortext[adni]{Data used in preparation of this article were obtained from the Alzheimer's Disease Neuroimaging Initiative (ADNI) database (\url{adni.loni.usc.edu}). Investigators within ADNI contributed to the design and implementation of ADNI and/or provided data but did not participate in analysis or writing of this report. A complete listing of ADNI investigators is available at \url{http://adni.loni.usc.edu/wp-content/uploads/how_to_apply/ADNI_Acknowledgement_List.pdf}.}
+		
+		\begin{abstract}
+			No hipocampo, para a distinção sMCI$\rightarrow$pMCI, avalia-se se a representação longitudinal \code{t1\_deltas} ($t_0$ + deltas absolutos entre três visitas) agrega face ao baseline transversal \code{t1\_only}, em atributos unimodais e em fusão late multimodal, e como esse ganho se comporta em quatro coortes (janelas clínicas 36/48\,meses $\times$ gaps de imagem 6/12\,meses, banda $\pm 2$).
+			O contraste primary de alteração temporal é \textbf{\code{t1\_deltas} vs \code{t1\_only}}; concatenação wide/\code{abs} entra só como âncora metodológica, não como encoding de mudança.
+			Protocolo fixo: SVM, selecção \code{l1\_stable}, sem ComBat, nested CV; métrica AUC patient-level.
+			Na coorte claim \code{48m\_12m}, texture e volume ganham com deltas; shape permanece teto estático; late fusion com braço texture-$\Delta$ supera o teto shape baseline.
+		\end{abstract}
+		
+		\begin{keyword}
+			Longitudinal MRI \sep hippocampus \sep Mild Cognitive Impairment \sep Radiomics \sep Machine Learning \sep Nested cross-validation \sep Late fusion
+		\end{keyword}
+		
+	\end{frontmatter}
+	
+	% =============================================================================
+	\section{Pergunta principal}
+	\label{sec:pergunta}
+	
+	No hipocampo, para sMCI$\rightarrow$pMCI, há alteração útil no tempo?
+	Quantifica-se o ganho de \code{t1\_deltas} face a \code{t1\_only} em atributos unimodais e em fusão late multimodal, e como isso varia com a janela clínica e o intervalo entre imagens.
+	
+	% =============================================================================
+	\section{Definição e seleção populacional}
+	\label{sec:populacao}
+	
+	
+	Os dados utilizados neste estudo foram obtidos da base de dados da Alzheimer's Disease Neuroimaging Initiative (ADNI)~\cite{petersen-2009,jr-2008}.
+	A ADNI foi lançada em 2003 como parceria público privada para avaliar marcadores clínicos, genéticos, bioquímicos e de neuroimagem longitudinais da doença de Alzheimer (AD).
+	Este estudo utilizou RM estrutural T1-ponderada adquirida com sequências tridimensionais Magnetization-Prepared Rapid Gradient-Echo (MP-RAGE) das fases ADNI-1, ADNI-2 e ADNI-GO.
+	As imagens foram recolhidas em centros nos Estados Unidos e no Canadá, em scanners de 1.5~T e 3~T da GE Healthcare, Philips Medical Systems e Siemens Medical Solutions conforme ilustra a Tabela~\ref{tab:adni_study}.
+	
+	\begin{table}[htbp]
+		\centering
+		\footnotesize
+		\caption{Imagens T1w MP-RAGE por fase ADNI (união das quatro coortes; imagens únicas por \code{ID\_IMG}).}
+		\label{tab:adni_study}
+		\resizebox{\textwidth}{!}{%
+			\begin{tabular}{lrrcccc}
+				\toprule
+				Fase ADNI & Imagens & Pacientes & Sexo (M/F) & Idade (anos) & Campo (1.5T / 3T) & Fabricante (n) \\
+				\midrule
+				ADNI~1  & 1349 & 370 & 203/167 & $76.14\pm6.91$ & 1261 / 88  & GE (768); Siemens (579); Philips (2) \\
+				ADNI~GO & 51   & 27  & 16/11   & $70.61\pm6.76$ & 0 / 51     & Siemens (44); Philips (7) \\
+				ADNI~2  & 638  & 190 & 101/89  & $73.63\pm7.02$ & 0 / 638    & Siemens (483); Philips (155) \\
+				\midrule
+				Total   & 2038 & 560 & 304/256 & $75.21\pm7.07$ & 1261 / 777 & GE (768); Siemens (1106); Philips (164) \\
+				\bottomrule
+			\end{tabular}%
+		}
+		\begin{flushleft}
+			\footnotesize
+			\textit{Nota:} Contagens sem duplicar a mesma imagem entre coortes (overlap janela$\times$gap).
+			Idade = média $\pm$ DP no momento da aquisição.
+			Sexo por paciente único dentro de cada fase (um paciente pode contribuir imagens a mais do que uma fase; $370+27+190=587>560$).
+			Modelos de equipamento (n imagens): 
+			ADNI~1 --- SIGNA EXCITE (445), Symphony (233), SIGNA HDx (196), Sonata (146), GENESIS\_SIGNA (123), Avanto (100), Trio (34), SymphonyTim (25), Allegra (17), SonataVision (13), TrioTim (11);
+			ADNI~GO --- Verio (25), TrioTim (18), Intera (4), Achieva (3), Skyra (1);
+			ADNI~2 --- TrioTim (297), Achieva (95), Verio (95), Skyra (90), Intera (38), Ingenia (17).
+		\end{flushleft}
+	\end{table}	
+	
+	Originalmente, os diagnósticos dos pacientes estão relacionados a primeira visita (baseline), ou seja, embora o paciente ao longo do tempo possa progredir o diagnóstico para as fases mais avançadas da forma continua da doença de alzheimer, o diagnóstico é relacionado ao dia da primeira visita. Para resolver esse problema, cada exame de RM é alinhado ao diagnóstico clínico e às escalas cognitivas/funcionais (ADAS, CDR, MMSE, FAQ) por correspondência temporal, exigindo distância absoluta $\leq 3$ meses entre a data de aquisição da imagem e a data do diagnóstico, uma vez que a data de diagnóstico é diferente da data de aquisição da imagem, de modo que o rótulo clínico corresponda de maneira mais próxima possível a data de aquisição da imagem. Assim, todas as imagens do dataset passar a ter rótulos clinicos, que podem ser diferentes para o mesmo paciente.
+	Em seguida, são removidos registos com sexo inválido, demência diferente da doença de alzheimer, diagnóstico ou datas em falta, e pacientes com regressão diagnóstica nas fases contínuas da doença de alzheimer, ou seja, pacientes que previamente foram diagnosticados como MCI que regrediram para CN ou pacientes diagnosticados previamente com AD que regrediram para MCI ou CN.
+	Posteriormente, as imagens de repetição cuja aquisição foi feita no mesmo dia da imagem original foram excluídas.
+	Por fim, para identificar possiveis imagens defeituosas, métricas de qualidade de imagem (IQMs) foram calculadas por meio do método \code{MRQy}~\citep{sadri-2020}.
+	Candidatos a outliers foram encontrados com as métricas \code{VRX}, \code{COL}, \code{NUM}, \code{CPP}, \code{PSNR}, \code{SNR7}, \code{CNR}, \code{CVP}, \code{CJV}, \code{EFC} e \code{FBER}.
+	Para cada métrica, outliers foram definidos pelas fences de Tukey~\citep{tukey-1977},
+	\begin{equation}
+		\left[Q_1 - \alpha\,\mathrm{IQR},\, Q_3 + \alpha\,\mathrm{IQR}\right],
+		\qquad \mathrm{IQR} = Q_3 - Q_1,
+		\label{eq:tukey}
+	\end{equation}
+	com $\alpha = 1.5$ e direcionalidade específica da métrica (baixo-mau, alto-mau ou bilateral).
+	Cada volume recebeu um score de não conformidade igual ao número de IQMs sinalizadas; volumes com score $\geq 3$ entraram na shortlist ($69/15{,}014$; $0.46\%$).
+	Os quartis e os limites de IQR foram estimados uma única vez a partir do pool completo de 15{,}014 volumes, sem rótulos diagnósticos, antes da construção das coortes e da validação cruzada; não foram recalculados nos folds externos.
+	Este screening ao nível do conjunto de dados foi, portanto, distinto da modelagem ajustada por fold.
+	Todas as imagens identificadas como outlier foram inspeccionados visualmente no ITK-SNAP~\citep{yushkevich-2006} (v4.2.0).
+	Após esse processo 13 foram removidas do dataset final por apresentarem defeitos oriundos do processo de aquisição das imagens, como cropp ou obstrução da região do campo de visão e faixas de ruído.
+	
+	
+	\subsection{Formação dos conjuntos}
+	
+	Para cada paciente, a data do primeiro MRI define a imagem de baseline $i_1$ no tempo $t_0$.
+	O conjunto longitudinal contém \textbf{exactamente três} imagens preditoras
+	\begin{equation}
+		i=\{i_1,\,i_2,\,i_3\},
+		\quad t(i_1)<t(i_2)<t(i_3),
+	\end{equation}
+	seleccionadas pelo protocolo \code{forward\_band\_pm2}: $i_1$ é o baseline (primeira imagem do pool preditor em $t_0$); $i_2$ é a \textbf{próxima} aquisição cujo intervalo face a $i_1$ cai na banda nominal; $i_3$ é a \textbf{próxima} após $i_2$ com gap na \textbf{mesma} banda.
+	Não se trata de ``três imagens \emph{depois} do baseline'' (o que seriam quatro visitas): são três no total --- baseline + duas seguintes na banda.
+	As bandas adoptadas ($\pm 2$ meses) são disjuntas e evitam a ambiguidade do bordo aos 9 meses que surgiria com $\pm 3$ fechado:
+	
+	\begin{table}[htbp]
+		\centering
+		\caption{Bandas nominais de intervalo entre aquisições.}
+		\label{tab:bandas}
+		\begin{tabular}{ll}
+			\toprule
+			Gap nominal & Banda (meses) \\
+			\midrule
+			6\,m  & $[4,\ 8]$ \\
+			12\,m & $[10,\ 14]$ \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
+	A janela de observação clínica inicia-se em $t_0$ e é de \textbf{36 meses} ou \textbf{48 meses}.
+	
+	Definiram-se quatro grupos: CN, sMCI, pMCI e AD.
+	\begin{itemize}
+		\item \textbf{CN:} todos os diagnósticos na janela são CN.
+		\item \textbf{sMCI:} ausência de AD até $t_{\mathrm{end}}=t_0+$ janela (36 ou 48 meses); existe pelo menos uma visita com data $\ge t_{\mathrm{end}}$; a \textbf{primeira} dessas visitas pós-janela deve permanecer \textbf{MCI}.
+		A definição não implica que o paciente nunca converterá; exige apenas ausência de conversão no horizonte pré-especificado, com confirmação na primeira avaliação após o fim da janela.
+		\item \textbf{pMCI:} baseline MCI e, dentro da janela, pelo menos um diagnóstico de AD.
+		Composições admitidas (respeitando janela e gap de imagem): $\{\mathrm{MCI},\mathrm{MCI},\mathrm{MCI}\}$ com $\ge 1$ AD na janela, ou $\{\mathrm{MCI},\mathrm{MCI},\mathrm{AD}\}$ tratando esse AD como rótulo de conversão no conjunto.
+		Não se admite $\{\mathrm{MCI},\mathrm{AD},\mathrm{AD}\}$: apenas o primeiro AD classifica o grupo, e um segundo AD afastaria o último MCI do limite de 12 meses, com alterações estruturais adicionais.
+		\item \textbf{AD:} todos os diagnósticos na janela são AD.
+	\end{itemize}
+	
+	\subsection{Confirmação sMCI}
+	\label{subsec:confirmacao-smci}
+	
+	O rótulo sMCI/pMCI é decidido em \code{classify\_patient} \textbf{antes} da selecção das imagens preditoras (rótulo clínico, independente da banda $\pm 2$):
+	\begin{enumerate}
+		\item Sem AD até $t_{\mathrm{end}}$.
+		\item Existe visita com \code{MRI\_DATE} $\ge t_{\mathrm{end}}$.
+		\item A primeira dessas visitas é MCI $\rightarrow$ \textbf{sMCI}.
+		\item Se essa primeira visita pós-janela for AD (ou outro diagnóstico não-MCI) $\rightarrow$ \textbf{excluído} (\code{desfecho\_intervalado}).
+		\item Sem visita pós-janela $\rightarrow$ \textbf{excluído} (\code{sem\_confirmacao\_pos\_janela}).
+		\item Se a primeira AD ocorre \textbf{dentro} da janela $\rightarrow$ \textbf{pMCI} (não se trata de ``sMCI falhou'').
+	\end{enumerate}
+	
+	A confirmação \textbf{não} usa o range $\pm 2$ meses.
+	A banda $\pm 2$ aplica-se apenas à escolha das três imagens preditoras (para sMCI: no intervalo até $t_{\mathrm{end}}$, com DIAG MCI).
+	A visita de confirmação pode situar-se fora desse espaçamento entre aquisições.
+	
+	\subsection{Coortes de estudo}
+	\label{subsec:coortes}
+	
+	\begin{table}[htbp]
+		\centering
+		\caption{Contagens sMCI/pMCI em conjuntos (protocolo actual, banda $\pm 2$).}
+		\label{tab:coortes}
+		\begin{tabular}{lll}
+			\toprule
+			Janela & Gap imagens & sMCI / pMCI \\
+			\midrule
+			36\,m & $6\pm 2\ [4,8]$   & 125 / 106 \\
+			36\,m & $12\pm 2\ [10,14]$ & 121 / 33 \\
+			48\,m & $6\pm 2\ [4,8]$   & 73 / 120 \\
+			48\,m & $12\pm 2\ [10,14]$ & \textbf{72 / 48} \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
+	A Tabela~\ref{tab:clin_cohorts} resume demografia e scores cognitivos/funcionais nas três visitas preditoras ($t_0$, $t_1$, $t_2$) para sMCI e pMCI nas quatro coortes.
+	CN/AD e CDR global omitidos (continuum de sanidade / constante 0{,}50 no baseline MCI).
+	Valores contínuos: média $\pm$ desvio-padrão; $n$ só na coluna pacientes.
+	
+	\begin{table}[htbp]
+		\centering
+		\footnotesize
+		\caption{Características clínicas sMCI/pMCI nas quatro coortes (banda $\pm 2$, soft pMCI activo).}
+		\label{tab:clin_cohorts}
+		\resizebox{\textwidth}{!}{%
+			\begin{tabular}{lllrrccccc}
+				\toprule
+				Coorte & Grupo & Slot & $n$ & Sexo M/F & Idade & MMSE & ADAS & CDR-SB & FAQ \\
+				\midrule
+				\multirow{6}{*}{\code{36m\_6m}}
+				& \multirow{3}{*}{sMCI}
+				& $t_0$ & 125 & 80/45 & $72.63\pm7.18$ & $27.78\pm1.75$ & $9.05\pm3.61$ & $1.22\pm0.64$ & $1.93\pm3.09$ \\
+				& & $t_1$ & 125 & 80/45 & $73.16\pm7.16$ & $28.04\pm1.77$ & $8.79\pm3.64$ & $1.23\pm0.77$ & $2.22\pm3.33$ \\
+				& & $t_2$ & 125 & 80/45 & $73.67\pm7.19$ & $27.99\pm1.88$ & $8.47\pm4.11$ & $1.36\pm0.95$ & $2.53\pm3.56$ \\
+				\cmidrule{2-10}
+				& \multirow{3}{*}{pMCI}
+				& $t_0$ & 106 & 56/50 & $74.39\pm7.33$ & $26.64\pm1.74$ & $13.54\pm4.49$ & $1.94\pm1.00$ & $5.34\pm4.42$ \\
+				& & $t_1$ & 106 & 56/50 & $74.90\pm7.26$ & $25.32\pm2.65$ & $14.84\pm5.00$ & $2.44\pm1.01$ & $6.79\pm4.75$ \\
+				& & $t_2$ & 106 & 56/50 & $75.44\pm7.30$ & $24.68\pm2.70$ & $15.75\pm5.83$ & $3.19\pm1.41$ & $8.95\pm5.66$ \\
+				\midrule
+				\multirow{6}{*}{\code{36m\_12m}}
+				& \multirow{3}{*}{sMCI}
+				& $t_0$ & 121 & 80/41 & $73.15\pm7.06$ & $27.80\pm1.74$ & $9.05\pm3.60$ & $1.21\pm0.63$ & $1.85\pm3.01$ \\
+				& & $t_1$ & 121 & 80/41 & $74.21\pm7.07$ & $28.02\pm1.87$ & $8.62\pm4.20$ & $1.33\pm0.88$ & $2.58\pm3.48$ \\
+				& & $t_2$ & 121 & 80/41 & $75.22\pm7.05$ & $27.85\pm2.17$ & $9.08\pm4.54$ & $1.51\pm1.20$ & $2.70\pm3.65$ \\
+				\cmidrule{2-10}
+				& \multirow{3}{*}{pMCI}
+				& $t_0$ & 33 & 22/11 & $74.30\pm7.35$ & $27.00\pm1.62$ & $12.30\pm2.85$ & $2.09\pm1.17$ & $5.45\pm4.90$ \\
+				& & $t_1$ & 33 & 22/11 & $75.33\pm7.34$ & $25.88\pm2.13$ & $13.31\pm4.07$ & $2.67\pm1.19$ & $7.55\pm4.94$ \\
+				& & $t_2$ & 33 & 22/11 & $76.39\pm7.34$ & $23.33\pm2.91$ & $17.24\pm4.78$ & $4.45\pm1.40$ & $12.76\pm6.02$ \\
+				\midrule
+				\multirow{6}{*}{\code{48m\_6m}}
+				& \multirow{3}{*}{sMCI}
+				& $t_0$ & 73 & 48/25 & $72.29\pm6.80$ & $27.89\pm1.65$ & $8.80\pm3.53$ & $1.11\pm0.61$ & $1.88\pm3.32$ \\
+				& & $t_1$ & 73 & 48/25 & $72.84\pm6.74$ & $28.30\pm1.40$ & $8.33\pm3.40$ & $1.09\pm0.71$ & $2.07\pm3.40$ \\
+				& & $t_2$ & 73 & 48/25 & $73.30\pm6.81$ & $28.16\pm1.84$ & $7.83\pm3.49$ & $1.16\pm0.95$ & $2.30\pm3.36$ \\
+				\cmidrule{2-10}
+				& \multirow{3}{*}{pMCI}
+				& $t_0$ & 120 & 62/58 & $74.35\pm7.20$ & $26.65\pm1.71$ & $13.20\pm4.41$ & $1.89\pm0.98$ & $5.17\pm4.46$ \\
+				& & $t_1$ & 120 & 62/58 & $74.85\pm7.15$ & $25.43\pm2.60$ & $14.44\pm4.99$ & $2.37\pm1.00$ & $6.46\pm4.81$ \\
+				& & $t_2$ & 120 & 62/58 & $75.40\pm7.18$ & $24.89\pm2.65$ & $15.38\pm5.65$ & $3.04\pm1.43$ & $8.53\pm5.81$ \\
+				\midrule
+				\multirow{6}{*}{\textbf{\code{48m\_12m}}}
+				& \multirow{3}{*}{sMCI}
+				& $t_0$ & 72 & 49/23 & $72.88\pm6.70$ & $28.00\pm1.63$ & $8.71\pm3.40$ & $1.07\pm0.59$ & $1.85\pm3.30$ \\
+				& & $t_1$ & 72 & 49/23 & $73.93\pm6.73$ & $28.32\pm1.69$ & $8.07\pm3.65$ & $1.17\pm0.89$ & $2.43\pm3.37$ \\
+				& & $t_2$ & 72 & 49/23 & $74.96\pm6.68$ & $28.29\pm1.86$ & $8.65\pm3.59$ & $1.29\pm1.03$ & $2.26\pm3.26$ \\
+				\cmidrule{2-10}
+				& \multirow{3}{*}{pMCI}
+				& $t_0$ & 48 & 28/20 & $73.98\pm6.83$ & $26.94\pm1.56$ & $12.18\pm2.95$ & $1.93\pm1.10$ & $4.83\pm4.88$ \\
+				& & $t_1$ & 48 & 28/20 & $75.00\pm6.83$ & $25.90\pm1.95$ & $13.24\pm3.79$ & $2.45\pm1.18$ & $6.77\pm5.36$ \\
+				& & $t_2$ & 48 & 28/20 & $76.06\pm6.86$ & $23.90\pm2.81$ & $16.44\pm4.81$ & $3.76\pm1.61$ & $10.56\pm6.51$ \\
+				\bottomrule
+			\end{tabular}%
+		}
+		\begin{flushleft}
+			\footnotesize
+			\textit{Nota:} Soft pMCI (último slot = primeiro AD): 46 em \code{36m\_6m}/\code{48m\_6m}; 33 em \code{36m\_12m}/\code{48m\_12m}.
+			MMSE: Mini-Mental State Examination; ADAS: Alzheimer's Disease Assessment Scale; CDR-SB: Clinical Dementia Rating -- Sum of Boxes; FAQ: Functional Activities Questionnaire.
+			Coorte claim = \code{48m\_12m}.
+		\end{flushleft}
+	\end{table}
+	
+	Também se exploraram as bases \textbf{AIBL} e \textbf{OASIS} sob a mesma lógica de elegibilidade, mas sem número suficiente de conjuntos longitudinais com três imagens.
+	
+	A tarefa principal é a classificação \textbf{sMCI vs pMCI}.
+	As quatro coortes \code{36m\_6m}, \code{36m\_12m}, \code{48m\_6m}, \code{48m\_12m} cobrem o gradiente janela $\times$ gap.
+	A coorte claim para crowning longitudinal e multimodal é \textbf{\code{48m\_12m}} (janela longa + gap 12\,m), onde vol/texture mostram maior agregação de \code{t1\_deltas} face a \code{t1\_only}.
+	Demografia e contrastes metodológicos wide/\code{abs} usam sobretudo \code{36m\_6m} (maior $n$).
+	
+	\paragraph{Janela 36 vs 48 no mesmo gap (leitura de \code{t1\_only} / baseline).}
+	Não se deve esperar AUC idêntica em \code{36m\_6m} vs \code{48m\_6m} (nem em \code{36m\_12m} vs \code{48m\_12m}) só porque o encoding usa a visita baseline.
+	Na \textbf{intersecção} de pacientes presentes nas duas coortes com o mesmo espaçamento nominal, o \code{ID\_IMG} de $t_0$ coincide (e o triplo $t_0$--$t_1$--$t_2$ também), com o mesmo rótulo de grupo.
+	Contudo as \textbf{populações não são as mesmas}: a janela clínica altera a elegibilidade (quem entra ou sai).
+	Exemplos no protocolo actual (banda $\pm 2$, selecção forward): sMCI 125 vs 73 (gap 6\,m) e 121 vs 72 (gap 12\,m), com dezenas de IDs exclusivos de uma das janelas.
+	Logo diferem $n$, balanço sMCI/pMCI, partições de CV e AUC --- inclusive em \code{t1\_only} --- mesmo com overlap de baselines.
+	
+	% =============================================================================
+	\section{Pré-processamento e atributos}
+	\label{sec:atributos}
+	
+	Após tratamento das imagens, alinhamento temporal e filtro de ROI hipocampal, extraem-se quatro famílias de atributos por visita:
+	\begin{itemize}
+		\item volume (frações teciduais normalizadas + \code{MeshVolume});
+		\item shape (descritores geométricos; \code{MeshVolume} ficou no bloco vol);
+		\item texture (GLCM canónico);
+		\item deslocamento/DVF.
+	\end{itemize}
+	
+	Representações temporais:
+	
+	\begin{table}[htbp]
+		\centering
+		\caption{Representações temporais (nomenclatura CLI).}
+		\label{tab:reps}
+		\begin{tabular}{lll}
+			\toprule
+			CLI & Papel & Definição \\
+			\midrule
+			\code{t1\_only}    & baseline (claim B) & só atributos de $t_0$ \\
+			\code{t1\_deltas}  & longitudinal primary & $t_0$ + deltas absolutos (D21/D31/D32) \\
+			\code{wide}/\code{abs} & âncora metodológica & concatenação T1+T2+T3 (níveis, não mudança) \\
+			\code{t1\_deltas\_rel} & sensibilidade & deltas relativos; não crownear \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
+	\paragraph{Dimensionalidade de atributos do hipocampo L/R.}
+	
+	\begin{table}[htbp]
+		\centering
+		\caption{Número de atributos por modalidade e encoding (L+R; allowlist actual).}
+		\label{tab:dims}
+		\begin{tabular}{llrrr}
+			\toprule
+			Modalidade & Sufixos (por lado) & \code{t1\_only} & \code{wide} & \code{t1\_deltas} \\
+			\midrule
+			vol     & gm/wm/csf\_norm + MeshVolume (4) & 8  & 24  & 32 \\
+			shape   & 5 shape & 10 & 30  & 40 \\
+			texture & 4 GLCM & 8  & 24  & 32 \\
+			disp    & 4 (mag\_mean, strain\_fro\_*, logjac\_var) & 8 & 24 & 32 \\
+			all     & soma early-fusion & 34 & 102 & 136 \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
+	A modalidade \code{all} (early-fusion de todos os blocos) entra nas ablações unimodais de referência, mas \textbf{não} no contraste estatístico claim B: esse contraste compara encodings temporais \emph{dentro} de cada família (vol/shape/texture/disp).
+	
+	Protocolo de modelagem fixo nas ablações oficiais: SVM, selecção \code{l1\_stable} (corte de frequência 70\%), sem ComBat, nested CV com 10 repetições, métrica primária \textbf{AUC patient-level} (média de scores OOF por paciente).
+	AUCs reportadas como média $\pm$ desvio padrão (\code{auc\_patient\_mean} $\pm$ \code{auc\_patient\_std}), com 3 casas decimais.
+	
+	% =============================================================================
+	\section{Principais resultados}
+	\label{sec:resultados}
+	
+	Estratégia: (i) protocolo fixo \textbf{SVM + \code{l1\_stable} + sem ComBat}; (ii) unimodal nas quatro coortes; (iii) claim longitudinal e multimodal em \code{48m\_12m}; (iv) late fusion com braços só em \{\code{t1\_only}, \code{t1\_deltas}\} (sem escolher encoding pós-hoc a partir do melhor unimodal).
+	RF/MLP e ComBat ficam na sensibilidade unimodal.
+	
+	\subsection{Ablação unimodal: \texorpdfstring{\code{t1\_deltas}}{t1\_deltas} vs \texorpdfstring{\code{t1\_only}}{t1\_only}}
+	\label{subsec:unimodal}
+	
+	\paragraph{Contraste primary.}
+	Pergunta de alteração temporal = $\Delta\mathrm{AUC} = \mathrm{AUC}(\code{t1\_deltas}) - \mathrm{AUC}(\code{t1\_only})$.
+	\code{wide}/\code{abs} pode ter AUC alta (níveis multi-visita), mas \textbf{não} responde ``há mudança útil?''; reporta-se à parte.
+	
+	\paragraph{Coorte claim \code{48m\_12m}.}
+	
+	\begin{table}[htbp]
+		\centering
+		\caption{AUC patient-level em \code{48m\_12m} (svm, nocombat).}
+		\label{tab:48m12_uni}
+		\begin{tabular}{lrrr}
+			\toprule
+			Mod & \code{t1\_only} & \code{wide} & \code{t1\_deltas} \\
+			\midrule
+			shape   & \textbf{0.761$\pm$0.043} & \textbf{0.783$\pm$0.041} & 0.736$\pm$0.046 \\
+			vol     & 0.633$\pm$0.053 & 0.671$\pm$0.049 & \textbf{0.661$\pm$0.051} \\
+			texture & 0.695$\pm$0.051 & 0.761$\pm$0.047 & \textbf{0.753$\pm$0.047} \\
+			disp    & 0.486$\pm$0.053 & 0.525$\pm$0.052 & 0.504$\pm$0.053 \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
+	\begin{table}[htbp]
+		\centering
+		\caption{Ganho longitudinal primary na coorte claim ($\Delta = \code{t1\_deltas} - \code{t1\_only}$).}
+		\label{tab:delta_long}
+		\begin{tabular}{lrrr}
+			\toprule
+			Mod & \code{t1\_only} & \code{t1\_deltas} & $\Delta$ \\
+			\midrule
+			shape   & \textbf{0.761$\pm$0.043} & 0.736$\pm$0.046 & $-0.024$ \\
+			vol     & 0.633$\pm$0.053 & \textbf{0.661$\pm$0.051} & $+0.029$ \\
+			texture & 0.695$\pm$0.051 & \textbf{0.753$\pm$0.047} & $+0.057$ \\
+			disp    & 0.486$\pm$0.053 & 0.504$\pm$0.053 & $+0.018$ \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
+	\paragraph{Gradiente janela $\times$ gap ($\Delta = \code{t1\_deltas} - \code{t1\_only}$).}
+	
+	\begin{table}[htbp]
+		\centering
+		\caption{$\Delta$AUC patient-level por coorte (svm, nocombat).}
+		\label{tab:gradient}
+		\begin{tabular}{lrrrr}
+			\toprule
+			Mod & \code{36m\_6m} & \code{36m\_12m} & \code{48m\_6m} & \code{48m\_12m} \\
+			\midrule
+			vol     & $+0.022$ & $-0.022$ & $+0.035$ & $+0.029$ \\
+			shape   & $+0.000$ & $-0.030$ & $-0.011$ & $-0.024$ \\
+			texture & $+0.032$ & $+0.027$ & $+0.047$ & $+0.057$ \\
+			disp    & $-0.038$ & $-0.121$ & $-0.035$ & $+0.018$ \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
+	\paragraph{Resumo unimodal.}
+	\begin{itemize}
+		\item \textbf{Texture:} ganho de deltas em \emph{todas} as quatro coortes; máximo em \code{48m\_12m} ($+0.057$).
+		\item \textbf{Vol:} ganho em três coortes; excepção \code{36m\_12m} ($-0.022$).
+		\item \textbf{Shape:} teto estático --- baseline $\ge$ deltas em quase todo o gradiente; em \code{48m\_12m} o wide ainda sobe um pouco (níveis), mas deltas não batem $t_0$.
+		\item \textbf{Disp:} fraco e instável; não crownear.
+		\item \code{t1\_deltas\_rel}: sensibilidade; em texture pode igualar/superar deltas absolutos, mas em vol/disp costuma colapsar --- primary permanece \code{t1\_deltas}.
+	\end{itemize}
+	
+	\paragraph{Top 10 por modalidade (coortes $\times$ \{\code{t1\_only}, \code{t1\_deltas}, \code{wide}\}).}
+	
+	\begin{table}[htbp]
+		\centering
+		\caption{Top-10 unimodal por modalidade (svm, nocombat).}
+		\label{tab:top10_uni}
+		\resizebox{\textwidth}{!}{%
+			\begin{tabular}{cllll}
+				\toprule
+				\# & shape & vol & texture & disp \\
+				\midrule
+				1 & \textbf{0.815$\pm$0.034} \code{48m\_6m}/\code{wide}
+				& \textbf{0.761$\pm$0.032} \code{36m\_6m}/\code{wide}
+				& \textbf{0.779$\pm$0.033} \code{48m\_6m}/\code{t1\_deltas}
+				& \textbf{0.664$\pm$0.035} \code{36m\_6m}/\code{t1\_only} \\
+				2 & 0.804$\pm$0.029 \code{36m\_6m}/\code{wide}
+				& 0.760$\pm$0.032 \code{36m\_6m}/\code{t1\_deltas}
+				& 0.772$\pm$0.034 \code{48m\_6m}/\code{wide}
+				& 0.661$\pm$0.035 \code{36m\_6m}/\code{wide} \\
+				3 & 0.802$\pm$0.034 \code{48m\_6m}/\code{t1\_only}
+				& 0.753$\pm$0.035 \code{48m\_6m}/\code{t1\_deltas}
+				& 0.772$\pm$0.047 \code{36m\_12m}/\code{wide}
+				& 0.637$\pm$0.042 \code{48m\_6m}/\code{t1\_only} \\
+				4 & 0.791$\pm$0.035 \code{48m\_6m}/\code{t1\_deltas}
+				& 0.753$\pm$0.037 \code{48m\_6m}/\code{wide}
+				& 0.761$\pm$0.047 \code{48m\_12m}/\code{wide}
+				& 0.628$\pm$0.041 \code{48m\_6m}/\code{wide} \\
+				5 & 0.789$\pm$0.030 \code{36m\_6m}/\code{t1\_deltas}
+				& 0.738$\pm$0.033 \code{36m\_6m}/\code{t1\_only}
+				& 0.760$\pm$0.048 \code{36m\_12m}/\code{t1\_deltas}
+				& 0.626$\pm$0.036 \code{36m\_6m}/\code{t1\_deltas} \\
+				6 & 0.788$\pm$0.030 \code{36m\_6m}/\code{t1\_only}
+				& 0.719$\pm$0.039 \code{48m\_6m}/\code{t1\_only}
+				& 0.759$\pm$0.032 \code{36m\_6m}/\code{wide}
+				& 0.608$\pm$0.051 \code{36m\_12m}/\code{t1\_only} \\
+				7 & 0.783$\pm$0.041 \code{48m\_12m}/\code{wide}
+				& 0.707$\pm$0.048 \code{36m\_12m}/\code{t1\_only}
+				& 0.754$\pm$0.032 \code{36m\_6m}/\code{t1\_deltas}
+				& 0.602$\pm$0.042 \code{48m\_6m}/\code{t1\_deltas} \\
+				8 & 0.761$\pm$0.043 \code{48m\_12m}/\code{t1\_only}
+				& 0.699$\pm$0.052 \code{36m\_12m}/\code{wide}
+				& 0.753$\pm$0.047 \code{48m\_12m}/\code{t1\_deltas}
+				& 0.577$\pm$0.058 \code{36m\_12m}/\code{wide} \\
+				9 & 0.754$\pm$0.043 \code{36m\_12m}/\code{wide}
+				& 0.685$\pm$0.055 \code{36m\_12m}/\code{t1\_deltas}
+				& 0.733$\pm$0.049 \code{36m\_12m}/\code{t1\_only}
+				& 0.525$\pm$0.052 \code{48m\_12m}/\code{wide} \\
+				10 & 0.741$\pm$0.045 \code{36m\_12m}/\code{t1\_only}
+				& 0.671$\pm$0.049 \code{48m\_12m}/\code{wide}
+				& 0.732$\pm$0.037 \code{48m\_6m}/\code{t1\_only}
+				& 0.504$\pm$0.053 \code{48m\_12m}/\code{t1\_deltas} \\
+				\bottomrule
+			\end{tabular}%
+		}
+	\end{table}
+	
+	\paragraph{Leitura.}
+	Hierarquia prática no melhor de cada bloco: shape $\gg$ texture $\gtrsim$ vol $\gg$ disp.
+	Para a pergunta temporal, o sinal útil concentra-se em \textbf{texture} (e vol em janelas/gaps favoráveis), não em shape.
+	
+	\subsection{Ablação multimodal: baseline vs.\ longitudinal em \texorpdfstring{\code{48m\_12m}}{48m\_12m}}
+	\label{subsec:multimodal}
+	
+	Late fusion: média de scores OOF por modalidade; braços só \code{t1\_only} ou \code{t1\_deltas}.
+	Teto baseline shape = \textbf{0.761$\pm$0.043}.
+	
+	\paragraph{Top 10 união só baseline.}
+	
+	\begin{table}[htbp]
+		\centering
+		\caption{Top-10 late fusion só \code{t1\_only} em \code{48m\_12m}.}
+		\label{tab:late_base}
+		\begin{tabular}{clrr}
+			\toprule
+			\# & Spec (todos $t_1$) & AUC & vs shape $t_1$ \\
+			\midrule
+			1 & vol $\cup$ shape $\cup$ texture & \textbf{0.773$\pm$0.043} & $+0.012$ \\
+			2 & vol $\cup$ shape $\cup$ texture $\cup$ disp & 0.770$\pm$0.043 & $+0.009$ \\
+			3 & shape $\cup$ texture & 0.764$\pm$0.044 & $+0.003$ \\
+			4 & shape $\cup$ texture $\cup$ disp & 0.762$\pm$0.045 & $+0.001$ \\
+			5 & vol $\cup$ shape & 0.757$\pm$0.044 & $-0.003$ \\
+			6 & shape $\cup$ disp & 0.757$\pm$0.044 & $-0.004$ \\
+			7 & vol $\cup$ shape $\cup$ disp & 0.750$\pm$0.044 & $-0.011$ \\
+			8 & vol $\cup$ texture & 0.719$\pm$0.048 & $-0.042$ \\
+			9 & vol $\cup$ texture $\cup$ disp & 0.714$\pm$0.047 & $-0.047$ \\
+			10 & texture $\cup$ disp & 0.686$\pm$0.051 & $-0.075$ \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
+	
+	\paragraph{Top 10 com braço longitudinal.}
+	
+	\begin{table}[htbp]
+		\centering
+		\caption{Top-10 late fusion com pelo menos um braço \code{t1\_deltas} em \code{48m\_12m}.}
+		\label{tab:late_long}
+		\resizebox{\textwidth}{!}{%
+			\begin{tabular}{clrl}
+				\toprule
+				\# & Spec & AUC & Nota \\
+				\midrule
+				1 & shape $t_1$ $\cup$ tex $\Delta$ $\cup$ disp $\Delta$ & \textbf{0.803$\pm$0.039} & exploratório (mono disp fraco) \\
+				2 & \textbf{shape $t_1$ $\cup$ tex $\Delta$} & \textbf{0.801$\pm$0.040} & \textbf{âncora pré-especificada} \\
+				3 & shape $t_1$ $\cup$ tex $\Delta$ $\cup$ disp $t_1$ & 0.801$\pm$0.040 & \\
+				4 & shape $t_1$ $\cup$ vol $\Delta$ $\cup$ tex $\Delta$ & 0.799$\pm$0.040 & \\
+				5 & shape $t_1$ $\cup$ vol $t_1$ $\cup$ tex $\Delta$ & 0.798$\pm$0.038 & \\
+				6 & shape $t_1$ $\cup$ vol $\Delta$ $\cup$ tex $\Delta$ $\cup$ disp $t_1$ & 0.798$\pm$0.040 & \\
+				7 & shape $t_1$ $\cup$ vol $\Delta$ $\cup$ tex $\Delta$ $\cup$ disp $\Delta$ & 0.797$\pm$0.041 & \\
+				8 & shape $t_1$ $\cup$ vol $t_1$ $\cup$ tex $\Delta$ $\cup$ disp $\Delta$ & 0.794$\pm$0.041 & \\
+				9 & shape $t_1$ $\cup$ vol $t_1$ $\cup$ tex $\Delta$ $\cup$ disp $t_1$ & 0.794$\pm$0.040 & \\
+				10 & shape $\Delta$ $\cup$ tex $\Delta$ $\cup$ disp $\Delta$ & 0.786$\pm$0.040 & sem teto shape $t_1$ \\
+				\bottomrule
+			\end{tabular}%
+		}
+	\end{table}
+	
+	Late só-baseline fica $\approx$ teto shape ($+0.01$).
+	Com texture-$\Delta$, sobe para $\sim$0.80 --- ganho multimodal alinhado ao sinal unimodal de alteração.
+	
+	\subsubsection{Early fusion vs.\ late fusion em \texorpdfstring{\code{48m\_12m}}{48m\_12m}}
+	\label{subsubsec:early-late}
+	
+	\begin{table}[htbp]
+		\centering
+		\caption{Early vs late nos specs pré-especificados (claim).}
+		\label{tab:early_late}
+		\resizebox{\textwidth}{!}{%
+			\begin{tabular}{lrrr}
+				\toprule
+				Atributos & Early & Late & $\Delta$ (late$-$early) \\
+				\midrule
+				\textbf{shape $t_1$ $\cup$ tex $\Delta$ (âncora)} & \textbf{0.772$\pm$0.043} & \textbf{0.801$\pm$0.040} & \textbf{$+0.029$} \\
+				shape $t_1$ $\cup$ vol $\Delta$ $\cup$ tex $\Delta$ & 0.755$\pm$0.044 & 0.799$\pm$0.040 & $+0.044$ \\
+				shape $\Delta$ $\cup$ vol $\Delta$ $\cup$ tex $\Delta$ & 0.760$\pm$0.043 & 0.785$\pm$0.041 & $+0.025$ \\
+				shape $\Delta$ $\cup$ tex $\Delta$ & 0.750$\pm$0.044 & 0.785$\pm$0.042 & $+0.035$ \\
+				shape $t_1$ $\cup$ vol $\Delta$ & 0.752$\pm$0.045 & 0.759$\pm$0.044 & $+0.007$ \\
+				vol $\Delta$ $\cup$ tex $\Delta$ & 0.751$\pm$0.046 & 0.759$\pm$0.044 & $+0.008$ \\
+				shape $\Delta$ $\cup$ vol $\Delta$ & 0.754$\pm$0.043 & 0.740$\pm$0.044 & $-0.014$ \\
+				\bottomrule
+			\end{tabular}%
+		}
+	\end{table}
+	
+	\paragraph{Definição da agregação multimodal.}
+	No early fusion, atributos de diferentes modalidades são concatenados num único espaço de features e submetidos à mesma selecção/classificação, o que pode diluir a contribuição de um bloco forte (ex.\ shape) perante outro de maior dimensionalidade.
+	
+	No late fusion, cada modalidade é modelada de forma independente e as previsões agregam-se a posteriori pela média simples dos scores, preservando melhor o sinal específico de cada família --- em particular o braço texture-$\Delta$.
+	
+	% =============================================================================
+	\section{Análises adicionais}
+	\label{sec:adicionais}
+	
+	\paragraph{Sanidade CN$\times$AD.}
+	(\code{36m\_6m}, wide): AUC alta em vol/shape/texture --- valida pipeline; a dificuldade é prognóstico sMCI/pMCI.
+	
+	\paragraph{Demografia.}
+	Idade/sexo equilibrados entre sMCI e pMCI na âncora \code{36m\_6m}; modelos só demográficos $\approx$ acaso; imagem $>$ demografia no $\Delta\mathrm{AUC}$ bootstrap.
+	
+	\paragraph{ComBat / outros modelos.}
+	Sensibilidade unimodal (não na grade de fusão); primary de imagem permanece SVM sem ComBat.
+	
+	\paragraph{Global/leaky.}
+	Controlo de integridade do nested CV (coorte claim, onde há pasta leaky).
+	
+	\paragraph{Clínico / clínica+imagem.}
+	Disponível em \code{48m\_12m}; RM hipocampal como \textbf{adjunto}, não first-line clínico.
+	Manter como contexto/suplemento se o artigo for centrado em encoding de imagem.
+	
+	\paragraph{Sensibilidade $\tau \in \{50,70,90\}$ (\code{48m\_12m}).}
+	Performance não monótona; $\tau=70\%$ frequentemente ótimo ou próximo; $\tau=90\%$ não garante melhora.
+	
+	\paragraph{Estabilidade de atributos.}
+	\begin{itemize}
+		\item \textbf{Volume:} gm\_norm/csf\_norm e MeshVolume no allowlist; wm\_norm frequentemente menos estável.
+		\item \textbf{Shape:} descritores geométricos estáveis em $t_0$; teto classificatório sem ganho temporal.
+		\item \textbf{Texture:} Contrast estável; JointEntropy mais rara na selecção.
+		\item \textbf{Disp:} pool estável fino --- alinha com AUC unimodal fraca.
+	\end{itemize}
+	
+	% =============================================================================
+	\section{Limitação --- outras bases (AIBL, OASIS)}
+	\label{sec:limitacao}
+	
+	O estudo usa \textbf{ADNI} como única fonte com contagens viáveis sob a definição populacional adoptada: três RM elegíveis a partir do mesmo baseline $t_0$, gaps nominais de $\sim$6 ou $\sim$12 meses, e rótulos sMCI/pMCI na janela clínica de 36 ou 48 meses.
+	\textbf{AIBL} e \textbf{OASIS} foram analisadas no mesmo pipeline de alinhamento temporal e filtros; contudo, após a exigência de \textbf{conjuntos com 3 imagens}, restavam poucos sujeitos --- em especial \textbf{pMCI}, onde conversão a AD dentro da janela e série tricíclica de RM coincidem raramente.
+	Sem $n$ relevante nessas classes, treino/avaliação multi-coorte ou validação externa nessas bases fica inviável sem relaxar a definição (ex.\ 1--2 visitas), o que quebraria a comparabilidade com o encoding longitudinal $t_0$+deltas.
+	Trata-se, portanto, de uma \textbf{limitação das bases disponíveis face ao desenho}, não de uma falha do protocolo de modelagem: o desenho longitudinal tricíclico restringe a amostra a repositórios com follow-up imagiológico denso o suficiente, hoje sobretudo o ADNI.
+	
+	\bibliographystyle{cas-model2-names-short}
+	\biboptions{authoryear}
+	\bibliography{cas-refs}
+\end{document}
+

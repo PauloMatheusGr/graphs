@@ -55,6 +55,8 @@ VOL_FEAT_COLS = [
     "csf_norm",
     "tissues_mm3",
     "tissues_norm",
+    "original_shape_MeshVolume",
+    
 ]
 
 # ---------------------------------------------------------------------------
@@ -68,11 +70,12 @@ VOL_FEATURE_SUFFIXES = {
     "gm_norm",
     "wm_norm",
     "csf_norm",
+    "original_shape_MeshVolume",
 }
 
 # Shape: volume/forma clássicos; fora = diâmetros max, eixos menores redundantes.
 SHAPE_FEATURE_SUFFIXES = {
-    "original_shape_MeshVolume",
+
     "original_shape_SurfaceArea",
     "original_shape_SurfaceVolumeRatio",
     "original_shape_Sphericity",

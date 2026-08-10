@@ -26,10 +26,10 @@ DISP_FEATURES = "features_displacement_v2.csv"
 VOL_FEAT_COLS = [
     "mask_mm3", "gm_mm3", "gm_norm", "wm_mm3", "wm_norm",
     "csf_mm3", "csf_norm", "tissues_mm3", "tissues_norm",
+   
 ]
 RAD_SIZE_COLS = [
-    "original_firstorder_Energy", "original_firstorder_TotalEnergy",
-    "original_shape_MeshVolume", "original_shape_VoxelVolume",
+    "original_firstorder_Energy", "original_firstorder_TotalEnergy", "original_shape_VoxelVolume", "original_shape_MeshVolume",
     "original_shape_SurfaceArea", "original_shape_LeastAxisLength",
     "original_shape_MajorAxisLength", "original_shape_MinorAxisLength",
     "original_shape_Maximum2DDiameterColumn", "original_shape_Maximum2DDiameterRow",
