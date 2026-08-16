@@ -22,7 +22,10 @@ def image_ablation_path(base: Path, protocol: str, modality: str) -> Path:
         "deltas": base / "ablation_results_deltas",  # alias legado
         "deltas_only": base / "ablation_results_deltas_only",
         "deltas_rel": base / "ablation_results_deltas_rel",
+        "t1_d21_d32": base / "ablation_results_d21d32",
+        "t1_ma": base / "ablation_results_ma",
         "global": base / "ablation_results_leaky",
+        "t1_d21_d32_global": base / "ablation_results_leaky_d21d32",
     }
     if protocol not in roots:
         # cross-mod early fingerprint → ablation_results_fusion/{protocol}/

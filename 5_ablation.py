@@ -121,7 +121,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--modality",
         default="all",
-        help="Modalidade(s): vol|shape|texture|disp|all|",
+        help="Modalidade(s): vol|shape|texture|disp|firstorder|all",
     )
     p.add_argument(
         "--tasks",
@@ -170,7 +170,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--representation",
         choices=REPRESENTATIONS,
         default="wide",
-        help="wide=T1+T2+T3 | t1_only=só baseline | t1_deltas=T1+D21+D31+D32 | deltas_only | t1_deltas_rel",
+        help="wide=T1+T2+T3 | t1_only=só baseline | t1_deltas=T1+D21+D31+D32 | t1_d21_d32 | t1_ma | deltas_only | t1_deltas_rel",
     )
     p.add_argument(
         "--exclude-features",

@@ -27,6 +27,7 @@ from ablation_analysis import estimate_stable_pool_columns, summary_with_pooled
 from ablation_harmonize import harmonize_long_fold, image_ids_for_patients
 from ablation_prep import (
     DISP_FEATURE_SUFFIXES,
+    FIRSTORDER_FEATURE_SUFFIXES,
     META_COLS_WIDE,
     ROI_FILTER_DEFAULT,
     SHAPE_FEATURE_SUFFIXES,
@@ -108,15 +109,19 @@ def modality_collapsed_columns(
     def keep_disp(f: str) -> bool:
         return f in DISP_FEATURE_SUFFIXES
 
+    def keep_firstorder(f: str) -> bool:
+        return f in FIRSTORDER_FEATURE_SUFFIXES
+
     keepers = {
         "vol": keep_vol,
         "shape": keep_shape,
         "texture": keep_texture,
         "disp": keep_disp,
+        "firstorder": keep_firstorder,
     }
     if modality == "all":
         out: list[str] = []
-        for mod in ("vol", "shape", "texture", "disp"):
+        for mod in ("vol", "shape", "texture", "disp", "firstorder"):
             out += modality_collapsed_columns(columns, mod, roi=roi)
         return list(dict.fromkeys(out))
     if modality not in keepers:

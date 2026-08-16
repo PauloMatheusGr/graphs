@@ -136,11 +136,11 @@ python 5_clinic_img.py \
 
 Saída: `ablation_results_clinic/`
 
-Ou tudo extra de uma vez (CN×AD + clínica + fusion + leaky, rep=`t1_deltas`):
+Ou extra no mesmo bash (CN×AD + clínica + fusion + leaky, Q4):
 
 ```bash
-./run_ablation_extra.sh 2>&1 | tee logs/ablation_extra_$(date +%Y%m%d).log
-# PRIMARY=36m_6m REP=t1_deltas ./run_ablation_extra.sh
+SKIP_EXTRA=0 ./run_ablation_full.sh 2>&1 | tee logs/ablation_extra_$(date +%Y%m%d).log
+# PRIMARY=36m_6m SKIP_EXTRA=0 ./run_ablation_full.sh
 ```
 
 ### 2. T1-only — 5 modalidades, só SVM  

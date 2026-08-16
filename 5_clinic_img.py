@@ -471,7 +471,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--modality",
         default="disp",
-        help="Só para fusion: lista vol,shape,texture,disp,all (1 arquivo/modalidade)",
+        help="Só para fusion: lista vol,shape,texture,disp,firstorder,all (1 arquivo/modalidade)",
     )
     p.add_argument("--models", default="svm,rf,xgb,mlp,logreg_l1,elasticnet")
     p.add_argument("--selection", default="l1_stable")

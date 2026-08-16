@@ -91,6 +91,14 @@ TEXTURE_FEATURE_SUFFIXES = {
     "original_glcm_JointEntropy",
 }
 
+# Firstorder: momentos 1–4 do histograma; fora = Energy (tamanho), extremos, Entropy/Uniformity.
+FIRSTORDER_FEATURE_SUFFIXES = {
+    "original_firstorder_Mean",
+    "original_firstorder_Variance",
+    "original_firstorder_Skewness",
+    "original_firstorder_Kurtosis",
+}
+
 # Disp: momentos logjac + strain_fro (artigo); fora = ux/uy/uz, mag, percentis, etc.
 DISP_FEATURE_SUFFIXES = {
     # "mag_mean", "mag_variance", "mag_skewness", "mag_kurtosis",
@@ -222,6 +230,16 @@ def _select_disp_wide_columns(columns: list[str], roi: str) -> list[str]:
     return out
 
 
+def _select_firstorder_wide_columns(columns: list[str], roi: str) -> list[str]:
+    pat = re.compile(rf"^{re.escape(roi)}_[LR]_T[123]_(.+)$")
+    out: list[str] = []
+    for col in columns:
+        m = pat.match(col)
+        if m and m.group(1) in FIRSTORDER_FEATURE_SUFFIXES:
+            out.append(col)
+    return out
+
+
 def _filter_timepoint_columns(
     columns: list[str],
     *,
@@ -252,11 +270,14 @@ def modality_wide_columns(
         out = _select_texture_wide_columns(cols, roi)
     elif modality == "disp":
         out = _select_disp_wide_columns(cols, roi)
+    elif modality == "firstorder":
+        out = _select_firstorder_wide_columns(cols, roi)
     elif modality == "all":
         out = _select_vol_wide_columns(cols, roi)
         out += _select_shape_wide_columns(cols, roi)
         out += _select_texture_wide_columns(cols, roi)
         out += _select_disp_wide_columns(cols, roi)
+        out += _select_firstorder_wide_columns(cols, roi)
         out = list(dict.fromkeys(out))
     else:
         raise ValueError(f"modalidade desconhecida: {modality}")
@@ -457,6 +478,10 @@ if __name__ == "__main__":
     assert len(tex_keep) == len(TEXTURE_FEATURE_SUFFIXES), (
         f"allowlist texture incompleta no CSV: {tex_keep}"
     )
+    fo_keep = [c for c in rad.columns if c in FIRSTORDER_FEATURE_SUFFIXES]
+    assert len(fo_keep) == len(FIRSTORDER_FEATURE_SUFFIXES), (
+        f"allowlist firstorder incompleta no CSV: {fo_keep}"
+    )
     shape_wide_n = len(modality_wide_columns(
         [f"hippocampus_L_T1_{c}" for c in shape_keep],
         "shape",
@@ -465,13 +490,18 @@ if __name__ == "__main__":
         [f"hippocampus_L_T1_{c}" for c in tex_keep],
         "texture",
     ))
+    fo_wide_n = len(modality_wide_columns(
+        [f"hippocampus_L_T1_{c}" for c in fo_keep],
+        "firstorder",
+    ))
     assert shape_wide_n == len(SHAPE_FEATURE_SUFFIXES)
     assert tex_wide_n == len(TEXTURE_FEATURE_SUFFIXES)
+    assert fo_wide_n == len(FIRSTORDER_FEATURE_SUFFIXES)
     # allowlist << set completo no long
     assert shape_wide_n < n_shape_all
     print(
         f"ok: shape long={n_shape_all} → allowlist={shape_wide_n}; "
-        f"texture allowlist={tex_wide_n}"
+        f"texture allowlist={tex_wide_n}; firstorder allowlist={fo_wide_n}"
     )
 
     disp_path = base / "ablation" / ROI_FILTER_DEFAULT / "disp_long.csv"

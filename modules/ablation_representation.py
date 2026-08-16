@@ -7,19 +7,31 @@ from typing import Literal
 
 from ablation_prep import ROI_FILTER_DEFAULT, modality_wide_columns
 
-Representation = Literal["wide", "t1_only", "t1_deltas", "deltas_only", "t1_deltas_rel"]
+Representation = Literal[
+    "wide", "t1_only", "t1_deltas", "deltas_only", "t1_deltas_rel",
+    "t1_d21_d32", "t1_ma",
+]
 REPRESENTATIONS: tuple[str, ...] = (
     "wide",
     "t1_only",
     "t1_deltas",
     "deltas_only",
     "t1_deltas_rel",
+    "t1_d21_d32",
+    "t1_ma",
 )
-DELTA_REPRESENTATIONS = frozenset({"t1_deltas", "deltas_only", "t1_deltas_rel"})
+DELTA_REPRESENTATIONS = frozenset({
+    "t1_deltas", "deltas_only", "t1_deltas_rel", "t1_d21_d32", "t1_ma",
+})
+ABS_DELTA_REPRESENTATIONS = frozenset({
+    "t1_deltas", "deltas_only", "t1_d21_d32", "t1_ma",
+})
 
-FUSION_MODALITIES: tuple[str, ...] = ("vol", "shape", "texture", "disp")
+FUSION_MODALITIES: tuple[str, ...] = ("vol", "shape", "texture", "disp", "firstorder")
 DEFAULT_FUSION_SPEC = "shape:t1_only,vol:deltas_only"
-DEFAULT_LATE_FUSION_SPEC = "shape:t1_only,texture:t1_deltas"
+DEFAULT_LATE_FUSION_SPEC = (
+    "shape:t1_only,vol:t1_d21_d32,texture:t1_d21_d32,disp:t1_d21_d32,firstorder:t1_d21_d32"
+)
 FUSION_RESULTS_ROOT = "ablation_results_fusion"
 LATE_FUSION_RESULTS_ROOT = "ablation_results_late_fusion"
 FusionSlot = tuple[str, str]  # (modality, representation)
@@ -30,6 +42,8 @@ _REP_SHORT: dict[str, str] = {
     "deltas_only": "deltas",
     "t1_deltas": "t1_deltas",
     "t1_deltas_rel": "t1_deltas_rel",
+    "t1_d21_d32": "t1_d21d32",
+    "t1_ma": "t1_ma",
     "wide": "wide",
 }
 
@@ -40,6 +54,8 @@ RESULTS_ROOT_BY_PROTOCOL: dict[str, dict[str, str]] = {
         "t1_deltas": "ablation_results_deltas",
         "deltas_only": "ablation_results_deltas_only",
         "t1_deltas_rel": "ablation_results_deltas_rel",
+        "t1_d21_d32": "ablation_results_d21d32",
+        "t1_ma": "ablation_results_ma",
     },
     "leaky": {
         "wide": "ablation_results_leaky",
@@ -47,6 +63,8 @@ RESULTS_ROOT_BY_PROTOCOL: dict[str, dict[str, str]] = {
         "t1_deltas": "ablation_results_leaky_deltas",
         "deltas_only": "ablation_results_leaky_deltas_only",
         "t1_deltas_rel": "ablation_results_leaky_deltas_rel",
+        "t1_d21_d32": "ablation_results_leaky_d21d32",
+        "t1_ma": "ablation_results_leaky_ma",
     },
     "fusion": {
         "wide": "ablation_results_clinic_img",
@@ -54,6 +72,8 @@ RESULTS_ROOT_BY_PROTOCOL: dict[str, dict[str, str]] = {
         "t1_deltas": "ablation_results_clinic_img_deltas",
         "deltas_only": "ablation_results_clinic_img_deltas_only",
         "t1_deltas_rel": "ablation_results_clinic_img_deltas_rel",
+        "t1_d21_d32": "ablation_results_clinic_img_d21d32",
+        "t1_ma": "ablation_results_clinic_img_ma",
     },
 }
 
@@ -99,10 +119,10 @@ def parse_fusion_spec(value: str) -> tuple[FusionSlot, ...]:
         slots.append((mod, rep))
     if len(slots) < 2:
         raise ValueError("fusion exige ≥2 slots modality:rep")
-    abs_delta = any(r in ("t1_deltas", "deltas_only") for _, r in slots)
+    abs_delta = any(r in ABS_DELTA_REPRESENTATIONS for _, r in slots)
     rel_delta = any(r == "t1_deltas_rel" for _, r in slots)
     if abs_delta and rel_delta:
-        raise ValueError("fusion não mistura deltas abs (t1_deltas/deltas_only) com t1_deltas_rel")
+        raise ValueError("fusion não mistura deltas abs com t1_deltas_rel")
     return tuple(slots)
 
 
@@ -143,7 +163,7 @@ def apply_fusion_wide(
 ):
     """Wide absoluto + colunas delta necessárias para todos os slots (include_absolute)."""
     reps = {r for _, r in slots}
-    needs_abs_delta = bool(reps & {"t1_deltas", "deltas_only"})
+    needs_abs_delta = bool(reps & ABS_DELTA_REPRESENTATIONS)
     needs_rel_delta = "t1_deltas_rel" in reps
     if needs_abs_delta and needs_rel_delta:
         raise ValueError("fusion não mistura deltas abs com t1_deltas_rel")
@@ -160,6 +180,7 @@ def apply_fusion_wide(
         return add_delta_columns(
             wide, roi, include_t1=True, include_absolute=True,
             delta_kind="abs", include_slope=False,
+            include_ma="t1_ma" in reps,
         )
     return wide
 
@@ -324,6 +345,19 @@ if __name__ == "__main__":
     assert t1 == [f"{roi}_L_T1_gm_norm"]
     delta_wide = apply_representation_wide(wide, "t1_deltas", roi=roi)
     assert f"{roi}_L_D32_gm_norm" in delta_wide.columns
+    q4_wide = apply_representation_wide(wide, "t1_d21_d32", roi=roi)
+    q4_cols = feature_columns_for_representation(
+        q4_wide.columns, "vol", roi=roi, representation="t1_d21_d32",
+    )
+    assert f"{roi}_L_D31_gm_norm" not in q4_cols
+    assert f"{roi}_L_D21_gm_norm" in q4_cols
+    ma_wide = apply_representation_wide(wide, "t1_ma", roi=roi)
+    ma_cols = feature_columns_for_representation(
+        ma_wide.columns, "vol", roi=roi, representation="t1_ma",
+    )
+    assert f"{roi}_L_M_gm_norm" in ma_cols
+    assert f"{roi}_L_A_gm_norm" in ma_cols
+    assert f"{roi}_L_D21_gm_norm" not in ma_cols
     dyn_wide = apply_representation_wide(wide, "deltas_only", roi=roi)
     assert f"{roi}_L_T1_gm_norm" not in dyn_wide.columns
     assert f"{roi}_L_D21_gm_norm" in dyn_wide.columns
@@ -331,6 +365,10 @@ if __name__ == "__main__":
     slots = parse_fusion_spec(DEFAULT_FUSION_SPEC)
     assert fusion_fingerprint(slots) == "t1_shape__deltas_vol"
     assert fusion_fingerprint(parse_fusion_spec("shape:t1_only,vol:t1_deltas")) == "t1_shape__t1_deltas_vol"
+    ancora = parse_fusion_spec(DEFAULT_LATE_FUSION_SPEC)
+    assert [m for m, _ in ancora] == ["shape", "vol", "texture", "disp", "firstorder"]
+    assert ancora[0] == ("shape", "t1_only")
+    assert all(r == "t1_d21_d32" for m, r in ancora if m != "shape")
     fw = apply_fusion_wide(wide, slots, roi=roi)
     fcols = feature_columns_for_fusion(fw.columns, slots, roi=roi)
     assert f"{roi}_L_T1_original_shape_Sphericity" in fcols

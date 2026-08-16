@@ -10,6 +10,7 @@ import pandas as pd
 
 from ablation_prep import (
     DISP_FEATURE_SUFFIXES,
+    FIRSTORDER_FEATURE_SUFFIXES,
     ROI_FILTER_DEFAULT,
     SHAPE_FEATURE_SUFFIXES,
     TEXTURE_FEATURE_SUFFIXES,
@@ -28,6 +29,8 @@ DELTA_TIME_TOKENS = ("D21", "D31", "D32")
 DELTA_TIME_TOKENS_LEGACY = ("D21", "D31", "SLOPE")
 REPRESENTATION_TOKENS = ("T1", "D21", "D31", "D32")
 REPRESENTATION_TOKENS_LEGACY = ("T1", "D21", "D31", "SLOPE")
+REPRESENTATION_TOKENS_Q4 = ("T1", "D21", "D32")
+REPRESENTATION_TOKENS_Q5 = ("T1", "M", "A")
 PROTOCOL_T1_DELTAS = "t1_deltas_abs"
 
 
@@ -36,7 +39,7 @@ def absolute_col_pat(roi: str = ROI_FILTER_DEFAULT) -> re.Pattern[str]:
 
 
 def representation_col_pat(roi: str = ROI_FILTER_DEFAULT) -> re.Pattern[str]:
-    return re.compile(rf"^{re.escape(roi)}_[LR]_(T1|D21|D31|D32|SLOPE)_(.+)$")
+    return re.compile(rf"^{re.escape(roi)}_[LR]_(T1|D21|D31|D32|SLOPE|M|A)_(.+)$")
 
 
 def absolute_delta(v_from: pd.Series, v_to: pd.Series) -> pd.Series:
@@ -74,8 +77,9 @@ def add_delta_columns(
     include_absolute: bool = False,
     delta_kind: DeltaKind = "abs",
     include_slope: bool = False,
+    include_ma: bool = False,
 ) -> pd.DataFrame:
-    """D21=T2−T1, D31=T3−T1, D32=T3−T2 (abs default). Opcional T1 e SLOPE legado (rel)."""
+    """D21=T2−T1, D31=T3−T1, D32=T3−T2 (abs default). Opcional T1, SLOPE legado (rel), M/A."""
     pat = absolute_col_pat(roi)
     groups: dict[tuple[str, str], dict[str, str]] = {}
     for col in wide.columns:
@@ -100,6 +104,9 @@ def add_delta_columns(
         delta_cols[f"{prefix}_D21_{feat}"] = d21
         delta_cols[f"{prefix}_D31_{feat}"] = d31
         delta_cols[f"{prefix}_D32_{feat}"] = d32
+        if include_ma:
+            delta_cols[f"{prefix}_M_{feat}"] = (d21 + d32) / 2.0
+            delta_cols[f"{prefix}_A_{feat}"] = d32 - d21
         if include_slope and delta_kind == "rel":
             delta_cols[f"{prefix}_SLOPE_{feat}"] = d31 / 2.0
 
@@ -124,6 +131,10 @@ def feature_tokens_for_delta_representation(representation: str) -> tuple[str, .
         return REPRESENTATION_TOKENS_LEGACY
     if representation in ("t1_deltas", "t1_deltas_abs"):
         return REPRESENTATION_TOKENS
+    if representation == "t1_d21_d32":
+        return REPRESENTATION_TOKENS_Q4
+    if representation == "t1_ma":
+        return REPRESENTATION_TOKENS_Q5
     raise ValueError(f"representação delta desconhecida: {representation!r}")
 
 
@@ -132,8 +143,13 @@ def delta_kwargs_for_representation(representation: str) -> dict:
         return {"include_t1": False, "delta_kind": "abs", "include_slope": False}
     if representation == "t1_deltas_rel":
         return {"include_t1": True, "delta_kind": "rel", "include_slope": True}
-    if representation in ("t1_deltas", "t1_deltas_abs"):
+    if representation in ("t1_deltas", "t1_deltas_abs", "t1_d21_d32"):
         return {"include_t1": True, "delta_kind": "abs", "include_slope": False}
+    if representation == "t1_ma":
+        return {
+            "include_t1": True, "delta_kind": "abs", "include_slope": False,
+            "include_ma": True,
+        }
     raise ValueError(f"representação delta desconhecida: {representation!r}")
 
 
@@ -214,6 +230,20 @@ def _select_disp_delta(
     )
 
 
+def _select_firstorder_delta(
+    columns: Iterable[str],
+    roi: str,
+    *,
+    feature_tokens: tuple[str, ...],
+) -> list[str]:
+    return _select_delta_columns(
+        columns,
+        roi,
+        feat_keep=lambda f: f in FIRSTORDER_FEATURE_SUFFIXES,
+        feature_tokens=feature_tokens,
+    )
+
+
 def modality_wide_columns(
     columns: list[str] | pd.Index,
     modality: str,
@@ -235,11 +265,14 @@ def modality_wide_columns(
         return _select_texture_delta(cols, roi, feature_tokens=tokens)
     if modality == "disp":
         return _select_disp_delta(cols, roi, feature_tokens=tokens)
+    if modality == "firstorder":
+        return _select_firstorder_delta(cols, roi, feature_tokens=tokens)
     if modality == "all":
         out = _select_vol_delta(cols, roi, feature_tokens=tokens)
         out += _select_shape_delta(cols, roi, feature_tokens=tokens)
         out += _select_texture_delta(cols, roi, feature_tokens=tokens)
         out += _select_disp_delta(cols, roi, feature_tokens=tokens)
+        out += _select_firstorder_delta(cols, roi, feature_tokens=tokens)
         return list(dict.fromkeys(out))
     raise ValueError(f"modalidade desconhecida: {modality}")
 
@@ -280,6 +313,26 @@ if __name__ == "__main__":
     n = len(modality_wide_columns(out.columns, "vol", roi=roi, use_deltas=True))
     assert n == 4  # L × (T1,D21,D31,D32) × gm_norm
 
+    q4_cols = modality_wide_columns(
+        out.columns, "vol", roi=roi, use_deltas=True,
+        feature_tokens=REPRESENTATION_TOKENS_Q4,
+    )
+    assert len(q4_cols) == 3
+    assert f"{roi}_L_D31_gm_norm" not in q4_cols
+
+    ma = add_delta_columns(wide, roi, include_t1=True, delta_kind="abs", include_ma=True)
+    m_col, a_col = f"{roi}_L_M_gm_norm", f"{roi}_L_A_gm_norm"
+    assert m_col in ma.columns and a_col in ma.columns
+    d21 = float(ma[f"{roi}_L_D21_gm_norm"].iloc[0])
+    d32 = float(ma[f"{roi}_L_D32_gm_norm"].iloc[0])
+    assert abs(float(ma[m_col].iloc[0]) - (d21 + d32) / 2.0) < 1e-9
+    assert abs(float(ma[a_col].iloc[0]) - (d32 - d21)) < 1e-9
+    q5_cols = modality_wide_columns(
+        ma.columns, "vol", roi=roi, use_deltas=True,
+        feature_tokens=REPRESENTATION_TOKENS_Q5,
+    )
+    assert set(q5_cols) == {f"{roi}_L_T1_gm_norm", m_col, a_col}
+
     wide_vol = pd.DataFrame(
         {
             "ID_PT": ["p1"],
@@ -318,3 +371,14 @@ if __name__ == "__main__":
         )
         expected = n_abs // 3 * 4
         assert n_delta == expected, f"{mod}: abs={n_abs} delta={n_delta} expected={expected}"
+        n_q4 = len(modality_wide_columns(
+            wide_d.columns, mod, roi=roi, use_deltas=True,
+            feature_tokens=REPRESENTATION_TOKENS_Q4,
+        ))
+        assert n_q4 == n_abs, f"{mod}: abs={n_abs} q4={n_q4}"
+        wide_ma = add_delta_columns(wide, roi, include_t1=True, delta_kind="abs", include_ma=True)
+        n_q5 = len(modality_wide_columns(
+            wide_ma.columns, mod, roi=roi, use_deltas=True,
+            feature_tokens=REPRESENTATION_TOKENS_Q5,
+        ))
+        assert n_q5 == n_abs, f"{mod}: abs={n_abs} q5={n_q5}"

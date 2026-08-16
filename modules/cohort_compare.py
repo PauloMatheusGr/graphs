@@ -25,8 +25,12 @@ PROTOCOL_DIR = {
     "t1_deltas": "ablation_results_deltas",  # T1 + D21/D31/D32 (não confundir com deltas_only)
     "deltas_only": "ablation_results_deltas_only",
     "deltas_rel": "ablation_results_deltas_rel",
+    "t1_d21_d32": "ablation_results_d21d32",
+    "t1_ma": "ablation_results_ma",
     "global": "ablation_results_leaky",
     "t1_only_global": "ablation_results_leaky_t1_only",
+    "t1_deltas_global": "ablation_results_leaky_deltas",
+    "t1_d21_d32_global": "ablation_results_leaky_d21d32",
     "clinica": "ablation_results_clinic",
     "clinica+img": "ablation_results_clinic_img",
     "clinica+img_t1": "ablation_results_clinic_img_t1_only",

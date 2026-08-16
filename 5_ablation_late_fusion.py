@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 # python 5_ablation_late_fusion.py --cohort 48m_12m \
-#   --fusion shape:t1_only,texture:t1_deltas \
+#   --fusion shape:t1_only,vol:t1_d21_d32,texture:t1_d21_d32,disp:t1_d21_d32,firstorder:t1_d21_d32 \
 #   --tasks smci_pmci --selection l1_stable --models svm --combat false \
 #   --combine mean
 #
@@ -142,7 +142,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--partner-modality", default=None)
     p.add_argument("--anchor-modality", default="shape")
     p.add_argument("--anchor-rep", default="t1_only")
-    p.add_argument("--partner-rep", default="t1_deltas")
+    p.add_argument("--partner-rep", default="t1_d21_d32")
     p.add_argument("--combine", choices=COMBINE_MODES, default="mean")
     p.add_argument(
         "--weights",

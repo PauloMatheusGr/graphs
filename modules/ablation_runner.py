@@ -116,10 +116,11 @@ MODALITIES: dict[str, dict[str, str]] = {
     "shape": {"long": "shape_long.csv", "wide": "shape_wide.csv", "label": "shape"},
     "texture": {"long": "rad_long.csv", "wide": "texture_wide.csv", "label": "textura"},
     "disp": {"long": "disp_long.csv", "wide": "disp_wide.csv", "label": "deslocamento"},
+    "firstorder": {"long": "rad_long.csv", "wide": "firstorder_wide.csv", "label": "firstorder"},
     "all": {
         "long": "merge_long.csv",
         "wide": "all_wide.csv",
-        "label": "merge (vol+shape+tex+disp)",
+        "label": "merge (vol+shape+tex+disp+firstorder)",
     },
 }
 
