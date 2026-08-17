@@ -202,22 +202,39 @@ def tune_youden_threshold(y_true, scores) -> float:
 
 def corr_keep_mask(
     X: np.ndarray,
-    threshold: float = 0.90,
+    threshold: float = 0.85,
     *,
     feature_names: list[str] | None = None,
+    y: np.ndarray | None = None,
 ) -> np.ndarray:
-    """Greedy corr prune. Pares com mesmo anatomical_key (T1/T2/T3) nunca se removem."""
+    """Greedy corr prune. Pares com mesmo anatomical_key (T1/D21/D32) nunca se removem."""
     xf = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
     n = xf.shape[1]
-    if xf.shape[0] < 2:
+    if xf.shape[0] < 2 or n == 0:
         return np.ones(n, dtype=bool)
     if feature_names is not None and len(feature_names) != n:
         feature_names = None
     keys = [anatomical_key(name) for name in feature_names] if feature_names else None
 
+    y_arr = None if y is None else np.asarray(y, dtype=float)
+    if y_arr is not None and len(y_arr) == xf.shape[0] and np.std(y_arr) > 0:
+        scores = np.empty(n)
+        for j in range(n):
+            col = xf[:, j]
+            if np.std(col) <= 0:
+                scores[j] = 0.0
+                continue
+            rho = np.corrcoef(col, y_arr)[0, 1]
+            scores[j] = abs(rho) if np.isfinite(rho) else 0.0
+        priority_order = np.argsort(-scores)
+    else:
+        priority_order = np.argsort(-np.var(xf, axis=0))
+
     c = np.corrcoef(xf.T)
+    if n == 1:
+        c = np.array([[1.0]])
     keep_idx: list[int] = []
-    for j in range(n):
+    for j in priority_order:
         drop = False
         for k in keep_idx:
             if not np.isfinite(c[j, k]) or abs(c[j, k]) <= threshold:
@@ -227,7 +244,7 @@ def corr_keep_mask(
             drop = True
             break
         if not drop:
-            keep_idx.append(j)
+            keep_idx.append(int(j))
     mask = np.zeros(n, dtype=bool)
     mask[keep_idx] = True
     return mask
@@ -250,16 +267,18 @@ class CorrVarSelector(BaseEstimator, TransformerMixin):
         self,
         *,
         use_filters: bool = True,
-        corr_threshold: float = 0.90,
+        corr_threshold: float = 0.85,
         var_threshold: float = 0.01,
         roi: str = ROI_FILTER_DEFAULT,
         allowed_columns: list[str] | None = None,
+        pool_source: str = "l1_stable",
     ):
         self.use_filters = use_filters
         self.corr_threshold = corr_threshold
         self.var_threshold = var_threshold
         self.roi = roi
         self.allowed_columns = allowed_columns
+        self.pool_source = pool_source
         self.selected_names_: list[str] = []
         self.selected_indices_: np.ndarray = np.array([], dtype=int)
         self.feature_names_in_: list[str] = []
@@ -290,7 +309,10 @@ class CorrVarSelector(BaseEstimator, TransformerMixin):
 
         if self.use_filters and names:
             before = list(names)
-            cmask = corr_keep_mask(X_arr, self.corr_threshold, feature_names=names)
+            y_arr = None if y is None else np.asarray(y)
+            cmask = corr_keep_mask(
+                X_arr, self.corr_threshold, feature_names=names, y=y_arr,
+            )
             names = [n for n, k in zip(names, cmask) if k]
             X_arr = X_arr[:, cmask]
             vmask = var_keep_mask(X_arr, self.var_threshold)
@@ -302,8 +324,8 @@ class CorrVarSelector(BaseEstimator, TransformerMixin):
 
         selected_names = list(names)
         if not selected_names:
-            # ponytail: fallback se corr/var zerarem (ex. vol após ICV norm)
-            selected_names = list(self.feature_names_in_)
+            # ponytail: corr/var zerou → pool, nunca a classe completa
+            selected_names = list(self.after_stable_pool_names_)
 
         name_to_idx = {n: i for i, n in enumerate(self.feature_names_in_)}
         self.selected_names_ = selected_names
@@ -379,6 +401,7 @@ def fold_selection_audit(
     *,
     model_key: str,
     selection_mode: str,
+    pool_source: str = "l1_stable",
 ) -> dict[str, Any]:
     raw_names = list(feature_cols)
     if is_embedded_model(model_key):
@@ -392,6 +415,7 @@ def fold_selection_audit(
             "removed_by_filters_": [],
             "removed_by_mrmr_": [],  # schema compat
             "n_features_selected": len(selected),
+            "pool_source": pool_source,
         }
 
     preselect = best.named_steps.get("preselect")
@@ -404,6 +428,7 @@ def fold_selection_audit(
             "removed_by_filters_": [],
             "removed_by_mrmr_": [],
             "n_features_selected": len(raw_names),
+            "pool_source": "raw" if selection_mode == "raw" else pool_source,
         }
     return {
         "after_stable_pool_names_": list(preselect.after_stable_pool_names_),
@@ -413,6 +438,7 @@ def fold_selection_audit(
         "removed_by_filters_": list(preselect.removed_by_filters_),
         "removed_by_mrmr_": [],  # schema compat
         "n_features_selected": int(preselect.transform(X_train).shape[1]),
+        "pool_source": getattr(preselect, "pool_source", pool_source),
     }
 
 
@@ -583,8 +609,9 @@ def nested_cv_ablation(
         pipeline = make_pipeline(selection_mode, model_key, roi=roi, seed=seed)
         inner_cv = StratifiedKFold(k_in, shuffle=True, random_state=seed + fold)
         allowed_columns: list[str] | None = None
+        pool_source = "l1_stable"
         if SELECTION_MODES[selection_mode].get("use_stable_pool"):
-            allowed_columns, _ = stable_pool_for_outer_train(
+            allowed_columns, _, pool_source = stable_pool_for_outer_train(
                 X_train,
                 y_train,
                 selection_mode=selection_mode,
@@ -599,7 +626,10 @@ def nested_cv_ablation(
                 X_train = X_train[allowed_columns].copy()
                 X_test = X_test[allowed_columns].copy()
             else:
-                pipeline.set_params(preselect__allowed_columns=allowed_columns)
+                pipeline.set_params(
+                    preselect__allowed_columns=allowed_columns,
+                    preselect__pool_source=pool_source,
+                )
 
         from ablation_optuna import tune_pipeline
 
@@ -636,6 +666,7 @@ def nested_cv_ablation(
             list(X_train.columns),
             model_key=model_key,
             selection_mode=selection_mode,
+            pool_source=pool_source,
         )
         row = {
             "representation": representation,
@@ -664,6 +695,7 @@ def nested_cv_ablation(
             "removed_by_stable_pool": json.dumps(audit["removed_by_stable_pool_"]),
             "removed_by_filters": json.dumps(audit["removed_by_filters_"]),
             "removed_by_mrmr": json.dumps(audit["removed_by_mrmr_"]),
+            "pool_source": audit["pool_source"],
             "selected_features": json.dumps(audit["selected_names_"]),
             "test_id_pts": json.dumps(test_id_pts),
             "test_y_true": json.dumps(y_test.tolist()),
@@ -989,4 +1021,22 @@ if __name__ == "__main__":
     mask = corr_keep_mask(X, 0.90, feature_names=names)
     assert mask[:3].all(), "visitas T1/T2/T3 devem sobreviver"
     assert mask.sum() == 3, "wm_norm redundante com gm_norm deve cair"
+    mask_d = corr_keep_mask(
+        np.column_stack([base, base + rng.normal(scale=0.01, size=n)]),
+        0.85,
+        feature_names=["hippocampus_L_T1_gm_norm", "hippocampus_L_D32_gm_norm"],
+    )
+    assert mask_d.all(), "T1 vs D32 do mesmo biomarcador não se cortam"
+    x_a = rng.normal(size=n)
+    x_b = x_a + rng.normal(scale=0.02, size=n)
+    mask_y = corr_keep_mask(
+        np.column_stack([x_a, x_b]),
+        0.85,
+        feature_names=[
+            "hippocampus_L_T1_original_glcm_Contrast",
+            "hippocampus_L_T1_original_glcm_Dissimilarity",
+        ],
+        y=x_b,
+    )
+    assert mask_y[1] and not mask_y[0], "desempate |ρ(x,y)| deve ficar com x_b"
     print("ablation_runner self-check ok")

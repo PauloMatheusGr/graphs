@@ -9,12 +9,12 @@ import numpy as np
 import pandas as pd
 
 from ablation_prep import (
-    DISP_FEATURE_SUFFIXES,
-    FIRSTORDER_FEATURE_SUFFIXES,
     ROI_FILTER_DEFAULT,
-    SHAPE_FEATURE_SUFFIXES,
-    TEXTURE_FEATURE_SUFFIXES,
-    VOL_FEATURE_SUFFIXES,
+    keep_disp_feat,
+    keep_firstorder_feat,
+    keep_shape_feat,
+    keep_texture_feat,
+    keep_vol_feat,
     modality_wide_columns as modality_wide_columns_absolute,
 )
 
@@ -183,7 +183,7 @@ def _select_vol_delta(
     return _select_delta_columns(
         columns,
         roi,
-        feat_keep=lambda f: f in VOL_FEATURE_SUFFIXES,
+        feat_keep=keep_vol_feat,
         feature_tokens=feature_tokens,
     )
 
@@ -197,7 +197,7 @@ def _select_shape_delta(
     return _select_delta_columns(
         columns,
         roi,
-        feat_keep=lambda f: f in SHAPE_FEATURE_SUFFIXES,
+        feat_keep=keep_shape_feat,
         feature_tokens=feature_tokens,
     )
 
@@ -211,7 +211,7 @@ def _select_texture_delta(
     return _select_delta_columns(
         columns,
         roi,
-        feat_keep=lambda f: f in TEXTURE_FEATURE_SUFFIXES,
+        feat_keep=keep_texture_feat,
         feature_tokens=feature_tokens,
     )
 
@@ -225,7 +225,7 @@ def _select_disp_delta(
     return _select_delta_columns(
         columns,
         roi,
-        feat_keep=lambda f: f in DISP_FEATURE_SUFFIXES,
+        feat_keep=keep_disp_feat,
         feature_tokens=feature_tokens,
     )
 
@@ -239,7 +239,7 @@ def _select_firstorder_delta(
     return _select_delta_columns(
         columns,
         roi,
-        feat_keep=lambda f: f in FIRSTORDER_FEATURE_SUFFIXES,
+        feat_keep=keep_firstorder_feat,
         feature_tokens=feature_tokens,
     )
 
@@ -351,6 +351,35 @@ if __name__ == "__main__":
     assert f"{roi}_L_T1_mask_mm3" not in vol_cols
     assert f"{roi}_L_T1_gm_norm" in vol_cols
     assert f"{roi}_L_D32_gm_norm" in vol_cols
+
+    q4_dummy = [
+        f"{roi}_L_T1_original_glcm_Contrast",
+        f"{roi}_L_D21_original_glcm_Contrast",
+        f"{roi}_L_D21_original_glrlm_ShortRunEmphasis",
+        f"{roi}_L_D21_original_firstorder_Mean",
+        f"{roi}_L_D21_original_firstorder_Energy",
+        f"{roi}_L_D21_original_shape_Sphericity",
+        f"{roi}_L_D21_original_shape_MeshVolume",
+        f"{roi}_L_D21_gm_norm",
+    ]
+    q4_tex = modality_wide_columns(
+        q4_dummy, "texture", roi=roi, use_deltas=True,
+        feature_tokens=REPRESENTATION_TOKENS_Q4,
+    )
+    q4_fo = modality_wide_columns(
+        q4_dummy, "firstorder", roi=roi, use_deltas=True,
+        feature_tokens=REPRESENTATION_TOKENS_Q4,
+    )
+    q4_shp = modality_wide_columns(
+        q4_dummy, "shape", roi=roi, use_deltas=True,
+        feature_tokens=REPRESENTATION_TOKENS_Q4,
+    )
+    assert f"{roi}_L_D21_original_glcm_Contrast" in q4_tex
+    assert f"{roi}_L_D21_original_glrlm_ShortRunEmphasis" not in q4_tex
+    assert f"{roi}_L_D21_original_firstorder_Mean" in q4_fo
+    assert f"{roi}_L_D21_original_firstorder_Energy" not in q4_fo
+    assert f"{roi}_L_D21_original_shape_Sphericity" in q4_shp
+    assert f"{roi}_L_D21_original_shape_MeshVolume" not in q4_shp
     print("ablation_deltas self-check ok")
 
     # ponytail: paridade abs×4/3 em dados reais (se CSV existir)

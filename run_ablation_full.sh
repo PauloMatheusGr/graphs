@@ -1,15 +1,13 @@
 #!/usr/bin/env bash
-# Único bash de ablação (GitHub).
-# Mono só firstorder (vol/shape/texture/disp já no disco) → 3 late × 4 coortes → 3 early claim.
-# Longitudinal oficial = t1_d21_d32 (T1+D21+D32). t1_deltas no disco = sensibilidade.
-# Extra (cn_ad / clínica / clinic+img / leaky): SKIP_EXTRA=1 default — não pisa mono claim.
-# Sens RF/EN só se SENS_REPS estiver set (reescreve mono).
+# Ablação paper: uniclasse 5 famílias × {t1_only, Q4} × 4 coortes → 3 late.
+# Longitudinal = t1_d21_d32. Sem early, sem --modality all.
+# WIPE=1 (default) apaga CSVs allowlist nessas pastas — senão late --reuse-disk lê o espaço velho.
+# Long CSVs (ablation/*.csv) não se tocam.
 #
 # Uso:
 #   ./run_ablation_full.sh 2>&1 | tee logs/ablation_full_$(date +%Y%m%d).log
-#   SKIP_MONO=1 ./run_ablation_full.sh          # firstorder já correu; só late/early
-#   SKIP_EXTRA=0 ./run_ablation_full.sh         # + cn_ad, clínica, leaky
-#   SENS_REPS=t1_d21_d32 SKIP_EXTRA=0 ./run_ablation_full.sh  # RF/EN na claim (pisa Q4 svm)
+#   WIPE=0 SKIP_MONO=1 ./run_ablation_full.sh   # mono novo já no disco; só late
+#   SKIP_EXTRA=0 ./run_ablation_full.sh         # + cn_ad, clínica, leaky (fora do paper)
 
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -19,6 +17,8 @@ PRIMARY="${PRIMARY:-$CLAIM}"
 LONG="${LONG:-t1_d21_d32}"
 SKIP_MONO="${SKIP_MONO:-0}"
 SKIP_EXTRA="${SKIP_EXTRA:-1}"
+WIPE="${WIPE:-1}"
+MODS_MONO="${MODS_MONO:-vol,shape,texture,disp,firstorder}"
 COMMON_MONO='--tasks smci_pmci --selection l1_stable --models svm --combat false --repeats 10 --seed 42 --tuner optuna --optuna-trials 10 --stable-pool-min-pct 70 --stable-pool-min-timepoints 0 --stable-bootstrap 50 --stable-l1-c 0.1'
 COMMON_FUSION='--tasks smci_pmci --selection l1_stable --models svm --combat false --repeats 10 --seed 42 --tuner optuna --optuna-trials 10 --stable-pool-min-pct 70 --stable-pool-min-timepoints 0 --stable-bootstrap 50 --stable-l1-c 0.1'
 # ponytail: sem --tasks no COMMON_EXTRA — argparse fica com o último --tasks; cn_ad precisa do seu
@@ -52,24 +52,36 @@ if [[ ! -x "$PY" ]]; then
   exit 1
 fi
 
-echo "LONG=$LONG SKIP_MONO=$SKIP_MONO SKIP_EXTRA=$SKIP_EXTRA CLAIM=$CLAIM"
+echo "LONG=$LONG SKIP_MONO=$SKIP_MONO SKIP_EXTRA=$SKIP_EXTRA WIPE=$WIPE MODS=$MODS_MONO CLAIM=$CLAIM"
 
-# --- 1) MONO só firstorder (não toca vol/shape/texture/disp) ---
+if [[ "$WIPE" == "1" ]]; then
+  echo "WIPE=1 — apaga resultados t1_only / ${LONG} / late_fusion (não apaga *_long.csv)"
+  for C in "${COHORTS[@]}"; do
+    for R in "${REPS_MONO[@]}"; do
+      rm -rf "csvs/cohorts/${C}/$(root_for_rep "$R")"
+    done
+    rm -rf "csvs/cohorts/${C}/ablation_results_late_fusion"
+  done
+elif [[ "$SKIP_MONO" == "1" ]]; then
+  echo "WIPE=0 SKIP_MONO=1 — late reusa o que estiver no disco"
+fi
+
+# --- 1) MONO: 5 famílias × {t1_only, Q4} × 4 coortes ---
 if [[ "$SKIP_MONO" != "1" ]]; then
   for C in "${COHORTS[@]}"; do
     for R in "${REPS_MONO[@]}"; do
-      echo "=== MONO firstorder $C $R ==="
+      echo "=== MONO $MODS_MONO $C $R ==="
       # shellcheck disable=SC2086
       "$PY" 5_ablation.py --cohort "$C" --representation "$R" \
-        --modality firstorder $COMMON_MONO \
-        || { echo "FAIL mono firstorder $C $R"; exit 1; }
+        --modality "$MODS_MONO" $COMMON_MONO \
+        || { echo "FAIL mono $C $R"; exit 1; }
     done
   done
 else
-  echo "SKIP_MONO=1 — pula seção 1"
+  echo "SKIP_MONO=1 — pula uniclasse"
 fi
 
-# --- 2) LATE: 3 specs pré-especificadas (--reuse-disk) ---
+# --- 2) LATE: 3 specs, --reuse-disk só depois dos mono novos ---
 echo "n_specs_late=${#SPECS[@]}"
 for C in "${COHORTS[@]}"; do
   for F in "${SPECS[@]}"; do
@@ -81,17 +93,7 @@ for C in "${COHORTS[@]}"; do
   done
 done
 
-# --- 3) EARLY: mesmos 3 specs, só claim ---
-echo "CLAIM=$CLAIM"
-for F in "${SPECS[@]}"; do
-  echo "=== EARLY $CLAIM | $F ==="
-  # shellcheck disable=SC2086
-  "$PY" 5_ablation_early_fusion.py --cohort "$CLAIM" --fusion "$F" \
-    $COMMON_FUSION \
-    || { echo "FAIL early $F"; exit 1; }
-done
-
-# --- 4+) EXTRA (default off) ---
+# --- extra (default off): não é o paper ---
 if [[ "$SKIP_EXTRA" == "1" ]]; then
   echo "SKIP_EXTRA=1 — pula cn_ad/clínica/leaky"
   echo "DONE"
@@ -108,7 +110,7 @@ if [[ -n "${SENS_REPS:-}" ]]; then
     echo "=== SENS mono $PRIMARY $R svm,rf,elasticnet ==="
     # shellcheck disable=SC2086
     "$PY" 5_ablation.py --cohort "$PRIMARY" --representation "$R" \
-      --modality vol,shape,texture,disp,firstorder $COMMON_SENS \
+      --modality "$MODS_MONO" $COMMON_SENS \
       || { echo "FAIL sens $R"; exit 1; }
   done
 fi

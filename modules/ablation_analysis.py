@@ -469,7 +469,7 @@ def estimate_stable_pool_columns(
         return [], []
     n_inner = len(inner_selected)
     if n_inner == 0:
-        return list(feature_names), []
+        return [], list(feature_names)
 
     time_order = _time_order_for_names(feature_names)
     fold_any: dict[str, int] = {}
@@ -514,7 +514,7 @@ def estimate_stable_pool_columns(
             removed.append(col)
 
     if not kept:
-        return list(feature_names), []  # ponytail: evita pool vazio
+        return [], list(feature_names)
     return kept, removed
 
 
@@ -961,6 +961,14 @@ if __name__ == "__main__":
         min_timepoints=2,
     )
     assert "hippocampus_L_T1_gm_norm" in kept and "hippocampus_R_T1_wm_norm" in removed
+    empty_kept, empty_rem = estimate_stable_pool_columns(
+        ["hippocampus_L_T1_gm_norm", "hippocampus_L_T2_gm_norm"],
+        [],
+        min_pct=70,
+        min_timepoints=0,
+    )
+    assert empty_kept == []
+    assert empty_rem == ["hippocampus_L_T1_gm_norm", "hippocampus_L_T2_gm_norm"]
     pat = explode_patient_predictions(demo)
     rank = rank_patients_by_discordance(pat)
     assert len(pat) == 8 and len(rank) == 4

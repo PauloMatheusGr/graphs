@@ -23,17 +23,17 @@ from sklearn.model_selection import GridSearchCV, StratifiedKFold, cross_val_pre
 
 import re
 
-from ablation_analysis import estimate_stable_pool_columns, summary_with_pooled
+from ablation_analysis import summary_with_pooled
 from ablation_harmonize import harmonize_long_fold, image_ids_for_patients
 from ablation_prep import (
-    DISP_FEATURE_SUFFIXES,
-    FIRSTORDER_FEATURE_SUFFIXES,
     META_COLS_WIDE,
     ROI_FILTER_DEFAULT,
-    SHAPE_FEATURE_SUFFIXES,
     SLOT_ORDER,
-    TEXTURE_FEATURE_SUFFIXES,
-    VOL_FEATURE_SUFFIXES,
+    keep_disp_feat,
+    keep_firstorder_feat,
+    keep_shape_feat,
+    keep_texture_feat,
+    keep_vol_feat,
     pivot_long_to_wide,
 )
 from ablation_runner import (
@@ -65,7 +65,7 @@ from ablation_representation import (
     resolve_stable_pool_min_timepoints,
 )
 
-from ablation_stable import inner_selections_l1_bootstrap
+from ablation_stable import stable_pool_for_outer_train
 
 log = logging.getLogger(__name__)
 
@@ -97,27 +97,12 @@ def modality_collapsed_columns(
         m = pat.match(col)
         return m.group(2) if m else None
 
-    def keep_vol(f: str) -> bool:
-        return f in VOL_FEATURE_SUFFIXES
-
-    def keep_shape(f: str) -> bool:
-        return f in SHAPE_FEATURE_SUFFIXES
-
-    def keep_texture(f: str) -> bool:
-        return f in TEXTURE_FEATURE_SUFFIXES
-
-    def keep_disp(f: str) -> bool:
-        return f in DISP_FEATURE_SUFFIXES
-
-    def keep_firstorder(f: str) -> bool:
-        return f in FIRSTORDER_FEATURE_SUFFIXES
-
     keepers = {
-        "vol": keep_vol,
-        "shape": keep_shape,
-        "texture": keep_texture,
-        "disp": keep_disp,
-        "firstorder": keep_firstorder,
+        "vol": keep_vol_feat,
+        "shape": keep_shape_feat,
+        "texture": keep_texture_feat,
+        "disp": keep_disp_feat,
+        "firstorder": keep_firstorder_feat,
     }
     if modality == "all":
         out: list[str] = []
@@ -220,20 +205,17 @@ def leaky_stable_pool_columns(
         if cfg.get("use_stable_pool"):
             raise ValueError("mrmr_stable removido; use l1_stable")
         return list(X_full.columns)
-    inner_selected = inner_selections_l1_bootstrap(
+    kept, _, _ = stable_pool_for_outer_train(
         X_full,
         y_full,
+        selection_mode=selection_mode,
+        min_pct=min_pct,
+        min_timepoints=min_timepoints,
         n_bootstrap=n_bootstrap,
         l1_c=l1_c,
         seed=seed,
     )
-    allowed, _ = estimate_stable_pool_columns(
-        list(X_full.columns),
-        inner_selected,
-        min_pct=min_pct,
-        min_timepoints=min_timepoints,
-    )
-    return allowed
+    return kept
 
 
 class LeakyGlobalPreselector(BaseEstimator, TransformerMixin):
@@ -568,6 +550,7 @@ def nested_cv_ablation_leaky(
                 removed_by_stable_pool_=audit["removed_by_stable_pool_"],
                 removed_by_filters_=audit["removed_by_filters_"],
                 removed_by_mrmr_=audit["removed_by_mrmr_"],
+                pool_source=audit.get("pool_source", "l1_stable"),
             )
         elif selection_mode == "raw" and not univariate_global:
             n_sel = n_raw
@@ -578,6 +561,7 @@ def nested_cv_ablation_leaky(
                 removed_by_stable_pool_=[],
                 removed_by_filters_=[],
                 removed_by_mrmr_=[],
+                pool_source="raw",
             )
         else:
             pre = best.named_steps["preselect"]
@@ -617,6 +601,7 @@ def nested_cv_ablation_leaky(
             "removed_by_stable_pool": json.dumps(pre_attrs.removed_by_stable_pool_),
             "removed_by_filters": json.dumps(pre_attrs.removed_by_filters_),
             "removed_by_mrmr": json.dumps(pre_attrs.removed_by_mrmr_),
+            "pool_source": getattr(pre_attrs, "pool_source", "l1_stable"),
             "selected_features": json.dumps(list(pre_attrs.selected_names_)),
             "test_id_pts": json.dumps(test_id_pts),
             "test_y_true": json.dumps(y_test.tolist()),

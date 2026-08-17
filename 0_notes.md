@@ -1,115 +1,50 @@
-# Notas importantes para o artigo
+# Notas — pipeline do paper (pós Patch A)
 
-além do late fusion ter melhores resultados em termos de auc mean patient, a escolha final por late fusion é em razão de: 
+Allowlist 4–5 nomes **morta**. Números em `cohort_results.csv` / tex antigos = experimento errado. Não citar.
 
-Late (o que chamas multiclasse de imagem): cinco SVMs, cada um na sua família já filtrada; junta-se a média dos scores. Forma não vê as 144 GLCM. Volume não vê firstorder. Não existe um classificador com “todas as famílias × 3 tempos”. O risco 
-p≫n da união não se aplica ao late. O que cresce é o número de modelos, não a dimensão de um só.
+## Perguntas
 
-Early: concatena colunas depois junta a selecção num saco. Cinco famílias IBSI-cheias × Q4 → centenas de colunas, 
-n=120. Aí sim p∼n ou p>n, pool instável, overfitting. Já tinhas late > early na âncora compacta: o early largo piora isso. Por isso a grade 232 e o early IBSI-cheio são má ideia mesmo que o late seja inofensivo em dimensão.
+1. sMCI vs pMCI: Q4 (`t1_d21_d32` = T1+D21+D32) agrega sinal vs `t1_only`?
+2. Quais atributos o seletor escolhe em cada família (frequência across folds×repeats)?
+3. União **late** (3 specs) bate teto unimodal?
 
-Cinco famílias compactas no código (`ablation_prep.py`). Firstorder = 4 momentos, não IBSI-cheio.
+## Porquê late, não early
 
-Cada sufixo × **L e R**. `t1_only` = ×1 (T1). Q4 = ×3 (T1, D21, D32).
+Late = 5 SVMs, um por família, média de scores. Forma não vê 144 GLCM. Volume não vê firstorder. `p≫n` da união **não** aplica: cresce nº de modelos, não a dimensão de um só.
 
-| Família | Sufixos (por lado) | `t1_only` L+R | Q4 L+R |
-|---|---|---|---|
-| vol | 4 | 8 | 24 |
-| shape | 5 | 10 | 30 |
-| texture | 4 | 8 | 24 |
-| disp | 4 | 8 | 24 |
-| firstorder | 4 | 8 | 24 |
+Early / `--modality all` = concat. Classe cheia × Q4 → centenas de colunas, n=120. Fora do paper. `run_ablation_full.sh` não corre early.
 
-**vol** — fracção na ROI, malha /ICV  
-- `gm_norm`  
-- `wm_norm`  
-- `csf_norm`  
-- `original_shape_MeshVolume`  
+## Espaço (antes do seletor)
 
-**shape** — geometria (sem tamanho de malha)  
-- `original_shape_SurfaceArea`  
-- `original_shape_SurfaceVolumeRatio`  
-- `original_shape_Sphericity`  
-- `original_shape_Elongation`  
-- `original_shape_Flatness`  
+Classe completa; denylist só definição (`keep_*_feat` em `ablation_prep.py` + `ablation_deltas.py`). Mesmos sufixos em `t1_only` e Q4. Cada sufixo × L e R. `t1_only` ×1 (T1). Q4 ×3 (T1, D21, D32).
 
-**texture** — 4 GLCM  
-- `original_glcm_Contrast`  
-- `original_glcm_Correlation`  
-- `original_glcm_Idm`  
-- `original_glcm_JointEntropy`  
+| Família | Entra | Denylist | t1 L+R | Q4 L+R |
+|---|---|---|---|---|
+| vol | `gm_norm` `wm_norm` `csf_norm` `MeshVolume` | mm³ crus | 8 | 24 |
+| shape | 12 IBSI (`original_shape_`) | MeshVolume, VoxelVolume | 24 | 72 |
+| texture | 24 GLCM (`original_glcm_`) | GLRLM/GLSZM/GLDM/NGTDM | 48 | 144 |
+| firstorder | 16 (`original_firstorder_`) | Energy, TotalEnergy | 32 | 96 |
+| disp | momentos `mag_` `logjac_` `strain_fro_` (15 no long) | `ux/uy/uz`, `_n`, percentis | 30 | 90 |
 
-**disp** — DVF vs atlas CN  
-- `mag_mean`  
-- `strain_fro_mean`  
-- `strain_fro_variance`  
-- `logjac_variance`  
+Texture = GLCM Original. Sem wavelet/LoG.
 
-**firstorder** — momentos 1–4 do histograma  
-- `original_firstorder_Mean`  
-- `original_firstorder_Variance`  
-- `original_firstorder_Skewness`  
-- `original_firstorder_Kurtosis`  
+## Seletor (`l1_stable`, só outer train)
 
----
+1. Variance threshold (se zerar → `var>0`, não restaurar classe)
+2. Corr `|ρ|>0.85` **uma vez**; fica maior `|ρ|` com `y`; nunca T1 vs D21/D32 do mesmo `anatomical_key`
+3. 50× L1 `C=0.1`; coef=0 → `[]` (não keep-all)
+4. π≥70% nos boots. Pool vazio → vazio, **nunca** a classe inteira
+5. SVM nesse pool. `min_timepoints=0` em t1/Q4
 
-## Achados (SVM, nocombat, AUC paciente, `t1_d21_d32` vs `t1_only`)
+Entre colineares: representante, não “melhor Haralick”. Reportar frequência across folds.
 
-Fonte: `csvs/cohort_comparison/cohort_results.csv` (`n_boot=2000`). Claim = `48m_12m`. Longitudinal = Q4 (T1+D21+D32). Não coroar `wide`/`abs`/`t1_deltas`/`t1_deltas_rel`/`t1_ma`.
+## Contrastes oficiais
 
-### Unimodal: Q4 não bate baseline em todas as famílias
+- Uniclasse: 5 famílias × `{t1_only, t1_d21_d32}` × 4 coortes
+- Late, 3 specs: tudo t1 · tudo Q4 · âncora `shape:t1_only ∪ resto Q4`
+- Não crownear `wide`/`abs`/`t1_deltas`/`t1_deltas_rel`/`t1_ma` como claim longitudinal
+- Extra (clínica, leaky, cn_ad, RF/EN): suplemento, não pergunta 1–3
 
-Δ = Q4 − `t1_only`. Só **texture** ganha nas 4 coortes.
+## Paper (quando CSVs novos existirem)
 
-| Coorte | vol | shape | texture | disp | firstorder |
-|--------|-----|-------|---------|------|------------|
-| 36m_6m | +0.016 | +0.003 | **+0.035** | −0.030 | +0.001 |
-| 36m_12m | −0.024 | −0.015 | **+0.035** | −0.086 | −0.012 |
-| 48m_6m | +0.037 | −0.008 | **+0.036** | −0.032 | −0.003 |
-| 48m_12m | +0.026 | +0.007 | **+0.047** | +0.023 | −0.002 |
-| Q4>t1 | 3/4 | 2/4 | **4/4** | 1/4 | 1/4 |
-
-- **Texture** — único sinal temporal estável. GLCM em \(t_0\) ~0.70–0.73; D21/D32 sobem ~+0.035 a +0.047 (máx. claim: 0.695 → 0.742).
-- **Shape** — teto estático. `t1_only` 0.74–0.80; Q4 ≈ empate ou piora. Geometria em \(t_0\) já separa sMCI/pMCI.
-- **Vol** — ganho em 3/4; quebra em `36m_12m` (−0.024).
-- **Firstorder** — empate (~0). Intensidade global em \(t_0\) já no modelo; momentos-Δ não repetem o ganho GLCM (controlo: nem todo radiomics ganha com deltas).
-- **Disp** — Q4 piora em 3/4. DVF vs atlas CN não carrega conversão neste desenho.
-
-### União (late) ≠ maior vitória do longitudinal
-
-Dois contrastes. AUC mais alto = late (complementaridade de famílias). Ganho Q4−t1 **maior na texture unimodal**, não na união.
-
-Late oficial (5 SVMs, média de scores):
-
-| Coorte | late tudo-t1 | late tudo-Q4 | âncora (shape@t1 ∪ resto Q4) |
-|--------|--------------|--------------|------------------------------|
-| 36m_6m | 0.822 | 0.823 | 0.824 |
-| 36m_12m | 0.782 | 0.783 | 0.782 |
-| 48m_6m | 0.822 | 0.832 | 0.834 |
-| 48m_12m | 0.765 | 0.790 | 0.785 |
-
-Δ longitudinal **dentro** da união (late Q4 − late t1) vs Δ texture unimodal:
-
-| Coorte | Δ texture unimodal | Δ late Q4−t1 | Δ âncora − late t1 |
-|--------|--------------------|--------------|---------------------|
-| 36m_6m | **+0.035** | +0.001 | +0.002 |
-| 36m_12m | **+0.035** | +0.001 | −0.001 |
-| 48m_6m | **+0.036** | +0.009 | +0.012 |
-| 48m_12m | **+0.047** | +0.025 | +0.020 |
-
-Âncora vs shape só \(t_0\) sobe nas 4 (+0.024 a +0.041). Isso é **juntar famílias**, não “longitudinal vence baseline”. Contra late já-tudo-t1, extra Q4 quase some excepto na claim.
-
-**Paper:** unimodal = vitórias pontuais do tempo (GLCM). Late = teto porque junta papéis (forma estática + textura-Δ). Não inverter: união não é onde o longitudinal mais vence o baseline.
-
-### AUC > 0.8
-
-Só nas coortes gap **6m**. Claim e `36m_12m` ficam abaixo.
-
-| Coorte | late (3 specs oficiais) | unimodal imagem |
-|--------|-------------------------|-----------------|
-| 36m_6m | 3/3 >0.8 (máx. âncora 0.824) | shape t1 = 0.788 (não passa) |
-| 48m_6m | 3/3 >0.8 (máx. âncora 0.834) | shape t1 = 0.802 |
-| 36m_12m | 0/3 (máx. 0.783) | nenhum |
-| 48m_12m claim | 0/3 (máx. late Q4 0.790) | nenhum |
-
-Clinic+img na claim (~0.85) **não** conta como união de famílias de imagem.
+Unimodal = Δ(Q4−t1) por família. Late = teto por juntar papéis, não “onde o tempo mais ganha”. Nomes = tabela de frequência, não assinatura única.

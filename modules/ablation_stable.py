@@ -1,4 +1,4 @@
-"""Stable pool via bootstrap × L1 (scale → corr/var → L1 em cada boot)."""
+"""Stable pool via bootstrap × L1 (corr/var uma vez no train → L1 em cada boot)."""
 
 from __future__ import annotations
 
@@ -29,13 +29,14 @@ def _corr_var_names(
     *,
     corr_threshold: float,
     var_threshold: float,
+    y: np.ndarray | None = None,
 ) -> list[str]:
     from ablation_runner import corr_keep_mask, var_keep_mask
 
     if not names:
         return []
     X_arr = X[names].to_numpy(dtype=float)
-    cmask = corr_keep_mask(X_arr, corr_threshold, feature_names=names)
+    cmask = corr_keep_mask(X_arr, corr_threshold, feature_names=names, y=y)
     names = [n for n, k in zip(names, cmask) if k]
     if not names:
         return []
@@ -70,9 +71,8 @@ def l1_selected_feature_names(
     clf.fit(X_arr, y)
     coef = np.ravel(clf.coef_)
     if len(coef) != len(names):
-        return names
-    selected = [n for n, c in zip(names, coef) if abs(c) > coef_tol]
-    return selected or names
+        return []
+    return [n for n, c in zip(names, coef) if abs(c) > coef_tol]
 
 
 def inner_selections_l1_bootstrap(
@@ -81,53 +81,50 @@ def inner_selections_l1_bootstrap(
     *,
     n_bootstrap: int = STABLE_POOL_BOOTSTRAP,
     l1_c: float = STABLE_POOL_L1_C,
-    corr_threshold: float = 0.90,
+    corr_threshold: float = 0.85,
     var_threshold: float = 0.01,
     seed: int = 42,
-) -> list[list[str]]:
-    """Por boot: reposição real → StandardScaler → corr/var → L1."""
+) -> tuple[list[list[str]], list[str]]:
+    """Corr/var uma vez no outer train; cada boot só L1 no espaço já podado."""
     y_train = np.asarray(y_train, dtype=int)
     n = len(y_train)
     if n < 2 or len(np.unique(y_train)) < 2:
-        return []
+        return [], []
+    Xs = _scale_frame(X_train)
+    filtered_names = _corr_var_names(
+        Xs,
+        list(Xs.columns),
+        corr_threshold=corr_threshold,
+        var_threshold=var_threshold,
+        y=y_train,
+    )
+    if not filtered_names:
+        return [], []
+    X_filt = X_train[filtered_names]
     rng = np.random.default_rng(seed)
     inner_selected: list[list[str]] = []
     for b in range(int(n_bootstrap)):
-        # bootstrap com reposição (sem unique — frequência de instâncias conta)
         idx = rng.choice(n, size=n, replace=True)
-        Xb = _scale_frame(X_train.iloc[idx])
         yb = y_train[idx]
         if len(np.unique(yb)) < 2:
             continue
-        names = _corr_var_names(
-            Xb,
-            list(Xb.columns),
-            corr_threshold=corr_threshold,
-            var_threshold=var_threshold,
-        )
-        if not names:
-            continue
+        Xb = _scale_frame(X_filt.iloc[idx])
         selected = l1_selected_feature_names(
-            Xb[names],
+            Xb,
             yb,
             C=l1_c,
             seed=seed + b,
         )
         if selected:
             inner_selected.append(selected)
-    if inner_selected:
-        return inner_selected
-    # ponytail: fallback 1× L1 no treino inteiro se bootstrap falhar
-    Xs = _scale_frame(X_train)
-    names = _corr_var_names(
-        Xs,
-        list(Xs.columns),
-        corr_threshold=corr_threshold,
-        var_threshold=var_threshold,
-    )
-    if names:
-        return [l1_selected_feature_names(Xs[names], y_train, C=l1_c, seed=seed)]
-    return []
+    return inner_selected, filtered_names
+
+
+def _max_var_column(X: pd.DataFrame) -> list[str]:
+    if X.empty or X.shape[1] == 0:
+        return []
+    arr = np.nan_to_num(X.to_numpy(dtype=float), nan=0.0, posinf=0.0, neginf=0.0)
+    return [str(X.columns[int(np.argmax(np.var(arr, axis=0)))])]
 
 
 def stable_pool_for_outer_train(
@@ -141,12 +138,13 @@ def stable_pool_for_outer_train(
     n_bootstrap: int = STABLE_POOL_BOOTSTRAP,
     l1_c: float = STABLE_POOL_L1_C,
     seed: int = 42,
-) -> tuple[list[str], list[str]]:
+) -> tuple[list[str], list[str], str]:
     from ablation_runner import SELECTION_MODES
 
     cfg = SELECTION_MODES[selection_mode]
+    cols = list(X_train.columns)
     if cfg.get("use_l1_stable_pool"):
-        inner_selected = inner_selections_l1_bootstrap(
+        inner_selected, filtered_names = inner_selections_l1_bootstrap(
             X_train,
             y_train,
             n_bootstrap=n_bootstrap,
@@ -156,14 +154,22 @@ def stable_pool_for_outer_train(
     elif cfg.get("use_stable_pool"):
         raise ValueError("mrmr_stable removido; use l1_stable")
     else:
-        return list(X_train.columns), []
+        return cols, [], "raw"
 
-    return estimate_stable_pool_columns(
-        list(X_train.columns),
+    kept, removed = estimate_stable_pool_columns(
+        cols,
         inner_selected,
         min_pct=min_pct,
         min_timepoints=min_timepoints,
     )
+    if kept:
+        return kept, removed, "l1_stable"
+    if filtered_names:
+        removed = [c for c in cols if c not in set(filtered_names)]
+        return list(filtered_names), removed, "corr_fallback"
+    var_kept = _max_var_column(X_train)
+    removed = [c for c in cols if c not in set(var_kept)]
+    return var_kept, removed, "var_fallback"
 
 
 if __name__ == "__main__":
@@ -171,8 +177,37 @@ if __name__ == "__main__":
     n, p = 60, 20
     X = pd.DataFrame(rng.normal(size=(n, p)), columns=[f"hippocampus_L_T1_f{i}" for i in range(p)])
     y = (rng.random(n) > 0.45).astype(int)
-    sel = inner_selections_l1_bootstrap(X, y, n_bootstrap=10, seed=0)
-    assert len(sel) >= 1
-    kept, _ = estimate_stable_pool_columns(list(X.columns), sel, min_pct=50, min_timepoints=0)
-    assert kept
-    print("ablation_stable self-check ok")
+    X.iloc[:, 0] = y * 2.0 + rng.normal(scale=0.1, size=n)
+    sel, filt = inner_selections_l1_bootstrap(X, y, n_bootstrap=10, seed=0)
+    assert isinstance(sel, list) and isinstance(filt, list)
+    kept, removed = estimate_stable_pool_columns(
+        list(X.columns), sel, min_pct=50, min_timepoints=0,
+    )
+    empty_kept, empty_rem = estimate_stable_pool_columns(
+        list(X.columns), [], min_pct=70, min_timepoints=0,
+    )
+    assert empty_kept == []
+    assert empty_rem == list(X.columns)
+    kept_s, rem_s, src_s = stable_pool_for_outer_train(
+        X, y, selection_mode="l1_stable", min_pct=50, min_timepoints=0,
+        n_bootstrap=10, seed=0,
+    )
+    assert kept_s and src_s in ("l1_stable", "corr_fallback", "var_fallback")
+    a = rng.normal(size=n)
+    Xf = pd.DataFrame(
+        {
+            "hippocampus_L_T1_original_glcm_Contrast": a,
+            "hippocampus_R_T1_original_glcm_Dissimilarity": a + rng.normal(scale=0.01, size=n),
+        }
+    )
+    yf = (rng.random(n) > 0.5).astype(int)
+    kept_f, rem_f, src_f = stable_pool_for_outer_train(
+        Xf, yf, selection_mode="l1_stable", min_pct=70, min_timepoints=0,
+        n_bootstrap=8, l1_c=1e-12, seed=0,
+    )
+    assert src_f in ("corr_fallback", "var_fallback"), src_f
+    assert kept_f
+    assert set(kept_f) <= set(Xf.columns)
+    if src_f == "corr_fallback":
+        assert len(kept_f) < Xf.shape[1]
+    print("ablation_stable self-check ok", "n_inner", len(sel), "src", src_s, src_f)

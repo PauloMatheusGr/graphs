@@ -366,11 +366,12 @@ def nested_cv_fusion(
         pipeline = make_pipeline(selection_mode, model_key, roi=roi, seed=seed)
         inner_cv = StratifiedKFold(k_in, shuffle=True, random_state=seed + fold)
 
+        pool_source = "l1_stable"
         if (
             not is_embedded_model(model_key)
             and SELECTION_MODES[selection_mode].get("use_stable_pool")
         ):
-            allowed, _ = stable_pool_for_outer_train(
+            allowed, _, pool_source = stable_pool_for_outer_train(
                 img_train,
                 y_train,
                 selection_mode=selection_mode,
@@ -381,12 +382,15 @@ def nested_cv_fusion(
                 l1_c=stable_pool_l1_c,
                 seed=seed + fold,
             )
-            pipeline.set_params(preselect__allowed_columns=allowed)
+            pipeline.set_params(
+                preselect__allowed_columns=allowed,
+                preselect__pool_source=pool_source,
+            )
         elif (
             is_embedded_model(model_key)
             and SELECTION_MODES[selection_mode].get("use_stable_pool")
         ):
-            allowed, _ = stable_pool_for_outer_train(
+            allowed, _, pool_source = stable_pool_for_outer_train(
                 img_train,
                 y_train,
                 selection_mode=selection_mode,
@@ -455,6 +459,7 @@ def nested_cv_fusion(
             "threshold": threshold,
             "n_features_raw": len(feature_cols),
             "n_features_selected": len(selected),
+            "pool_source": pool_source,
             "selected_features": json.dumps(selected),
             "test_id_pts": json.dumps(wide.iloc[test_idx]["ID_PT"].astype(str).tolist()),
             "test_y_true": json.dumps(y_test.tolist()),
