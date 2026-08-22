@@ -1,3 +1,6 @@
+analise estatistica LMM
+https://chatgpt.com/share/6a89aba1-b01c-83e9-b15c-b2b0e88f1716
+
 # Notas — pipeline do paper (pós Patch A)
 
 Allowlist 4–5 nomes **morta**. Números em `cohort_results.csv` / tex antigos = experimento errado. Não citar.
@@ -20,13 +23,84 @@ Classe completa; denylist só definição (`keep_*_feat` em `ablation_prep.py` +
 
 | Família | Entra | Denylist | t1 L+R | Q4 L+R |
 |---|---|---|---|---|
-| vol | `gm_norm` `wm_norm` `csf_norm` `MeshVolume` | mm³ crus | 8 | 24 |
+| vol | 4 sufixos | mm³ crus (`mask_mm3`, `gm_mm3`, …) | 8 | 24 |
 | shape | 12 IBSI (`original_shape_`) | MeshVolume, VoxelVolume | 24 | 72 |
 | texture | 24 GLCM (`original_glcm_`) | GLRLM/GLSZM/GLDM/NGTDM | 48 | 144 |
 | firstorder | 16 (`original_firstorder_`) | Energy, TotalEnergy | 32 | 96 |
-| disp | momentos `mag_` `logjac_` `strain_fro_` (15 no long) | `ux/uy/uz`, `_n`, percentis | 30 | 90 |
+| disp | 15 momentos (`mag_`, `logjac_`, `strain_fro_`) | `ux/uy/uz`, `_n`, percentis | 30 | 90 |
 
 Texture = GLCM Original. Sem wavelet/LoG.
+
+### vol (4)
+- `gm_norm`
+- `wm_norm`
+- `csf_norm`
+- `original_shape_MeshVolume`
+
+### shape (12)
+- `original_shape_SurfaceArea`
+- `original_shape_SurfaceVolumeRatio`
+- `original_shape_Sphericity`
+- `original_shape_Elongation`
+- `original_shape_Flatness`
+- `original_shape_LeastAxisLength`
+- `original_shape_MajorAxisLength`
+- `original_shape_MinorAxisLength`
+- `original_shape_Maximum2DDiameterColumn`
+- `original_shape_Maximum2DDiameterRow`
+- `original_shape_Maximum2DDiameterSlice`
+- `original_shape_Maximum3DDiameter`
+
+### texture — GLCM (24)
+- `original_glcm_Autocorrelation`
+- `original_glcm_ClusterProminence`
+- `original_glcm_ClusterShade`
+- `original_glcm_ClusterTendency`
+- `original_glcm_Contrast`
+- `original_glcm_Correlation`
+- `original_glcm_DifferenceAverage`
+- `original_glcm_DifferenceEntropy`
+- `original_glcm_DifferenceVariance`
+- `original_glcm_Id`
+- `original_glcm_Idm`
+- `original_glcm_Idmn`
+- `original_glcm_Idn`
+- `original_glcm_Imc1`
+- `original_glcm_Imc2`
+- `original_glcm_InverseVariance`
+- `original_glcm_JointAverage`
+- `original_glcm_JointEnergy`
+- `original_glcm_JointEntropy`
+- `original_glcm_MCC`
+- `original_glcm_MaximumProbability`
+- `original_glcm_SumAverage`
+- `original_glcm_SumEntropy`
+- `original_glcm_SumSquares`
+
+### firstorder (16; deny Energy, TotalEnergy)
+- `original_firstorder_10Percentile`
+- `original_firstorder_90Percentile`
+- `original_firstorder_Entropy`
+- `original_firstorder_InterquartileRange`
+- `original_firstorder_Kurtosis`
+- `original_firstorder_Maximum`
+- `original_firstorder_Mean`
+- `original_firstorder_MeanAbsoluteDeviation`
+- `original_firstorder_Median`
+- `original_firstorder_Minimum`
+- `original_firstorder_Range`
+- `original_firstorder_RobustMeanAbsoluteDeviation`
+- `original_firstorder_RootMeanSquared`
+- `original_firstorder_Skewness`
+- `original_firstorder_Uniformity`
+- `original_firstorder_Variance`
+
+### disp (15; prefixos `mag_`, `logjac_`, `strain_fro_`)
+- `mag_mean`, `mag_std`, `mag_variance`, `mag_skewness`, `mag_kurtosis`
+- `logjac_mean`, `logjac_std`, `logjac_variance`, `logjac_skewness`, `logjac_kurtosis`
+- `strain_fro_mean`, `strain_fro_std`, `strain_fro_variance`, `strain_fro_skewness`, `strain_fro_kurtosis`
+
+Fora: `ux_*`, `uy_*`, `uz_*`, `curlmag_*`, `*_n`, `*_p05`, `*_p50`, `*_p95`.
 
 ## Seletor (`l1_stable`, só outer train)
 
