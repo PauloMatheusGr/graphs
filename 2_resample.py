@@ -7,12 +7,13 @@ import pandas as pd
 COHORT = "all_population"
 population_file = f"csvs/cohorts/{COHORT}/all_population.csv"
 
-input_dir = "/mnt/databases/mri/adni/preproc/3-biasfield/"
+input_dir = "/mnt/databases/mri/adni/preproc/4-mni-hist-matching"
 output_dir = "/mnt/study-data/pgirardi/graphs/images/resampled_1.0mm"
 ref_mni_img = "/mnt/study-data/pgirardi/preproc/atlases/templates/mni152_2009c_template.nii.gz"
 
 # Volumes auxiliares no espaço nativo (labels) e pasta base de saída em MNI
-regions_dir = "/mnt/databases/mri/adni/preproc/5-parcellation/regions"
+# regions_dir = "/mnt/databases/mri/adni/preproc/5-parcellation/regions"
+regions_dir = "/mnt/study-data/pgirardi/insert_to_databases_regions"
 seg_dir = "/mnt/databases/mri/adni/preproc/6-segmentation"
 brain_mask_dir = "/mnt/databases/mri/adni/preproc/1-skull-stripping"
 labels_output_base = "/mnt/study-data/pgirardi/graphs/images"
@@ -94,7 +95,7 @@ def resolver_caminho_imagem(input_dir, img_id):
         pool = nii if nii else matches
 
         prefer_suffixes = (
-            "_stripped_nlm_denoised_biascorrected.nii.gz",
+            "_stripped_nlm_denoised_biascorrected_mni_template.nii.gz",
         )
 
         def _rank(p: str) -> tuple[int, float, str]:

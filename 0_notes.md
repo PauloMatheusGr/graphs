@@ -5,6 +5,117 @@ https://chatgpt.com/share/6a89aba1-b01c-83e9-b15c-b2b0e88f1716
 
 Allowlist 4–5 nomes **morta**. Números em `cohort_results.csv` / tex antigos = experimento errado. Não citar.
 
+Mapa do repo `graphs/` por etapa. Ordem = fluxo do paper (Patch A / late).
+
+---
+
+## 0. Pré-proc ADNI (fora + patch)
+
+| Script | Etapa |
+|---|---|
+| Pipeline ADNI em `/mnt/databases/...` (strip→bias→MNI→seg→DKT) | Gera raw/preproc; **não** está neste repo |
+| `preproc/dkt_labelling.py` + `run_dkt_labelling.py` (pasta `preproc/`) | Parcellation DKT (antspynet) |
+| `fix_missing_dkt.py` | **Patch:** 4D→3D + DKT nos IDs sem `regions` → `insert_to_databases_regions/` |
+
+---
+
+## 1. Coorte / clínica
+
+| Script | Etapa |
+|---|---|
+| `1_dataset.ipynb` | Define coortes (`36m_*`, `48m_*`, `all_population`), bandas ±2 m, CSVs longitudinais |
+| `1_dataset_old.ipynb` | Legado (protocolo antigo) |
+| `analysis_adni.ipynb` | Análise exploratória ADNI (não é etapa do claim) |
+
+---
+
+## 2. Espaço comum MNI
+
+| Script | Etapa |
+|---|---|
+| `2_resample.py` | Rigid T1→MNI 1 mm; warpa `regions`/`seg`/`brain_mask` → `images/{resampled_1.0mm,regions,seg,brain_mask}/` |
+
+---
+
+## 3. Extração de features (store `all_population`)
+
+| Script | Etapa | Saída |
+|---|---|---|
+| `3_feat_vol.py` | Volumes CSF/GM/WM por ROI | `features_volumetric.csv` |
+| `3_feat_rad.py` | Radiomics (shape/GLCM/firstorder) | `features_radiomic.csv` |
+| `3_feat_gen_dvf_v2.py` | Warps sujeito→template CN | `images/displacement_field_v2/` |
+| `3_feat_dvf_v2.py` | Stats DVF por ROI (espaço template) | `features_displacement_v2.csv` |
+| `3_feat_gen_dvf.py` + `3_feat_dvf.py` | **Legado v1** (fixed=clínica) | `features_displacement.csv` — preferir v2 |
+
+---
+
+## 4. Merge / long para ablação
+
+| Script | Etapa |
+|---|---|
+| `4_run_post_extract.py` | Junta vol+rad+disp_v2 → tabelas long por coorte (`ablation/...`); scanner batch |
+
+Módulos usados aqui: `ablation_prep` (export long, batch).
+
+---
+
+## 5. Modelos / ablação
+
+| Script | Etapa | Paper? |
+|---|---|---|
+| `5_ablation.py` | Unimodal nested CV (vol/shape/texture/disp/firstorder) | **Sim** (mono) |
+| `5_ablation_late_fusion.py` | Late fusion (média de scores SVM) | **Sim** |
+| `5_clinic_img.py` | Clínica e clinic+img | Extra / suplemento |
+| `5_ablation_leaky.py` | Controlo leaky | Extra |
+| `5_ablation_early_fusion.py` | Early concat | **Fora** do paper |
+| `run_ablation_full.sh` | Orquestra mono + late (+ extra) nas 4 coortes | **Sim** (driver) |
+| `scripts_compare_fusion_vs_shape.py` | Comparação pontual fusion vs shape | Auxiliar |
+
+### Módulos (`modules/`) — onde entram
+
+| Módulo | Papel | Usado em |
+|---|---|---|
+| `ablation_prep.py` | ROI filter, denylist/keep, load long, scanner | `4_`, `5_*` |
+| `ablation_deltas.py` | Deltas T1/D21/D32; colunas por família | prep / runner / Q4 |
+| `ablation_representation.py` | `t1_only`, `t1_d21_d32`, fusion specs, paths | `5_*` |
+| `ablation_stable.py` | Seletor `l1_stable` (corr → L1 → π) | runner |
+| `ablation_harmonize.py` | ComBat (se ligado) | runner |
+| `ablation_optuna.py` | Tune SVM/etc. | runner, clinic |
+| `ablation_runner.py` | Nested CV unimodal + early fusion suite | `5_ablation`, early, clinic |
+| `ablation_late_fusion.py` | Inner-join por `ID_PT`, mean/weighted scores | `5_ablation_late_fusion` |
+| `ablation_runner_leaky.py` | Pipeline leaky | `5_ablation_leaky` |
+| `ablation_analysis.py` | AUC patient-level, freq. features, summaries | todos `5_*`, notebooks |
+| `cohort_compare.py` | Multi-coorte → `cohort_results` / `cohort_features_long` | pós-run / rebuild planilha |
+| `stats_compare.py` | Contrastes estatísticos entre configs | `7_stats` |
+
+---
+
+## 6–7. Resultados, stats, artigo
+
+| Script | Etapa |
+|---|---|
+| `6_results.ipynb` | Figs / tabelas a partir dos CSVs de ablação |
+| `7_stats.ipynb` | Stats oficiais (Q4 vs t1_only, FDR, etc.) |
+| `artigo/` (`artigo.tex`) | Draft paper (números só após CSVs novos) |
+
+Notas: `0_notes.md`, `0_todo.md` — protocolo e checklist, não código.
+
+---
+
+## Fluxo resumido (paper atual)
+
+```
+1_dataset.ipynb
+    → 2_resample.py
+    → 3_feat_vol + 3_feat_rad + 3_feat_gen_dvf_v2 + 3_feat_dvf_v2
+    → 4_run_post_extract.py
+    → run_ablation_full.sh  (5_ablation + 5_ablation_late_fusion [+ extra])
+    → cohort_compare / 6_results / 7_stats
+    → artigo.tex
+```
+
+**Estado agora:** etapa **3** a meio (vol/rad incompletos; disp_v2 ainda não); `4`/`5`/`6`/`7` do claim novo ainda à frente.
+
 ## Perguntas
 
 1. sMCI vs pMCI: Q4 (`t1_d21_d32` = T1+D21+D32) agrega sinal vs `t1_only`?

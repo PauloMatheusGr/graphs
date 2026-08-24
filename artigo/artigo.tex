@@ -54,8 +54,7 @@
 \begin{document}
 	\begin{frontmatter}
 		
-		\title{Níveis longitudinais hipocampais para sMCI versus pMCI:
-			famílias de atributos, quatro coortes e fusão tardia}
+		\title{Análise longitudinal de diferentes classes de atributos hipocampais para a classificação entre comprometimento cognitivo leve progressivo e estável}
 		
 		\author[ufscar]{Paulo Matheus da Costa Girardi}
 		\ead{paulogirardi@estudante.ufscar.br}
@@ -90,7 +89,34 @@
 	\section{Introdução}
 	\label{sec:introducao}
 	
-	A doença de Alzheimer (AD) e o comprometimento cognitivo leve (MCI) situam-se num contínuo de declínio~\cite{petersen-1999}.
+	section{Introdução}
+	\label{sec:Introduction}
+	A Doença de Alzheimer (DA) e o Compromisso Cognitivo Ligeiro (CCL, \emph{Mild Cognitive Impairment}, MCI) situam-se num continuum de declínio cognitivo \cite{petersen-1999}.
+	Identificar quais indivíduos com MCI permanecerão estáveis (sMCI) ou progredirão para demência (pMCI) é clinicamente relevante para enriquecimento de ensaios, aconselhamento e planeamento de intervenção precoce \cite{petersen-2009}.
+	A ressonância magnética (RM) estrutural ponderada em T1 permanece central neste problema, e a atrofia hipocampal está entre os marcadores de imagem mais consolidados de neurodegeneração \cite{scheltens-1992}.
+	Na fronteira sMCI/pMCI, contudo, a discriminação baseada numa única região anatómica é intrinsecamente difícil: as diferenças de grupo são subtis, a dinâmica de conversão é heterogénea e a alteração estrutural sobrepõe-se ao envelhecimento normal.
+	Uma vasta literatura avançou, por isso, para representações mais ricas, incluindo morfometria de cérebro inteiro, fusão multimodal com scores cognitivos, radiómica e aprendizagem profunda longitudinal \cite{moradi-2015,ye-2012,zhang-2019,lin-2020,aghajanian-2025}.
+	Os valores reportados de área sob a curva ROC (AUC) podem ser elevados nestes contextos, mas a comparabilidade entre estudos é limitada.
+	Coortes, definições de desfecho (p.ex.\ ncMCI/cMCI, MCI-para-DA num horizonte fixo), escala espacial (cérebro inteiro versus ROI regional), entrada temporal (só baseline versus visitas repetidas) e desenho de validação diferem amplamente.
+	Além disso, muitos pipelines publicados aplicam harmonização, selecção de atributos, sintonização de hiperparâmetros ou limiares de decisão com informação do conjunto completo ou de partições de teste, e nem todos impõem divisão estrita ao nível do paciente.
+	Nestas condições, AUCs optimistas são difíceis de interpretar e podem não reflectir o desempenho atingível sob validação ao nível do paciente com ajuste do modelo por fold.
+	Este estudo aborda essa lacuna com um fluxo de extremo a extremo, auditável, de extracção de atributos hipocampais e classificação prognóstica no ADNI (ADNI-1/2/GO).
+	O hipocampo foi escolhido de propósito como a característica macroscópica de atrofia mais consolidada na investigação em DA, fornecendo um banco de ensaio focado para avaliação longitudinal, sem reivindicar cobertura prognóstica de cérebro inteiro.
+	Partindo de volumes T1 brutos, o pipeline combina pré-processamento, controlo de qualidade, parcelamento, registo baseado em templates e extracção de atributos volumétricos, morfométricos, texturais, de primeira ordem e de campo de deslocamento no hipocampo.
+	O desempenho prognóstico avalia-se sob validação cruzada (CV) aninhada ao nível do paciente, com filtragem por frequência de selecção $\ell_1$ derivada de bootstrap confinada aos dados de treino em cada fold externo, e harmonização ComBat opcional por fold tratada como análise de sensibilidade.
+	A novidade metodológica reside na arquitectura de avaliação, e não num novo classificador: elegibilidade temporal, apuração do desfecho, divisão ao nível do paciente, operações ajustadas por fold, selecção específica da representação, agregação de probabilidades e comparações estatísticas especificam-se como cadeia auditável.
+	Este desenho permite avaliação \emph{like-for-like} das representações Q4 (\code{t1\_d21\_d32}), só primeira visita (\code{t1\_only}), preditores clínicos e fusão \emph{late}, e identifica quais componentes aparentemente úteis permanecem informativos após controlos de fuga de informação e correcção por multiplicidade.
+	As principais contribuições para avaliação reproduzível de aprendizagem automática em neuroimagem longitudinal são:
+	\begin{itemize}
+		\item um protocolo auditável que separa visitas preditoras em estágio MCI da apuração do desfecho e documenta o limite de ajuste de cada operação dependente da amostra sob validação aninhada ao nível do paciente;
+		\item uma matriz controlada de avaliação que abrange cinco famílias de atributos hipocampais (volume, forma, textura GLCM, primeira ordem, deslocamento), fusão \emph{late} (três especificações), representações Q4 versus \code{t1\_only}, SVM como classificador primário (RF e elastic-net em sensibilidade), harmonização por fold, preditores clínicos e fusão clínica--imagem sob um estimando comum de AUC ao nível do paciente;
+		\item uma auditoria explícita da frequência de selecção de atributos e inferência para além de estimativas pontuais, incluindo testes de permutação ao nível do paciente, intervalos de confiança bootstrap pareados e correcção da taxa de falsas descobertas;
+		\item evidência de suporte à decisão mostrando que as variáveis clínicas devem permanecer o sinal prognóstico de primeira linha nesta coorte, enquanto a RM hipocampal deve tratar-se como adjunto estrutural cujo valor incremental tem de ser demonstrado, e não presumido.
+	\end{itemize}
+	O endpoint primário é a classificação binária sMCI versus pMCI.
+	O restante do artigo organiza-se assim: a Secção~\ref{sec:Material-and-Methods} descreve a coorte, a extracção de atributos e os protocolos de validação; a Secção~\ref{sec:Results} reporta resultados prognósticos e comparativos, incluindo contextualização na literatura; a Secção~\ref{sec:Discussions} discute achados e limitações; a Secção~\ref{sec:Conclusions} conclui.
+	
+		A doença de Alzheimer (AD) e o comprometimento cognitivo leve (MCI) situam-se num contínuo de declínio~\cite{petersen-1999}.
 	Identificar quais indivíduos com MCI permanecerão estáveis (sMCI) e quais progredirão para demência (pMCI) interessa a enriquecimento de ensaios, aconselhamento e planeamento de intervenção~\cite{petersen-2009}.
 	A RM estrutural T1-ponderada permanece central nesse problema, e a atrofia hipocampal é um dos marcadores macroscópicos mais consolidados~\cite{scheltens-1992}.
 	Na fronteira sMCI/pMCI, contudo, a discriminação a partir de uma única região é intrínsecamente difícil: as diferenças de grupo são subtis, a dinâmica de conversão é heterogénea e a alteração estrutural sobrepõe-se ao envelhecimento.
@@ -126,10 +152,41 @@
 	
 	O desfecho primário é a classificação binária sMCI versus pMCI.
 	O restante do artigo organiza-se assim: a Secção~\ref{sec:metodos} descreve coorte, extração de atributos e validação; a Secção~\ref{sec:resultados} reporta os resultados prognósticos e comparativos; a Secção~\ref{sec:discussao} discute achados e limitações; a Secção~\ref{sec:conclusoes} conclui.
-	
-	
+
 \subsection{Trabalhos relacionados}
-\label{subsec:relacionados}
+\label{subsec:Related-Works}
+A previsão automatizada de estabilidade ou conversão do MCI tem sido estudada com conjuntos de atributos, esquemas de validação e janelas de desfecho muito diferentes.
+Na investigação prognóstica baseada no ADNI, MCI estável e progressivo designam-se frequentemente ncMCI/cMCI ou MCInc/MCIc, clinicamente análogos a sMCI e pMCI, respectivamente.
+O desempenho depende, portanto, não só do classificador, mas também de os preditores serem clínicos, estruturais, multimodais, regionais ou de cérebro inteiro, e de a informação temporal se limitar ao baseline ou abranger várias visitas de seguimento.
+Vários estudos mostram que o seguimento cognitivo denso pode ser altamente informativo mesmo sem RM.
+\citet{bucholc-2023} propuseram um enquadramento de ensemble híbrido na coorte do National Alzheimer's Coordinating Center (NACC) para prever a conversão de MCI para demência a partir de trajectórias cognitivas e funcionais longitudinais.
+Embora a acurácia de classificação tenha atingido 85,0--87,5\%, a AUC do ensemble no teste retido permaneceu perto de 0,60, ao passo que modelos de floresta aleatória atingiram AUC até 0,76 quando quatro visitas estavam disponíveis.
+\citet{grassi-2019} previram conversão a 3 anos no ADNI usando apenas variáveis sociodemográficas e neuropsicológicas e reportaram AUROC de 0,88 (IC bootstrap 95\%: 0,85--0,91), com sensibilidade 77,7\% e especificidade 79,9\% no ponto de operação de melhor acurácia equilibrada.
+Estes resultados indicam que o rastreio clínico transporta sinal prognóstico substancial e constitui um comparador forte para modelos só de imagem.
+Estudos de RM estrutural apoiam-se frequentemente em representações de cérebro inteiro de alta dimensão ou em fusão com scores cognitivos.
+\citet{moradi-2015} aplicaram \emph{low-density separation} a RM T1 de baseline do ADNI para previsão precoce de conversão em MCI, reportando AUC 0,766 com morfometria baseada em voxel isolada e AUC 0,902 quando a RM se combinou com um agregado cognitivo de baseline.
+\citet{ye-2012} usaram um enquadramento esparso de \emph{stability selection} (Biosignature-15) para prever conversão MCI-para-DA em quatro anos, alcançando AUC 0,859 com validação cruzada leave-one-out (LOOCV) em dados ADNI de baseline.
+\citet{casanova-2013} combinaram atributos de RM em grande escala baseados em tecido com informação cognitiva num enquadramento de aprendizagem automática para avaliação de risco no ADNI.
+Tais estudos demonstram que AUCs elevadas obtêm-se mais frequentemente com desenhos de cérebro inteiro ou multimodais e com definições de desfecho que podem diferir da discriminação estrita sMCI/pMCI de horizonte curto.
+Quando o âmbito espacial se reduz a uma única ROI, o desempenho tipicamente diminui.
+\citet{cuingnet-2011} compararam dez métodos de classificação no ADNI e reportaram que a discriminação conversor versus não-conversor em MCI, incluindo atributos de volume hipocampal, não excedeu significativamente o acaso.
+\citet{guo-2017a} estudaram atributos de espessura cortical relacionados com conversão para discriminação sMCI versus cMCI, reportando 98,84\% de acurácia com sensibilidade/especificidade de 97,5/100 sob LOOCV, mas sem reportar AUC.
+Estes achados são consistentes com a visão de que restringir a análise a uma região anatómica focal, seja hipocampo ou córtex, produz desempenho prognóstico mais conservador do que modelos voxel de cérebro inteiro.
+Trabalho mais recente incorpora informação temporal de RM via aprendizagem de dicionário, aprendizagem profunda ou radiómica.
+\citet{zhang-2019} analisaram RM estrutural longitudinal para classificação DA/MCI, \citet{lin-2020} usaram aprendizagem de dicionário longitudinal para prever progressão MCI-para-DA, e \citet{aghajanian-2025} combinaram aprendizagem profunda com radiómica de RM estrutural longitudinal para previsão de progressão.
+Estas abordagens evidenciam interesse crescente na modelação temporal, mas também variam na definição de coorte, no controlo de fugas de informação e na comparação com baselines clínicos.
+Perante este enquadramento, o presente trabalho \textbf{não} visa reproduzir o estado da arte multimodal de cérebro inteiro.
+Em vez disso, especifica e stress-testa um pipeline prognóstico focado no hipocampo no ADNI, com configuração primária pré-especificada (atributos de imagem por família, SVM, filtragem por frequência de selecção $\ell_1$ derivada de bootstrap, sem ComBat; estimando de AUC ao nível do paciente) e ablações sistemáticas ao longo de modalidades, representação longitudinal Q4 versus \code{t1\_only}, preditores clínicos e fusão \emph{late}.
+A contribuição original é o protocolo de avaliação coordenado: todas as representações candidatas avaliam-se sob elegibilidade temporal explícita, validação aninhada ao nível do paciente, ajuste por fold, estimando OOF comum e comparações sensíveis à multiplicidade.
+Isto transforma ablações negativas e positivas em evidência de desenho para futuros pipelines de suporte à decisão prognóstica, em vez de tratar a AUC máxima observada como único resultado.
+Análises de sensibilidade com regressão logística elastic-net e ComBat por fold, bem como scores clínicos de primeira visita, reportam-se na Secção~\ref{sec:Results} sob o mesmo estimando.
+A Tabela~\ref{tab:literature_comparison} resume literatura representativa ao lado dos nossos resultados, sob definições de tarefa explicitamente heterogéneas mas clinicamente análogas.
+Ajustes face ao inglês (não só tradução):
+
+«wide» / early fusion / quatro famílias → Q4, late, cinco famílias
+configuração primária volumétrica «wide» → por família + SVM + L1 bootstrap, sem ComBat
+AUCs 0,680 / $\approx$0,71 / $\approx$0,76 retiradas até haver CSVs do rerun; aponta para Results
+
 
 A previsão automática de estabilidade ou conversão do MCI foi estudada com conjuntos de atributos, esquemas de validação e janelas de desfecho muito distintos.
 Na investigação prognóstica baseada na ADNI, MCI estável e progressivo aparecem também como ncMCI/cMCI ou MCInc/MCIc, clinicamente análogos a sMCI e pMCI.
@@ -164,12 +221,10 @@ Sob esse protocolo, a forma no $t_0$ atinge AUC paciente $0.761\pm0.043$ em \cod
 A Tabela~\ref{tab:literature_comparison} resume literatura representativa ao lado destes resultados, sob definições de tarefa heterogéneas mas clinicamente análogas.
 	
 	% =============================================================================
-	\section{Material e métodos}
-	\label{sec:metodos}
-	
-	\subsection{Definição da coorte}
-	\label{sec:populacao}
-	
+
+		\section{Material and Methods}
+	\label{sec:Material-and-Methods}
+
 	
 	Os dados utilizados neste estudo foram obtidos da base de dados da Alzheimer's Disease Neuroimaging Initiative (ADNI)~\cite{petersen-2009,jr-2008}.
 	A ADNI foi lançada em 2003 como parceria público--privada para avaliar marcadores clínicos, genéticos, bioquímicos e de neuroimagem longitudinais da doença de Alzheimer (AD).
@@ -429,6 +484,18 @@ A Tabela~\ref{tab:literature_comparison} resume literatura representativa ao lad
 	
 	Após obtenção dos dados brutos de RM na base ADNI, os volumes foram submetidos a um pipeline de pré-processamento próprio. Essas operações foram aplicadas de forma independente a cada imagem, com configurações de software fixas: modelos pré-treinados foram usados para extração de crânio e parcelamento; o denoising e a correção de campo de viés estimaram quantidades específicas de cada imagem; a normalização de intensidade e o alinhamento espacial usaram imagens de referência e parâmetros algorítmicos fixos. Nenhum parâmetro de pré-processamento foi estimado por agrupamento das imagens sMCI e pMCI.
 	
+	A Figura~\ref{fig:pipeline} resume o arcabouço: pré-processamento de RM \sugestao{}{T1-w}, controle de qualidade, parcellation, construção de template \emph{groupwise}, registro baseado em campo de deslocamento, extração multimodal de atributos, harmonização opcional, agregação tabular \emph{wide} e classificação aninhada com seleção estável de atributos.
+	
+	\begin{figure}[htbp]
+		\centering
+		\includegraphics[width=1.0\textwidth]{graphics/diagrama.pdf} % Substitua pelo nome do seu arquivo
+		\caption{Pipeline.}
+		\label{fig:pipeline}
+	\end{figure}
+	
+	\subsection{Definição da coorte}
+	\label{sec:populacao}
+
 %	Quando o NIfTI de entrada era tetradimensional, reteve-se um único volume 3D selecionando o primeiro quadro ao longo do quarto eixo com \code{ants.slice\_image(axis=3, idx=0)}. Essa conversão afetou 4 de 15{,}014 aquisições brutas (0{,}03\%); as quatro imagens afetadas continham dois quadros no quarto eixo. Nesta coorte T1 do ADNI, o quarto eixo correspondia a quadros repetidos ou extras, e não a uma pilha espectroscópica multi-eco; não se utilizou regra alternativa de seleção de quadro.
 	
 	Em seguida, todos os volumes ponderados em T1 passaram por uma cadeia fixa de pré-processamento no ecossistema ANTsX \cite{tustison-2021}, composta pelos seguintes passos sequenciais:
@@ -437,9 +504,41 @@ A Tabela~\ref{tab:literature_comparison} resume literatura representativa ao lad
 		
 	\textbf{Denoising:} Médias não locais adaptativas para ruído ricianiano \cite{manjon-2010}, implementadas com \code{ants.denoise\_image} usando \code{noise\_model="Rician"}, raio de patch $p=2$, raio de busca $r=3$ e \code{mask=None}. O parâmetro específico do ANTs \code{shrink\_factor=1} desativa o downsampling interno e é um controlo de implementação, não parte da formulação original.
 		
-	\textbf{Correção de campo de viés:} Correção N4ITK \cite{tustison-2010} com \code{ants.n4\_bias\_field\_correction}, usando \code{shrink\_factor=3}, \code{convergence=\{iters: [50, 50, 50, 50], tol:} \(1\times10^{-7}\)\code{\}} (quatro níveis de multi-resolução), \code{spline\_param=200}, \code{rescale\_intensities=True} e \code{mask=None}.
-		
+	\textbf{Correção de campo de viés bias field:} Correção N4ITK \cite{tustison-2010} com \code{ants.n4\_bias\_field\_correction}, usando \code{shrink\_factor=3}, \code{convergence=\{iters: [50, 50, 50, 50], tol:} \(1\times10^{-7}\)\code{\}} (quatro níveis de multi-resolução), \code{spline\_param=200}, \code{rescale\_intensities=True} e \code{mask=None}.
+	
+	\textbf{histogram matching}  **Histogram matching.** As intensidades da RM T1 foram padronizadas por *histogram matching* \cite{nyul-2000} ao template fixo MNI152 2009c \cite{fonov-2011}, implementado com `ants.histogram\_match\_image2` (`transform\_domain\_size=128`, `match\_points=16`), após normalização min--max **independente** das imagens fonte e de referência. Máscaras encefálicas da fonte e da referência foram estimadas com `ants.get\_mask`; as intensidades correspondidas foram em seguida reescaladas pelo percentil 99,9 dos voxels encefálicos na referência. O procedimento correu **por imagem**; não se estimaram parâmetros de intensidade ao nível da coorte. O matching reduz heterogeneidade grosseira de escala, mas **não** modela efeitos de lote de scanner ou fabricante ao nível do atributo: o NeuroComBat por fold \cite{fortin-2018} ficou como análise de sensibilidade opcional.
+	
+	\textbf{**Parcelamento e segmentação tecidual.**} Os mapas de ROI foram obtidos com `antspynet.desikan\_killiany\_tourville\_labeling` (`modality="t1"`, `do\_preprocessing=True`), incluindo os hipocampos (rótulos DKT 17 e 53) e as restantes regiões usadas na extração. A segmentação em LCR, substância cinzenta e substância branca (rótulos 1, 2 e 3) veio de `antspynet.deep\_atropos`, mesma modalidade e mesma *flag* de pré-processamento. Embora a cadeia ANTsX externa já incluísse extração de crânio, denoising, N4, *histogram matching* e alinhamento rígido ao MNI, reteve-se o pré-processamento **interno** da biblioteca para coincidir com o domínio dos pesos pré-treinados do ANTsPyNet — o que pode duplicar, em parte, normalização de intensidade ou espacial. Os rótulos serviram só para definir ROIs e fracções teciduais; as transformações internas do ANTsPyNet **não** foram tratadas como estágio treinável adicional.
+			
 	\textbf{Alinhamento espacial:} As imagens clínicas foram registradas rigidamente ao espaço de referência MNI152 2009c \cite{fonov-2009,fonov-2011} com \code{ants.registration} do ANTsPy \cite{avants-2011a,tustison-2021}, corrigindo o alinhamento global e padronizando a orientação espacial.
+	Parágrafo para Methods (bate com `2\_resample.py` tal como está):
+	
+	O alinhamento espacial consistiu num registo **rígido** (6 graus de liberdade: rotação e translação; sem componente afim nem deformável) de cada volume T1, já submetido a extração de crânio, denoising, correção N4 e *histogram matching*, ao template fixo MNI152 2009c em grelha isotrópica de \(1{,}0\)\,mm. O template serviu apenas como **grelha de referência** (espaçamento e orientação canónicos), não como alvo de normalização anatómica. A estimação e a interpolação da T1 foram feitas com `ants.registration` (`type\_of\_transform="Rigid"`, interpolador `"linear"`): imagem **fixa** = template MNI; imagem **móvel** = T1 clínica; o volume deformado (`warpedmovout`) foi gravado no espaço do template. A transformada directa resultante (`fwdtransforms`) foi em seguida aplicada, com `ants.apply\_transforms`, aos mapas nativos de parcelamento DKT (`\_regions.nii.gz`), de classes teciduais (`\_seg.nii.gz`) e à máscara encefálica (`\_brain\_mask.nii.gz`), usando o T1 já reamostrado como imagem de referência espacial e interpolador **`nearestNeighbor`**, de modo a preservar os identificadores inteiros dos rótulos. Assim, intensidade e máscaras partilham a mesma pose, a mesma grelha e a mesma afinidade; a anatomia do sujeito permanece inalterada a menos de uma isometria e de uma única interpolação. O PyRadiomics não reamostra (`resampledPixelSpacing` omitido), evitando uma segunda interpolação antes da extração de atributos.
+	
+	\textbf{Discretização binning}
+	
+	DEFAULT\_BIN\_COUNT = 64 → RadiomicsFeatureExtractor(binCount=64); binWidth omitido (evita default CT binWidth=25). FBN por ROI. normalize=False (default)
+	
+	\textbf{Extração dos atributos}
+	O inglês que colaste **não** descreve o código actual: `binWidth=25`, DVF no domínio clínico, clínico=fixed. Pipeline oficial é **`3\_feat\_gen\_dvf\_v2.py` + `3\_feat\_dvf\_v2.py`** (template=fixed). Abaixo: armazém (o que os scripts extraem). Classificador corta depois.
+	
+	---
+	
+	**Extração de atributos.** Por aquisição extraem-se cinco famílias sobre as mesmas 20 ROIs DKT (L/R: hipocampo, amígdala, tálamo, núcleo accumbens, ventrículo lateral inferior, cíngulo posterior, ístmo do cíngulo, cíngulo anterior rostral, orbitofrontal medial, ínsula), cada rótulo intersectado com a máscara encefálica; ROI vazia grava-se NaN. Volume, forma, textura e primeira ordem vivem no espaço MNI 1 mm da T1 rígida; o deslocamento vive no espaço do template CN groupwise.
+	
+	**Volumetria (`3\_feat\_vol.py`).** Com `regions`, `seg` (LCR=1, GM=2, WM=3) e `brain\_mask` na mesma grelha, o volume do voxel é o produto dos *zooms* NIfTI. Por ROI: `mask\_mm3` (ROI $\cap$ cérebro); `gm\_mm3`, `wm\_mm3`, `csf\_mm3`; fracções **dentro da ROI** `gm\_norm`\(=V_{\mathrm{GM}}/V_{\mathrm{ROI}}\) (análogo WM/LCR); `tissues\_mm3` e `tissues\_norm` (soma das três classes / \(V_{\mathrm{ROI}}\)). A linha `\_\_global\_\_` guarda o ICV como `mask\_mm3` da máscara encefálica. No pós-processamento, descritores de tamanho em mm³ (incluindo malha/eixos do PyRadiomics) dividem-se por esse ICV; as fracções **não** se renormalizam pelo ICV.
+	
+	**Radiómica (`3\_feat\_rad.py`).** PyRadiomics `3.1.1.dev111+g8ed579383`; nomes IBSI da biblioteca, sem phantom de conformidade. Só tipo `Original` (sem LoG/wavelet). Discretização **FBN** `binCount=64` (`binWidth` omitido; evita o default CT `binWidth=25`). Sem resample extra (`resampledPixelSpacing` omitido); `normalize=False`; textura 3D (`force2D=False`, `distances=[1]`, `symmetricalGLCM=True`). Grelha/afim imagem–máscara: atol \(10^{-5}\). Por ROI e visita o armazém tem **107** descritores: 18 first-order, 14 shape, 24 GLCM, 16 GLRLM, 16 GLSZM, 5 NGTDM, 14 GLDM.
+	
+	**Deslocamento normativo (`3\_feat\_gen\_dvf\_v2.py`, `3\_feat\_dvf\_v2.py`).** Template CN do sexo e da década em \(T_1\), constante em \(T_2\) e \(T_3\); DIAG/GROUP não escolhem o atlas. SyN com **fixed = template CN**, **moving = T1 clínica** 1 mm, interpolador `bspline`; gravam-se affine, warp e inverse warp. O campo constrói-se no **domínio do template**: \(I_t=[\text{affine},\text{inverse warp}]\) aplicado às coordenadas físicas \(x\in\Omega_{\mathrm{CN}}\),
+	\[
+	\mathbf{u}_t(x)=I_t(x)-x.
+	\]
+	ROIs e máscara do sujeito transportam-se ao template pela cadeia directa (Warp+Affine, NN). De \(\mathbf{u}_t\): \(\log J\), \(\|\mathbf{u}\|\), divergência, \((u_x,u_y,u_z)\), \(\|\mathrm{rot}\,\mathbf{u}\|\); escalares de Green–Lagrange (`strain\_trace`, `strain\_det`, `strain\_fro`, `strain\_vol`, `strain\_dev\_norm`, `strain\_shear\_max`, `strain\_l1/l2/l3`, `strain\_shear\_ratio`, `strain\_shear\_energy`); e \(\|\varepsilon\|\_F\) da deformação infinitesimal \(\varepsilon=\tfrac12(H+H^{\top})\). Por ROI: \(n\), média, desvio-padrão, p05/p50/p95; para `logjac`, `mag` e `strain\_fro` (este último nos momentos com \(\varepsilon\) infinitesimal, não com o Frobenius de Green–Lagrange) também variância amostral, assimetria e curtose de Fisher. Sem mapas \(T_a\to T_b\).
+	
+	**O que entra no classificador (denylist, não é o extracto cru).** Volume: `gm\_norm`, `wm\_norm`, `csf\_norm`, `original\_shape\_MeshVolume` (/ICV). Forma: 12 `original\_shape\_*` excepto `MeshVolume` e `VoxelVolume`. Textura: só 24 `original\_glcm\_*`. First-order: 16 `original\_firstorder\_*` excepto `Energy` e `TotalEnergy`. DVF: prefixos `mag\_`, `logjac\_`, `strain\_fro\_`, sem `\_n` nem percentis.
+	
+	
 	
 	As imagens T1 utilizadas neste estudo já tinham sido submetidas, fora deste repositório, a extração de crânio, denoising por médias não locais e correção de campo de viés N4.
 	O alinhamento espacial aqui aplicado consiste em registro rígido ao template MNI152 2009c~\cite{fonov-2011} em grelha isotrópica de $1{,}0$\,mm (\code{2\_resample.py}), com interpolação linear da intensidade e vizinho mais próximo para as máscaras de ROI, a segmentação tecidual e a máscara encefálica.
@@ -483,24 +582,68 @@ A Tabela~\ref{tab:literature_comparison} resume literatura representativa ao lad
 
 	\subsubsection{Atributos radiómicos (PyRadiomics)}\label{sec:radiomics}
 
+	\subsubsection{Atributos radiómicos (PyRadiomics)}\label{sec:radiomics}
+	
 	Forma, textura e primeira ordem extraem-se com PyRadiomics \code{3.1.1.dev111+g8ed579383} \cite{griethuysen-2017}.
 	Nomes e definições seguem a terminologia IBSI da biblioteca \cite{zwanenburg-2020}; não se reivindica validação IBSI independente.
-
-	A extração é independente por ROI e aquisição (\code{3\_feat\_rad.py}), sobre volumes já rígidos ao MNI152 2009c em grelha isotrópica de $1{,}0$\,mm.
-	O PyRadiomics não reamostra (\code{resampledPixelSpacing} omitido).
+	
+	A extração é independente por ROI e aquisição (\code{3\_feat\_rad.py}), sobre volumes T1 já registados rigidamente ao MNI152 2009c em grelha isotrópica de $1{,}0$\,mm (interpolação linear na imagem; vizinho mais próximo nas máscaras).
+	O PyRadiomics não reamostra (\code{resampledPixelSpacing} omitido), evitando segunda interpolação.
 	Grelha e afinidade imagem/máscara verificam-se com tolerância absoluta \(10^{-5}\).
-	Cada rótulo intersecta a máscara encefálica; ROI ausente grava-se NaN.
-	Só o tipo \code{Original} (sem LoG nem wavelet).
-	Discretização: \code{binCount}$=64$, para evitar o default CT \code{binWidth}$=25$.
-
-	Por ROI e visita o armazém tem 107 descritores (18 de primeira ordem, 14 de forma, 24 GLCM, 16 GLRLM, 16 GLSZM, 5 NGTDM, 14 GLDM).
-	Nas ablações isoladas do hipocampo entram, após denylist:
+	Cada rótulo anatómico intersecta a máscara encefálica; ROI ausente grava-se NaN.
+	Só o tipo de imagem \code{Original} (sem LoG nem wavelet).
+	Discretização por contagem fixa de bins (\code{binCount}$=64$; \code{binWidth} omitido), adequada a unidades MRI arbitrárias e para evitar o default CT \code{binWidth}$=25$.
+	Controlos restantes nos defaults da biblioteca (\code{normalize=False}, \code{force2D=False}, \code{distances=[1]}, \code{symmetricalGLCM=True}).
+	
+	Por ROI e visita o \textbf{armazém} guarda 107 descritores: 18 de primeira ordem, 14 de forma, 24 GLCM, 16 GLRLM, 16 GLSZM, 5 NGTDM e 14 GLDM.
+	Nas ablações hipocampais oficiais, após denylist só de definição (\code{ablation\_prep.py}), entram três subcategorias radiómicas (Tabela~\ref{tab:pyradiomics-features}):
 	\begin{itemize}
-		\item forma: os 12 \code{original\_shape\_*} excepto \code{MeshVolume} e \code{VoxelVolume} (tamanho já está no bloco volume);
-		\item textura: os 24 \code{original\_glcm\_*} (GLCM Original); saem GLRLM/GLSZM/GLDM/NGTDM e filtros wavelet/LoG;
-		\item primeira ordem: os 16 \code{original\_firstorder\_*} excepto \code{Energy} e \code{TotalEnergy} (escala com o número de voxels).
+		\item \textbf{primeira ordem:} 16 \code{original\_firstorder\_*} excepto \code{Energy} e \code{TotalEnergy} (escalam com o número de voxels);
+		\item \textbf{forma:} 12 \code{original\_shape\_*} excepto \code{MeshVolume} e \code{VoxelVolume} (tamanho fica no bloco volumétrico; \code{MeshVolume} entra já /ICV);
+		\item \textbf{textura:} os 24 \code{original\_glcm\_*} (GLCM Original); saem GLRLM, GLSZM, GLDM, NGTDM e filtros wavelet/LoG.
 	\end{itemize}
+	Cada sufixo conta $\times$ L e R; em \code{t1\_only} $\times 1$ visita e em Q4 (\code{t1\_d21\_d32}) $\times 3$ slots.
 	Contagens L$+$R \emph{antes} do L1: Tabela~\ref{tab:dims}.
+	
+	\begin{table}[htbp]
+		\centering
+		\caption{Atributos PyRadiomics retidos nas ablações hipocampais (após denylist). Prefixo \code{original\_} omitido na coluna de nomes para legibilidade; no CSV o nome completo inclui \code{original\_firstorder\_}, \code{original\_shape\_} ou \code{original\_glcm\_}.}
+		\label{tab:pyradiomics-features}
+		\small
+		\begin{tabular}{@{}llp{0.62\textwidth}@{}}
+			\toprule
+			Subcategoria & $n$ & Atributos (sufixo) \\
+			\midrule
+			Primeira ordem
+			& 16
+			& \code{10Percentile}, \code{90Percentile}, \code{Entropy}, \code{InterquartileRange},
+			\code{Kurtosis}, \code{Maximum}, \code{Mean}, \code{MeanAbsoluteDeviation},
+			\code{Median}, \code{Minimum}, \code{Range}, \code{RobustMeanAbsoluteDeviation},
+			\code{RootMeanSquared}, \code{Skewness}, \code{Uniformity}, \code{Variance} \\
+			\addlinespace
+			Forma
+			& 12
+			& \code{SurfaceArea}, \code{SurfaceVolumeRatio}, \code{Sphericity}, \code{Elongation},
+			\code{Flatness}, \code{LeastAxisLength}, \code{MajorAxisLength}, \code{MinorAxisLength},
+			\code{Maximum2DDiameterColumn}, \code{Maximum2DDiameterRow},
+			\code{Maximum2DDiameterSlice}, \code{Maximum3DDiameter} \\
+			\addlinespace
+			Textura (GLCM)
+			& 24
+			& \code{Autocorrelation}, \code{ClusterProminence}, \code{ClusterShade},
+			\code{ClusterTendency}, \code{Contrast}, \code{Correlation},
+			\code{DifferenceAverage}, \code{DifferenceEntropy}, \code{DifferenceVariance},
+			\code{Id}, \code{Idm}, \code{Idmn}, \code{Idn}, \code{Imc1}, \code{Imc2},
+			\code{InverseVariance}, \code{JointAverage}, \code{JointEnergy},
+			\code{JointEntropy}, \code{MCC}, \code{MaximumProbability},
+			\code{SumAverage}, \code{SumEntropy}, \code{SumSquares} \\
+			\midrule
+			Total
+			& 52
+			& --- \\
+			\bottomrule
+		\end{tabular}
+	\end{table}
 
 	\subsubsection{Atributos de deslocamento}\label{sec:displacement-features}
 
@@ -583,6 +726,71 @@ A Tabela~\ref{tab:literature_comparison} resume literatura representativa ao lad
 	\subsubsection{Métrica primária e estimadores de AUC}
 	\label{subsubsec:evaluation-metrics}
 	
+	\subsubsection{Métricas de avaliação}
+	\label{subsubsec:evaluation-metrics}
+	Seja $s_{ir}\in[0,1]$ a única probabilidade OOF do participante $i$ na repetição $r\in\{1,\ldots,R\}$ com $R=10$, obtida concatenando os cinco folds de teste externos disjuntos dessa repetição.
+	Escreva-se $\mathrm{AUC}(\{(y_k,t_k)\})$ para a AUC de Mann--Whitney de qualquer colecção de scores comparáveis $\{t_k\}$.
+	Dois resumos ao nível da repetição distinguem-se do estimador primário:
+	\begin{equation}
+		\widehat{\mathrm{AUC}}^{(r)}
+		=
+		\mathrm{AUC}\!\left(\{(y_i,s_{ir})\}_{i=1}^{n}\right),
+		\qquad
+		\overline{\mathrm{AUC}}
+		=
+		\frac{1}{R}\sum_{r=1}^{R}\widehat{\mathrm{AUC}}^{(r)}.
+		\label{eq:auc-mean-rep}
+	\end{equation}
+	O estimador primário medeia primeiro as probabilidades,
+	\begin{equation}
+		\bar{s}_i
+		=
+		\frac{1}{R}\sum_{r=1}^{R}s_{ir},
+		\qquad
+		\widehat{\mathrm{AUC}}_{\mathrm{agg}}
+		=
+		\mathrm{AUC}\!\left(\{(y_i,\bar{s}_i)\}_{i=1}^{n}\right),
+		\label{eq:auc-agg}
+	\end{equation}
+	e depois expande a forma de Mann--Whitney de $\widehat{\mathrm{AUC}}_{\mathrm{agg}}$.
+	Seja $s_i\equiv\bar{s}_i$, $n_+=\sum_i y_i$ e $n_-=n-n_+$.
+	O estimando primário foi
+	\begin{equation}
+		\mathrm{AUC}_{\mathrm{patient}}
+		\equiv
+		\widehat{\mathrm{AUC}}_{\mathrm{agg}}
+		= \frac{1}{n_+ n_-}
+		\sum_{i:\,y_i=1} \sum_{j:\,y_j=0}
+		\left(
+		\mathbb{I}(s_i > s_j)
+		+ \tfrac{1}{2}\,\mathbb{I}(s_i = s_j)
+		\right),
+		\label{eq:auc-pooled}
+	\end{equation}
+	em que $\mathbb{I}(\cdot)$ é a função indicadora.
+	Quatro resumos relacionados mantêm-se conceptualmente distintos.
+	Uma AUC de fold calcula-se só num fold de teste externo; a sua média e desvio-padrão descrevem variação entre os 50 modelos de fold e \emph{não} são a incerteza amostral de $\widehat{\mathrm{AUC}}_{\mathrm{agg}}$.
+	Concatenar os cinco folds retidos numa repetição produz $\{s_{ir}\}_{i=1}^{n}$ e portanto $\widehat{\mathrm{AUC}}^{(r)}$ na Eq.~\eqref{eq:auc-mean-rep}.
+	A AUC paciente primária é $\widehat{\mathrm{AUC}}_{\mathrm{agg}}$ nas Eqs.~\eqref{eq:auc-agg}--\eqref{eq:auc-pooled}, estimador distinto de $\overline{\mathrm{AUC}}$.
+	Como resumo de sensibilidade, a AUC \emph{pooled} concatena todas as predições retidas de todas as repetições antes de calcular a AUC, retendo $R$ registos por participante em vez de os mediar.
+	Intervalos de confiança bootstrap e testes pareados calcularam-se sobre os scores agregados $\{\bar{s}_i\}$, não sobre o desvio-padrão entre folds.
+	Para métricas dependentes de limiar, o ponto de operação $\tau$ escolheu-se nos scores OOF do \emph{outer-training} maximizando o índice de Youden,
+	\begin{equation}
+		J(\tau) = \mathrm{TPR}(\tau) + \mathrm{TNR}(\tau) - 1,
+		\qquad
+		\tau^{*} = \arg\max_{\tau \in [0,1]} J(\tau),
+		\label{eq:youden}
+	\end{equation}
+	em que $\mathrm{TPR}$ e $\mathrm{TNR}$ são as taxas de verdadeiros positivos e verdadeiros negativos.
+	Todos os classificadores avaliados produziram probabilidades via \code{predict\_proba} (SVM após escala de Platt com \code{probability=True}); scores de \code{decision\_function} nunca serviram para limiar.
+	O domínio de procura permaneceu $\tau\in[0,1]$, não $\tau\in\mathbb{R}$.
+	Um limiar de Youden $\tau^{*}$ distinto foi ajustado em cada fold externo a partir das OOF do treino desse fold e aplicado só ao teste correspondente.
+	Acurácia, sensibilidade, especificidade e F1 calcularam-se portanto por fold, com limiares próprios, e resumiram-se como média $\pm$ DP nas 50 avaliações externas.
+	Quando se agregaram contagens de confusão, concatenaram-se predições binárias já produzidas sob o $\tau^{*}$ de cada fold; nunca se reestimou um limiar global em scores misturados de folds diferentes.
+	Constantes fixas da análise: semente 42; filtro de correlação $|\rho|>0{,}85$ (uma vez no \emph{outer-training}; pares T1/D21/D32 com a mesma chave anatómica não se eliminam mutuamente); filtro de variância $<0{,}01$; pool de estabilidade $\ell_1$ com $B=50$ réplicas bootstrap ordinárias, $C=0{,}1$ e frequência mínima $\pi=70\,\%$ (\code{stable-pool-min-pct=70}); \code{stable-pool-min-timepoints=0}.
+	O sintonizador primário foi Optuna TPE (\code{optuna-trials=10}), não grelha exaustiva.
+	
+	
 	Métrica primária: AUC no paciente sobre probabilidades OOF médias por sujeito.
 	Em cada repetição $r\in\{1,\ldots,R\}$ ($R=10$), os cinco testes externos disjuntos cobrem cada participante exatamente uma vez e devolvem $s_{ir}=\widehat{\Pr}(y=1\mid x_i)$ via \code{predict\_proba} (SVM: Platt).
 	Agrega-se a média de todos os scores OOF do sujeito (fold$\times$repeat); com folds disjuntos isso coincide com a média das $R=10$ probabilidades.
@@ -646,6 +854,30 @@ A Tabela~\ref{tab:literature_comparison} resume literatura representativa ao lad
 	
 	\subsubsection{Classificadores e análises comparativas}
 	
+	O classificador primário foi uma SVM com núcleo linear ou de base radial (RBF) \citep{cortes-1995}, escolhido na validação interna.
+	A SVM foi ajustada com \code{probability=True}; os valores de decisão converteram-se em probabilidades pela escala de Platt interna do \code{SVC}.
+	Esta calibração reajustou-se em cada treino, incluindo os ajustes que geram OOF do \emph{outer-training} e o ajuste final na partição completa de treino externo.
+	Pacientes de teste externo nunca entraram na calibração.
+	Os scores reportados da SVM vieram de \code{predict\_proba}, não de \code{decision\_function}.
+	Esta escolha foi pré-especificada e define o estimando inferencial principal.
+	A selecção de atributos usou sempre filtragem por frequência de selecção $\ell_1$ em bootstrap, independente do classificador a jusante, separando o rastreio esparso da regra de decisão.
+	A SVM é também a referência convencional em estudos ADNI de volume hipocampal \citep{cuingnet-2011}.
+	Florestas aleatórias (RF) \citep{breiman-2001} e regressão logística elastic-net \citep{zou-2005} ficaram só em análises exploratórias de ranking e sensibilidade, não no endpoint primário.
+	O endpoint volumétrico pré-especificado ilustra-se na Figura~\ref{fig:roc_smci_pmci}.
+	NeuroComBat por fold reservou-se a análises de sensibilidade; o endpoint primário é \code{combat false}.
+	As análises comparativas oficiais foram: (i)~cinco famílias unimodais (volume, forma, textura GLCM, primeira ordem, deslocamento) em \code{t1\_only} versus a representação longitudinal Q4 \code{t1\_d21\_d32} (níveis T1, D21 e D32 concatenados; \textbf{não} diferenças $T_b-T_a$, nem \code{wide}/\code{abs}/\code{t1\_deltas}); (ii)~fusão \emph{late} de cinco SVMs (média de scores), com três especificações: todas as famílias em \code{t1\_only}; todas em Q4; âncora \code{shape:t1\_only} e as restantes em Q4; (iii)~as quatro coortes de janela.
+	Não se usou fusão \emph{early} (\code{--modality all}) no paper.
+	Preditores clínicos da primeira visita (sexo, idade, MMSE, ADAS, FAQ) e a sua concatenação com imagem ficaram em análises extra.
+	Os experimentos prognósticos usaram dez repetições de CV estratificada de cinco folds (50 avaliações externas), com a mesma semente, de modo que \code{t1\_only} e Q4 partilham as partições externas.
+	A inferência estatística usou as probabilidades OOF mediadas por paciente.
+	Testes contra o acaso foram permutações de rótulos sobre estes scores congelados: o vector de desfecho foi baralhado $B_{\mathrm{perm}}=5000$ vezes com os scores fixos; o pipeline aninhado (selecção, escala, sintonização, reajuste) \emph{não} se reexecutou em cada permutação.
+	O $p$ unilateral usou $p=(r+1)/(B_{\mathrm{perm}}+1)$, em que $r$ é o número de permutações com AUC pelo menos tão grande como a observada.
+	Contrastes pareados de protocolo (p.ex.\ Q4 versus \code{t1\_only}) usaram bootstrap pareado ao nível do paciente da diferença de AUC, com $B_{\mathrm{boot}}=5000$ reamostragens de participantes com reposição, intervalos de confiança percentis a 95\% e a mesma correcção $(r+1)/(B_{\mathrm{boot}}+1)$ para o $p$ bootstrap.
+	As quantidades reamostradas foram os scores pareados por paciente das duas configurações, não AUCs de fold.
+	Como a superioridade direccional do pipeline longitudinal não foi pré-registada, os $p$ bootstrap bilaterais trataram-se como primários; os unilaterais só como sensibilidade.
+	Quando cinco modalidades se testaram em conjunto, calcularam-se $q$-valores FDR de Benjamini--Hochberg sobre os $p$ bilaterais e reportaram-se explicitamente.
+	
+	
 	Todos os contrastes reportados usam o \textbf{mesmo} SVM~\cite{cortes-1995}.
 	O objecto do estudo é o biomarcador (família $\times$ representação temporal $\times$ união tardia), não uma arquitectura nova de aprendizagem.
 	Fixar o classificador isola esses contrastes de vieses algorítmicos (capacidade, regularização implícita, importância de atributos).
@@ -675,6 +907,30 @@ A Tabela~\ref{tab:literature_comparison} resume literatura representativa ao lad
 	\subsection{Validação aninhada no paciente}
 	\label{sec:modelagem}
 	
+	\subsection{Validação aninhada ao nível do paciente e âmbito do ajuste por fold}
+	\label{sec:modelagem}
+	Os modelos prognósticos avaliaram-se com CV aninhada ao nível do paciente, para limitar fugas de informação na fase de modelação (Figura~\ref{fig:nestedcv}).
+	Embora a matriz de modelação use uma linha larga por participante (três visitas já concatenadas como colunas em Q4; uma visita em \code{t1\_only}), os folds definem-se pelo identificador do participante, não pela imagem nem pela linha, de modo que $T_1$, $T_2$ e $T_3$ do mesmo sujeito nunca atravessam treino e teste.
+	Esta partição é a salvaguarda padrão contra fuga longitudinal.
+	Um ciclo externo estratificado de cinco folds (cerca de 80\%/20\%) repetiu-se dez vezes com sementes derivadas da semente 42, rendendo 50 avaliações externas por configuração.
+	Os efectivos exactos de treino/teste por fold dependem da coorte e da estratificação (153 e 90 não são divisíveis por 5 no draft de 36 meses; actualizar com o $n$ real).
+	Dentro de cada fold externo, NeuroComBat opcional e a selecção de atributos ajustaram-se só nos pacientes de treino.
+	O pool de frequência de selecção construiu-se uma vez nessa partição, com até $B=50$ réplicas bootstrap, segundo as Eqs.~\eqref{eq:l1-logistic}--\eqref{eq:stability-freq}.
+	Os hiperparâmetros do classificador a jusante sintonizaram-se no treino externo com um ciclo interno estratificado de cinco folds via Optuna TPE (configuração primária; grelha só como alternativa de implementação).
+	Em cada split interno, filtros de correlação e variância e o $z$-score reajustaram-se nos dados de treino interno restritos ao pool; o pool \textbf{não} se reconstruiu em cada split interno.
+	O pipeline seleccionado reajustou-se no conjunto completo de treino externo; cada fold externo obteve o seu $\tau^{*}$ (Eq.~\ref{eq:youden}) a partir das OOF de treino, aplicado só aos pacientes de teste desse fold.
+	Dentro de cada repetição, os cinco folds de teste concatenaram-se para um vector OOF completo com exactamente uma predição por participante.
+	As dez probabilidades por participante mediavam-se antes da AUC paciente primária na Eq.~\eqref{eq:auc-pooled}.
+	A AUC pooled, sem média por paciente, reteve-se só como estimador de sensibilidade.
+	O procedimento aninhado cobriu portanto todas as operações de modelação dependentes da amostra, mas não o processamento de imagem fixo, o QC nem os templates normativos descritos acima.
+	
+	\begin{figure}[htbp]
+		\centering
+		\includegraphics[width=1.0\textwidth]{graphics/nestedcv.pdf}
+		\caption{Validação cruzada aninhada ao nível do paciente.}
+		\label{fig:nestedcv}
+	\end{figure}
+	
 	CV aninhada no identificador do paciente (\code{StratifiedKFold}).
 	A matriz de classificação é uma linha por paciente (colunas T1/D21/D32 já no wide da representação); as dobras partem-se por paciente, não por imagem: as três visitas do mesmo $i$ ficam todas no treino ou todas no teste.
 	Loop externo: $k_{\mathrm{out}}=5$ folds $\times$ $R=10$ repetições $=50$ avaliações por configuração.
@@ -694,15 +950,61 @@ A Tabela~\ref{tab:literature_comparison} resume literatura representativa ao lad
 	A nested cobre o modelamento sample-dependent (pool \code{l1\_stable}, filtros, $z$-score, hiperparâmetros, Youden, Platt).
 	Não cobre pré-processamento de imagem, QC nem templates CN --- esses correm uma vez antes da CV.
 	
-%	\begin{figure}[htbp]
-%		\centering
-%		\includegraphics[width=1.0\textwidth]{graphics/nestedcv.pdf}
-%		\caption{CV aninhada no paciente e fronteira de vazamento.
-%			Dobras externas estratificadas ($5\times 10$) por identificador.
-%			Abaixo da linha: pool \code{l1\_stable} por grupo ($\pi_g\ge 70\%$), \code{CorrVarSelector}+$z$-score, Optuna TPE (10 ensaios) e Youden --- só treino externo.
-%			Ranking primário: AUC paciente nas OOF médias por sujeito; a média das AUCs de dobra é descritiva.}
-%		\label{fig:nestedcv}
-%	\end{figure}
+	\subsection{Normalização e selecção de atributos}
+	\label{sec:feature-selection}
+	
+	Os atributos volumétricos por ROI hipocampal usados na prognose foram as fracções teciduais \emph{dentro da ROI} (\code{gm\_norm}, \code{wm\_norm}, \code{csf\_norm}) e o volume de malha \code{original\_shape\_MeshVolume}, este último já dividido pelo ICV no pós-processamento.
+	Os volumes absolutos em mm$^3$ (\code{mask\_mm3}, \code{gm\_mm3}, etc.) não entram nos modelos volumétricos.
+	Descritores de tamanho radiómicos (malha, eixos, área de superfície) também se normalizam pelo ICV no armazém longo; as fracções teciduais \textbf{não} se renormalizam pelo ICV.
+	Forma (exceto malha/voxel, que ficam no bloco volume), textura GLCM, primeira ordem e deslocamento usam os descritores da denylist de definição, sem segunda correcção de ICV ao nível do classificador.
+	
+	As tabelas longitudinais pivotam-se para uma linha por participante.
+	No protocolo longitudinal oficial Q4 (\code{t1\_d21\_d32}), os atributos hipocampais de $T_1$, D21 e D32 concatenam-se como colunas distintas (níveis nas três visitas, \textbf{não} diferenças $T_b-T_a$).
+	O controlo de primeira visita (\code{t1\_only}) usa só as colunas de $T_1$.
+	As modalidades avaliaram-se \textbf{individualmente} (volume, forma, textura, deslocamento, primeira ordem) e, em análises multimodais oficiais, por fusão \emph{late} (cinco SVMs, média de scores), \textbf{não} por concatenação early de todas as famílias.
+	Todos os experimentos de imagem restringiram-se ao hipocampo bilateral.
+	
+	Utilizou-se um filtro descritivo de frequência de selecção $\ell_1$ derivado de bootstrap, relacionado com ideias de selecção por reamostragem \citep{bach-2008,meinshausen-2010}, mas \textbf{não} o procedimento clássico de \emph{stability selection} de \citet{meinshausen-2010} e, portanto, sem a garantia de Per-Family Error Rate (PFER).
+	Para cada partição de treino externo, padronizaram-se as colunas (\code{StandardScaler} só nessa amostra) e aplicaram-se \textbf{uma vez} filtros de correlação ($|\rho|>0{,}85$) e de variância ($<0{,}01$), com prioridade pelo $|$correlação$|$ com o rótulo; pares T1/D21/D32 com a mesma chave anatómica nunca se eliminam mutuamente.
+	Estes limiares foram fixados \emph{a priori} como higiene para remover colunas redundantes e ruído quase constante antes do rastreio $\ell_1$, reduzindo o espaço de procura e o custo; \textbf{não} foram sintonizados no ciclo Optuna interno.
+	Sobre o espaço já podado, em cada uma de $B=50$ réplicas amostraram-se $n_{\mathrm{train}}$ índices \textbf{com reposição} (bootstrap clássico; duplicados \textbf{não} se colapsam).
+	Réplicas com uma só classe de desfecho foram saltadas.
+	O procedimento não foi estratificado e não usou pesos de classe.
+	Em cada réplica retida, os candidatos restantes foram rastreados com regressão logística penalizada em $\ell_1$,
+	\begin{equation}
+		\begin{aligned}
+			\hat{\boldsymbol{\beta}}^{(b)}
+			&= \arg\min_{\boldsymbol{\beta}}
+			\left\{
+			-\sum_{i=1}^{n_{\mathrm{train}}^{(b)}}
+			\left[
+			y_i \log p_i^{(b)} + (1-y_i)\log\!\left(1-p_i^{(b)}\right)
+			\right]
+			+ \lambda \|\boldsymbol{\beta}\|_1
+			\right\}, \\
+			p_i^{(b)} &= \sigma\!\left(\mathbf{x}_i^{\top}\boldsymbol{\beta}\right),
+		\end{aligned}
+		\label{eq:l1-logistic}
+	\end{equation}
+	em que $\sigma(\cdot)$ é a sigmóide logística, $\mathbf{x}_i$ o vector de atributos do paciente $i$ na matriz larga de treino externo (já filtrada), e $n_{\mathrm{train}}^{(b)}$ o número de linhas da réplica $b$ (igual a $n_{\mathrm{train}}$, com possíveis pacientes repetidos).
+	A regressão de selecção usou o \emph{solver} \code{SAGA} do scikit-learn com um único valor de regularização inversa $C=0{,}1$ em todas as réplicas; não houve grelha de $C$ nem CV interna nesta etapa.
+	Este parâmetro de rastreio é distinto dos hiperparâmetros do classificador a jusante, sintonizados por Optuna na CV interna.
+	Seja $\mathcal{M}^{(b)} = \{j : \lvert\hat{\beta}^{(b)}_j\rvert>10^{-9}\}$ o conjunto activo na réplica $b$.
+	Se um ajuste $\ell_1$ não produziu nenhum coeficiente activo, essa réplica \textbf{não} entra em $B_{\mathrm{eff}}$ (não há fallback ``manter todas as colunas do filtro'').
+	A frequência de selecção bootstrap do atributo $j$ foi
+	\begin{equation}
+		\pi_j = \frac{1}{B_{\mathrm{eff}}}\sum_{b=1}^{B_{\mathrm{eff}}} \mathbb{I}(j \in \mathcal{M}^{(b)}),
+		\label{eq:stability-freq}
+	\end{equation}
+	em que $B_{\mathrm{eff}}\leq 50$ é o número de réplicas biclasse com conjunto activo não vazio.
+	As colunas específicas de visita agruparam-se por ROI, hemisfério e nome-base do atributo após remoção do prefixo temporal (chave anatómica; p.ex.\ \code{hippocampus\_L\_T1\_gm\_norm} e \code{hippocampus\_L\_D21\_gm\_norm} partilham o mesmo grupo).
+	Para o grupo $g$, seja $\mathcal{C}_g$ o conjunto das suas colunas temporais disponíveis.
+	A frequência ao nível do grupo definiu-se como $\pi_g=B_{\mathrm{eff}}^{-1}\sum_{b=1}^{B_{\mathrm{eff}}}\mathbb{I}\!\left(\mathcal{M}^{(b)}\cap\mathcal{C}_g\neq\varnothing\right)$.
+	Um grupo entrou no pool quando $\pi_g\geq\theta$, com $\theta=70\,\%$ (\code{stable-pool-min-pct=70}), e \textbf{todas} as suas colunas de visita disponíveis passaram à filtragem e classificação posteriores por fold.
+	Não se exigiu estabilidade em duas ou mais visitas (\code{stable-pool-min-timepoints=0}).
+	Na representação \code{t1\_only}, $\mathcal{C}_g$ contém só a coluna $T_1$ correspondente.
+	Se nenhum grupo atingiu $\theta$, o código \textbf{não} restaura a classe completa: primeiro tenta o fallback das colunas que sobreviveram ao corr/var (\code{corr\_fallback}); se esse conjunto também for vazio, retém a única coluna de maior variância no treino externo (\code{var\_fallback}), para evitar matriz de desenho vazia sem reintroduzir todo o espaço original.
+	A implementação não persistiu os tamanhos dos conjuntos activos por réplica, pelo que a sua média não se reporta retrospectivamente sem rerodar a etapa de selecção.
 	
 	\subsection{Selecção de atributos (\code{l1\_stable})}
 	\label{sec:feature-selection}
@@ -785,6 +1087,32 @@ A Tabela~\ref{tab:literature_comparison} resume literatura representativa ao lad
 
 	\subsection{Fusão multimodal e preditores clínicos}
 	\label{sec:fusao}
+
+Fusão tardia (\emph{late fusion}). A multimodalidade oficial não concatena atributos de famílias distintas num único classificador (\emph{early fusion} / \code{--modality all}), o que, em Q4, produziria centenas de colunas com $n$ pequeno e misturaria escalas heterogéneas (fracções volumétricas, GLCM, momentos do DVF) num só rastreio $\ell_1$ \cite{kittler-1998,kuncheva-2004}. Em vez disso, adoptou-se fusão tardia por média de scores: cada família (volume, forma, textura GLCM, primeira ordem, deslocamento) treina a sua própria SVM sob o mesmo protocolo unimodal (CV aninhada ao nível do paciente, l1\_stable, Optuna, \code{combat false}), e as probabilidades OOF por paciente são combinadas \emph{a posteriori} \cite{kittler-1998,dietterich-2000}. Assim, a dimensionalidade efectiva cresce com o número de modelos, não com a união do espaço de atributos; a forma não “vê” 144 colunas GLCM, nem o volume compete com first-order no mesmo pool.
+
+Especificações. Três especificações de slots \code{modalidade:representação} foram pré-definidas (run\_ablation\_full.sh): \begin{itemize} \item tudo em \code{t1\_only}: \code{vol:t1\_only,shape:t1\_only,texture:t1\_only,disp:t1\_only,firstorder:t1\_only}; \item tudo em Q4: as cinco famílias com \code{t1\_d21\_d32}; \item âncora: \code{shape:t1\_only} e as restantes em \code{t1\_d21\_d32} (default de \code{DEFAULT\_LATE\_FUSION\_SPEC}). \end{itemize} Cada especificação corre nas quatro coortes de janela. O identificador de protocolo é um \emph{fingerprint} estável do conjunto de slots (late\_\_\{fp\}); a saída grava-se em \code{ablation\_results\_late\_fusion/\{fingerprint\}/}.
+
+Implementação. O script \code{5\_ablation\_late\_fusion.py} invoca \code{run\_late\_fusion\_ablation\_suite}. Por omissão (\code{--reuse-disk}), cada branch lê o CSV unimodal já gerado (ablation\_results\_* / \{mod\} / ablation\_results\_all.csv), filtrado por tarefa, modelo, ComBat e modo de selecção — as mesmas partições externas (semente 42, 10 repetições × 5 folds) que o mono, para alinhamento fold a fold. Só com \code{--run-missing} se reexecuta a CV aninhada de uma branch ausente. Exigem-se $\geq 2$ branches; a interseção de chaves (task, model, combat, selection, repeat\_id, fold) deve ser não vazia (caso contrário o alinhamento temporal/espacial das partições falhou).
+
+Para cada fold comum, as listas \texttt{test\_id\_pts}, \texttt{test\_y\_true}
+e \texttt{test\_scores} de cada branch são expandídas e alinhadas por
+\texttt{ID\_PT} (\emph{inner join}): pacientes em falta numa branch saem
+desse fold. Sejam $s_{ik}$ a probabilidade OOF
+(\texttt{predict\_proba}) do paciente $i$ na branch $k=1,\ldots,K$
+e pesos $w_k\geq 0$ com $\sum_k w_k=1$. A configuração primária usa
+\code{--combine mean} (pesos uniformes $w_k=1/K$); \code{weighted}
+exige \code{--weights} explícitos e não entra no claim. O score fundido é
+\begin{equation}
+	\bar{s}_i = \sum_{k=1}^{K} w_k\, s_{ik}.
+	\label{eq:late-mean}
+\end{equation}
+Não há meta-classificador empilhado (\emph{stacking}) nem re-treino sobre
+os scores das branches \cite{wolpert-1992}: a fusão é só agregação de
+decisões probabilísticas já calibradas por Platt em cada SVM.
+
+Métricas e limiar. AUC, average precision e métricas com limiar recalculam-se sobre ${\bar{s}_i}$ no fold. O limiar binário herdado no CSV late é o threshold da \textbf{primeira} branch da especificação (não se reestima Youden sobre $\bar{s}$); a AUC paciente primária depende só das probabilidades mediadas e não desse limiar. A auditoria selected\_features concatena os atributos escolhidos em todas as branches (soma de cardinalidades em n\_features\_*), para rastreio, sem significar um único espaço concatenado.
+
+Parâmetros do paper (COMMON\_FUSION em run\_ablation\_full.sh): \code{smci\_pmci}, \code{l1\_stable}, SVM, \code{combat false}, 10 repetições, Optuna 10 trials, pool $\pi\geq 70,\%$, $B=50$, $C=0{,}1$, \code{stable-pool-min-timepoints=0}, \code{--combine mean}, \code{--reuse-disk}.
 
 	A fusão tardia \textbf{não} retreina um meta-classificador.
 	Reutiliza os scores OOF \code{predict\_proba} dos cinco SVMs unimodais já ajustados no mesmo nested (mesma semente $\Rightarrow$ mesmos splits).

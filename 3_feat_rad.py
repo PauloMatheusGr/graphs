@@ -34,7 +34,7 @@ COHORT_DIR = Path("csvs/cohorts") / COHORT
 
 DEFAULT_LIST = COHORT_DIR / "all_population.csv"
 DEFAULT_IMAGE_DIR = Path("images/resampled_1.0mm")
-DEFAULT_IMAGE_SUFFIX = "_stripped_nlm_denoised_biascorrected.nii.gz"
+DEFAULT_IMAGE_SUFFIX = "_stripped_nlm_denoised_biascorrected_mni_template.nii.gz"
 DEFAULT_REGIONS_DIR = Path("images/regions")
 DEFAULT_BRAIN_MASK_DIR = Path("images/brain_mask")
 DEFAULT_OUT = COHORT_DIR / "features_radiomic.csv"

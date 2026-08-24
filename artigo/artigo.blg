@@ -1,0 +1,161 @@
+This is BibTeX, Version 0.99d (TeX Live 2023/Debian)
+Capacity: max_strings=200000, hash_size=200000, hash_prime=170003
+The top-level auxiliary file: artigo.aux
+The style file: cas-model2-names-short.bst
+Database file #1: referencias.bib
+Reallocated singl_function (elt_size=4) to 100 items from 50.
+Reallocated wiz_functions (elt_size=4) to 6000 items from 3000.
+ptr=1, stack=
+
+---the literal stack isn't empty for entry aghajanian-2025
+while executing---line 1648 of file cas-model2-names-short.bst
+ptr=1, stack=
+
+---the literal stack isn't empty for entry avants-2011a
+while executing---line 1648 of file cas-model2-names-short.bst
+ptr=1, stack=
+
+---the literal stack isn't empty for entry avants-2014
+while executing---line 1648 of file cas-model2-names-short.bst
+ptr=1, stack=
+
+---the literal stack isn't empty for entry bucholc-2023
+while executing---line 1648 of file cas-model2-names-short.bst
+ptr=1, stack=
+
+---the literal stack isn't empty for entry casanova-2013
+while executing---line 1648 of file cas-model2-names-short.bst
+ptr=1, stack=
+
+---the literal stack isn't empty for entry cuingnet-2011
+while executing---line 1648 of file cas-model2-names-short.bst
+ptr=1, stack=
+
+---the literal stack isn't empty for entry fonov-2009
+while executing---line 1648 of file cas-model2-names-short.bst
+ptr=1, stack=
+
+---the literal stack isn't empty for entry fonov-2011
+while executing---line 1648 of file cas-model2-names-short.bst
+ptr=1, stack=
+
+---the literal stack isn't empty for entry fortin-2018
+while executing---line 1648 of file cas-model2-names-short.bst
+ptr=1, stack=
+
+---the literal stack isn't empty for entry grassi-2019
+while executing---line 1648 of file cas-model2-names-short.bst
+ptr=1, stack=
+
+---the literal stack isn't empty for entry griethuysen-2017
+while executing---line 1648 of file cas-model2-names-short.bst
+ptr=1, stack=
+
+---the literal stack isn't empty for entry guo-2017a
+while executing---line 1648 of file cas-model2-names-short.bst
+ptr=1, stack=
+
+---the literal stack isn't empty for entry jr-2008
+while executing---line 1648 of file cas-model2-names-short.bst
+ptr=1, stack=
+
+---the literal stack isn't empty for entry kittler-1998
+while executing---line 1648 of file cas-model2-names-short.bst
+ptr=1, stack=
+
+---the literal stack isn't empty for entry lin-2020
+while executing---line 1648 of file cas-model2-names-short.bst
+ptr=1, stack=
+
+---the literal stack isn't empty for entry manjon-2010
+while executing---line 1648 of file cas-model2-names-short.bst
+ptr=1, stack=
+
+---the literal stack isn't empty for entry moradi-2015
+while executing---line 1648 of file cas-model2-names-short.bst
+ptr=1, stack=
+
+---the literal stack isn't empty for entry petersen-2009
+while executing---line 1648 of file cas-model2-names-short.bst
+ptr=1, stack=
+
+---the literal stack isn't empty for entry petersen-1999
+while executing---line 1648 of file cas-model2-names-short.bst
+ptr=1, stack=
+
+---the literal stack isn't empty for entry reuter-2012
+while executing---line 1648 of file cas-model2-names-short.bst
+ptr=1, stack=
+
+---the literal stack isn't empty for entry sadri-2020
+while executing---line 1648 of file cas-model2-names-short.bst
+ptr=1, stack=
+
+---the literal stack isn't empty for entry scheltens-1992
+while executing---line 1648 of file cas-model2-names-short.bst
+ptr=1, stack=
+
+---the literal stack isn't empty for entry tustison-2010
+while executing---line 1648 of file cas-model2-names-short.bst
+ptr=1, stack=
+
+---the literal stack isn't empty for entry tustison-2021
+while executing---line 1648 of file cas-model2-names-short.bst
+ptr=1, stack=
+
+---the literal stack isn't empty for entry wyman-2013
+while executing---line 1648 of file cas-model2-names-short.bst
+ptr=1, stack=
+
+---the literal stack isn't empty for entry ye-2012
+while executing---line 1648 of file cas-model2-names-short.bst
+ptr=1, stack=
+
+---the literal stack isn't empty for entry yushkevich-2006
+while executing---line 1648 of file cas-model2-names-short.bst
+ptr=1, stack=
+
+---the literal stack isn't empty for entry zwanenburg-2020
+while executing---line 1648 of file cas-model2-names-short.bst
+You've used 40 entries,
+            3018 wiz_defined-function locations,
+            1020 strings with 28565 characters,
+and the built_in function-call counts, 46940 in all, are:
+= -- 3515
+> -- 4155
+< -- 12
++ -- 1650
+- -- 1610
+* -- 5561
+:= -- 7767
+add.period$ -- 156
+call.type$ -- 40
+change.case$ -- 996
+chr.to.int$ -- 40
+cite$ -- 40
+duplicate$ -- 1927
+empty$ -- 1985
+format.name$ -- 1754
+if$ -- 8271
+int.to.chr$ -- 1
+int.to.str$ -- 1
+missing$ -- 360
+newline$ -- 251
+num.names$ -- 160
+pop$ -- 1297
+preamble$ -- 1
+purify$ -- 955
+quote$ -- 0
+skip$ -- 588
+stack$ -- 0
+substring$ -- 1332
+swap$ -- 1343
+text.length$ -- 2
+text.prefix$ -- 0
+top$ -- 0
+type$ -- 354
+warning$ -- 0
+while$ -- 167
+width$ -- 0
+write$ -- 649
+(There were 28 error messages)

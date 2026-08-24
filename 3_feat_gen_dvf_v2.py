@@ -84,7 +84,7 @@ def get_stratified_reference_path(sex: str, age_range: str) -> str:
 
 def subject_path_for(img_id: str) -> str:
     return os.path.join(
-        clinic_dir, f"{img_id}_stripped_nlm_denoised_biascorrected.nii.gz"
+        clinic_dir, f"{img_id}_stripped_nlm_denoised_biascorrected_mni_template.nii.gz"
     )
 
 

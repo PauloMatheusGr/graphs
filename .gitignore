@@ -2,8 +2,10 @@ __pycache__/
 colab/exp1/
 colab/exp2/
 csvs/
+csvs_old/
 graphs/
 images/
+images_old/
 zold/
 .venv/
 colab/logs_*/

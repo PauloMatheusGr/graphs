@@ -162,7 +162,7 @@ def baseline_ref_tag_by_pt(df_images: pd.DataFrame) -> dict[str, tuple[str, str]
 
 def fixed_path_for(clinic_dir: str, img_id: str) -> str:
     return os.path.join(
-        clinic_dir, f"{img_id}_stripped_nlm_denoised_biascorrected.nii.gz"
+        clinic_dir, f"{img_id}_stripped_nlm_denoised_biascorrected_mni_template.nii.gz"
     )
 
 def inv_warp_path_for(warps_dir: str, img_id: str, sex: str, age_range: str) -> str:
