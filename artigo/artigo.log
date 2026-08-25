@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023/Debian) (preloaded format=pdflatex 2025.1.10)  24 AUG 2026 17:31
+This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023/Debian) (preloaded format=pdflatex 2026.8.25)  25 AUG 2026 17:40
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -326,7 +326,7 @@ Package: babel 2024/01/07 v24.1 The Babel package
 (/usr/share/texlive/texmf-dist/tex/generic/babel-portuges/brazilian.ldf
 Language: portuges 2021/07/09 v1.2t Portuguese support from the babel system
 Package babel Info: Hyphen rules for 'brazilian' set to \l@portuguese
-(babel)             (\language54). Reported on input line 111.
+(babel)             (\language60). Reported on input line 111.
 Package babel Info: Making " an active character on input line 143.
 ))
 (/usr/share/texlive/texmf-dist/tex/generic/babel/locale/pt/babel-brazilian.tex
@@ -494,9 +494,6 @@ Package: lscape 2020/05/28 v3.02 Landscape Pages (DPC)
 Package pdflscape Info: Auto-detected driver: pdftex on input line 81.
 )) (./artigo.aux
 
-LaTeX Warning: Label `sec:radiomics' multiply defined.
-
-
 LaTeX Warning: Label `subsubsec:evaluation-metrics' multiply defined.
 
 
@@ -639,299 +636,277 @@ Package hyperref Warning: Token not allowed in a PDF string (Unicode):
 
 {/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map}{/usr/share/texmf/fonts/enc/
 dvips/cm-super/cm-super-t1.enc}] [2] [3{/usr/share/texmf/fonts/enc/dvips/cm-sup
-er/cm-super-ts1.enc}]
-
-LaTeX Warning: Reference `sec:Results' on page 4 undefined on input line 117.
-
-
-LaTeX Warning: Reference `sec:Discussions' on page 4 undefined on input line 11
-7.
-
-
-LaTeX Warning: Reference `sec:Conclusions' on page 4 undefined on input line 11
-7.
-
-[4] [5]
-
-LaTeX Warning: Reference `sec:Results' on page 6 undefined on input line 182.
-
-[6] [7] [8] [9] [10] [11] [12]
-
-Package hyperref Warning: Difference (2) between bookmark levels is greater 
-(hyperref)                than one, level fixed on input line 264.
-
-[13]
-Overfull \hbox (3.99881pt too wide) in paragraph at lines 310--311
+er/cm-super-ts1.enc}] [4] [5] [6] [7] [8] [9]
+Overfull \hbox (3.99881pt too wide) in paragraph at lines 222--223
 \T1/cmr/m/n/10 48meses com in-ter-valo de 12meses (no-ta-ção \T1/cmtt/m/n/10 36
 m_6m\T1/cmr/m/n/10 , \T1/cmtt/m/n/10 36m_12m\T1/cmr/m/n/10 , \T1/cmtt/m/n/10 48
 m_6m\T1/cmr/m/n/10 , \T1/cmtt/m/n/10 48m_12m\T1/cmr/m/n/10 ). 
  []
 
-[14] [15]
+[10] [11]
 LaTeX Font Info:    Font shape `T1/cmtt/bx/n' in size <8> not available
-(Font)              Font shape `T1/cmtt/m/n' tried instead on input line 417.
- [16] [17] [18] [19]
-<graphics/diagrama.pdf, id=406, 525.965pt x 155.58125pt>
+(Font)              Font shape `T1/cmtt/m/n' tried instead on input line 330.
+ [12] [13] [14]
+<graphics/diagrama.pdf, id=324, 525.965pt x 155.58125pt>
 File: graphics/diagrama.pdf Graphic file (type pdf)
 <use graphics/diagrama.pdf>
-Package pdftex.def Info: graphics/diagrama.pdf  used on input line 491.
+Package pdftex.def Info: graphics/diagrama.pdf  used on input line 402.
 (pdftex.def)             Requested size: 345.0pt x 102.05482pt.
-
-Overfull \hbox (36.12915pt too wide) in paragraph at lines 505--506
+ [15]
+Overfull \hbox (36.12915pt too wide) in paragraph at lines 416--417
 \T1/cmr/m/n/10 et al.[][] ([][]2010[][]), im-ple-men-ta-das com \T1/cmtt/m/n/10
  ants.denoise_image \T1/cmr/m/n/10 usando \T1/cmtt/m/n/10 noise_model="Rician"\
 T1/cmr/m/n/10 ,
  []
 
 
-Overfull \hbox (78.92426pt too wide) in paragraph at lines 507--508
+Overfull \hbox (78.92426pt too wide) in paragraph at lines 418--419
 \T1/cmr/m/n/10 ([][]2010[][]) com \T1/cmtt/m/n/10 ants.n4_bias_field_correction
 \T1/cmr/m/n/10 , usando \T1/cmtt/m/n/10 shrink_factor=3\T1/cmr/m/n/10 , \T1/cmt
 t/m/n/10 convergence={iters:
  []
 
 
-Overfull \hbox (51.34206pt too wide) in paragraph at lines 507--508
+Overfull \hbox (51.34206pt too wide) in paragraph at lines 418--419
 \T1/cmtt/m/n/10 [50, 50, 50, 50], tol: $\OT1/cmr/m/n/10 1 \OMS/cmsy/m/n/10 ^^B 
 \OT1/cmr/m/n/10 10[]$\T1/cmtt/m/n/10 } \T1/cmr/m/n/10 (qua-tro ní-veis de multi
 -resolução), \T1/cmtt/m/n/10 spline_param=200\T1/cmr/m/n/10 ,
  []
 
 
-Overfull \hbox (48.45947pt too wide) in paragraph at lines 509--510
+Overfull \hbox (48.45947pt too wide) in paragraph at lines 420--421
 \T1/cmr/m/n/10 fixo MNI152 2009c [][]Fo-nov et al.[][] ([][]2011[][]), im-ple-m
 en-tado com `ants.histogram_match_image2`
  []
 
-[20 <./graphics/diagrama.pdf>]
-Overfull \hbox (34.40735pt too wide) in paragraph at lines 513--515
+[16 <./graphics/diagrama.pdf>]
+Overfull \hbox (34.40735pt too wide) in paragraph at lines 424--426
 \T1/cmr/m/n/10 ao es-paço de re-fe-rên-cia MNI152 2009c [][]Fo-nov et al.[][] (
 [][]2009[][], [][]2011[][]) com \T1/cmtt/m/n/10 ants.registration
  []
 
-[21]
-Overfull \hbox (14.2204pt too wide) in paragraph at lines 520--521
+[17]
+Overfull \hbox (14.2204pt too wide) in paragraph at lines 431--432
 []\T1/cmr/m/n/10 DEFAULT_BIN_COUNT = 64 \TS1/cmr/m/n/10 ^^Y \T1/cmr/m/n/10 Ra-d
 i-o-mics-Fe-a-tu-re-Ex-trac-tor(binCount=64);
  []
 
 
-Overfull \hbox (6.39622pt too wide) in paragraph at lines 529--530
+Overfull \hbox (6.39622pt too wide) in paragraph at lines 440--441
 \T1/cmr/m/n/10 *zo-oms* NIfTI. Por ROI: `mask_mm3` (ROI $\OMS/cmsy/m/n/10 \$ \T
 1/cmr/m/n/10 cé-re-bro); `gm_mm3`, `wm_mm3`,
  []
 
 
-Overfull \hbox (26.57124pt too wide) in paragraph at lines 529--530
+Overfull \hbox (26.57124pt too wide) in paragraph at lines 440--441
 \T1/cmr/m/n/10 `csf_mm3`; frac-ções **den-tro da ROI** `gm_norm`$\OT1/cmr/m/n/1
 0 = \OML/cmm/m/it/10 V[]=V[]$ \T1/cmr/m/n/10 (aná-logo WM/LCR);
  []
 
-[22]
-Overfull \hbox (0.69702pt too wide) in paragraph at lines 531--532
+
+Overfull \hbox (0.69702pt too wide) in paragraph at lines 442--443
 []\T1/cmr/m/n/10 **Radiómica (`3_feat_rad.py`).** Py-Ra-di-o-mics `3.1.1.dev111
 +g8ed579383`;
  []
 
-
-Overfull \hbox (13.41614pt too wide) in paragraph at lines 533--534
+[18]
+Overfull \hbox (13.41614pt too wide) in paragraph at lines 444--445
 []\T1/cmr/m/n/10 **Deslocamento nor-ma-tivo (`3_feat_gen_dvf_v2.py`, `3_feat_dv
 f_v2.py`).**
  []
 
 
-Overfull \hbox (6.6919pt too wide) in paragraph at lines 536--538
+Overfull \hbox (6.6919pt too wide) in paragraph at lines 447--449
 \T1/cmr/m/n/10 `strain_dev_norm`, `strain_shear_max`, `strain_l1/l2/l3`, `strai
 n_shear_ratio`,
  []
 
 
-Overfull \hbox (7.42702pt too wide) in paragraph at lines 536--538
+Overfull \hbox (7.42702pt too wide) in paragraph at lines 447--449
 \T1/cmr/m/n/10 Por ROI: $\OML/cmm/m/it/10 n$\T1/cmr/m/n/10 , mé-dia, desvio-pad
 rão, p05/p50/p95; para `log-jac`, `mag` e `strain_fro`
  []
 
 
-Overfull \hbox (34.39111pt too wide) in paragraph at lines 536--538
+Overfull \hbox (34.39111pt too wide) in paragraph at lines 447--449
 \T1/cmr/m/n/10 (este úl-timo nos mo-men-tos com $\OML/cmm/m/it/10 "$ \T1/cmr/m/
 n/10 in-fi-ni-te-si-mal, não com o Fro-be-nius de Green^^ULagrange)
  []
 
-[23]
-Overfull \hbox (107.63947pt too wide) in paragraph at lines 548--550
+[19]
+Overfull \hbox (107.63947pt too wide) in paragraph at lines 459--461
 \T1/cmr/m/n/10 com \T1/cmtt/m/n/10 antspynet.desikan_killiany_tourville_labelin
 g \T1/cmr/m/n/10 (\T1/cmtt/m/n/10 modality="t1"\T1/cmr/m/n/10 , \T1/cmtt/m/n/10
  do_preprocessing=True\T1/cmr/m/n/10 ).
  []
 
-[24] [25] [26]
-Overfull \hbox (61.84875pt too wide) in paragraph at lines 587--589
+[20] [21]
+Overfull \hbox (61.84875pt too wide) in paragraph at lines 495--497
 []\T1/cmr/m/n/10 Forma, tex-tura e pri-meira or-dem extraem-se com Py-Ra-di-o-m
 ics \T1/cmtt/m/n/10 3.1.1.dev111+g8ed579383
  []
 
 
-Overfull \hbox (1.38763pt too wide) in paragraph at lines 590--597
+Overfull \hbox (1.38763pt too wide) in paragraph at lines 498--505
 \T1/cmr/m/n/10 (\T1/cmtt/m/n/10 normalize=False\T1/cmr/m/n/10 , \T1/cmtt/m/n/10
  force2D=False\T1/cmr/m/n/10 , \T1/cmtt/m/n/10 distances=[1]\T1/cmr/m/n/10 , \T
 1/cmtt/m/n/10 symmetricalGLCM=True\T1/cmr/m/n/10 ). 
  []
 
-
-Overfull \hbox (1.69312pt too wide) in paragraph at lines 598--601
+[22]
+Overfull \hbox (1.69312pt too wide) in paragraph at lines 506--508
 \T1/cmr/m/n/10 abla-ções hi-po-cam-pais ofi-ci-ais, após deny-list só de de-fi-
 ni-ção (\T1/cmtt/m/n/10 ablation_prep.py\T1/cmr/m/n/10 ),
  []
 
 
-Overfull \hbox (22.0901pt too wide) in paragraph at lines 601--602
+Overfull \hbox (22.0901pt too wide) in paragraph at lines 510--511
 []\T1/cmr/bx/n/10 primeira or-dem: \T1/cmr/m/n/10 16 \T1/cmtt/m/n/10 original_f
 irstorder_* \T1/cmr/m/n/10 ex-cepto \T1/cmtt/m/n/10 Energy \T1/cmr/m/n/10 e \T1
 /cmtt/m/n/10 TotalEnergy
  []
 
 
-Overfull \hbox (13.32957pt too wide) in paragraph at lines 603--604
+Overfull \hbox (13.32957pt too wide) in paragraph at lines 514--515
 []\T1/cmr/bx/n/10 textura: \T1/cmr/m/n/10 os 24 \T1/cmtt/m/n/10 original_glcm_*
  \T1/cmr/m/n/10 (GLCM Ori-gi-nal); saem GLRLM, GLSZM,
  []
 
-[27]
-Underfull \hbox (badness 10000) in paragraph at lines 619--623
+
+Underfull \hbox (badness 10000) in paragraph at lines 531--535
 []\T1/cmtt/m/n/9 10Percentile\T1/cmr/m/n/9 , \T1/cmtt/m/n/9 90Percentile\T1/cmr
 /m/n/9 , \T1/cmtt/m/n/9 Entropy\T1/cmr/m/n/9 ,
  []
 
 
-Underfull \hbox (badness 3884) in paragraph at lines 619--623
+Underfull \hbox (badness 3884) in paragraph at lines 531--535
 \T1/cmtt/m/n/9 InterquartileRange\T1/cmr/m/n/9 , \T1/cmtt/m/n/9 Kurtosis\T1/cmr
 /m/n/9 , \T1/cmtt/m/n/9 Maximum\T1/cmr/m/n/9 , \T1/cmtt/m/n/9 Mean\T1/cmr/m/n/9
  ,
  []
 
 
-Underfull \hbox (badness 5374) in paragraph at lines 619--623
+Underfull \hbox (badness 5374) in paragraph at lines 531--535
 \T1/cmtt/m/n/9 RobustMeanAbsoluteDeviation\T1/cmr/m/n/9 , \T1/cmtt/m/n/9 RootMe
 anSquared\T1/cmr/m/n/9 ,
  []
 
 
-Underfull \hbox (badness 6876) in paragraph at lines 626--630
+Underfull \hbox (badness 6876) in paragraph at lines 538--542
 []\T1/cmtt/m/n/9 SurfaceArea\T1/cmr/m/n/9 , \T1/cmtt/m/n/9 SurfaceVolumeRatio\T
 1/cmr/m/n/9 , \T1/cmtt/m/n/9 Sphericity\T1/cmr/m/n/9 ,
  []
 
 
-Underfull \hbox (badness 10000) in paragraph at lines 626--630
+Underfull \hbox (badness 10000) in paragraph at lines 538--542
 \T1/cmtt/m/n/9 Elongation\T1/cmr/m/n/9 , \T1/cmtt/m/n/9 Flatness\T1/cmr/m/n/9 ,
  \T1/cmtt/m/n/9 LeastAxisLength\T1/cmr/m/n/9 ,
  []
 
 
-Underfull \hbox (badness 10000) in paragraph at lines 626--630
+Underfull \hbox (badness 10000) in paragraph at lines 538--542
 \T1/cmtt/m/n/9 MajorAxisLength\T1/cmr/m/n/9 , \T1/cmtt/m/n/9 MinorAxisLength\T1
 /cmr/m/n/9 ,
  []
 
 
-Underfull \hbox (badness 10000) in paragraph at lines 633--640
+Underfull \hbox (badness 10000) in paragraph at lines 545--552
 []\T1/cmtt/m/n/9 Autocorrelation\T1/cmr/m/n/9 , \T1/cmtt/m/n/9 ClusterProminenc
 e\T1/cmr/m/n/9 ,
  []
 
 
-Underfull \hbox (badness 10000) in paragraph at lines 633--640
+Underfull \hbox (badness 10000) in paragraph at lines 545--552
 \T1/cmtt/m/n/9 ClusterShade\T1/cmr/m/n/9 , \T1/cmtt/m/n/9 ClusterTendency\T1/cm
 r/m/n/9 , \T1/cmtt/m/n/9 Contrast\T1/cmr/m/n/9 ,
  []
 
 
-Underfull \hbox (badness 10000) in paragraph at lines 633--640
+Underfull \hbox (badness 10000) in paragraph at lines 545--552
 \T1/cmtt/m/n/9 Correlation\T1/cmr/m/n/9 , \T1/cmtt/m/n/9 DifferenceAverage\T1/c
 mr/m/n/9 ,
  []
 
 
-Underfull \hbox (badness 10000) in paragraph at lines 633--640
+Underfull \hbox (badness 10000) in paragraph at lines 545--552
 \T1/cmtt/m/n/9 DifferenceEntropy\T1/cmr/m/n/9 , \T1/cmtt/m/n/9 DifferenceVarian
 ce\T1/cmr/m/n/9 , \T1/cmtt/m/n/9 Id\T1/cmr/m/n/9 ,
  []
 
 
-Underfull \hbox (badness 2245) in paragraph at lines 633--640
+Underfull \hbox (badness 2245) in paragraph at lines 545--552
 \T1/cmtt/m/n/9 Idm\T1/cmr/m/n/9 , \T1/cmtt/m/n/9 Idmn\T1/cmr/m/n/9 , \T1/cmtt/m
 /n/9 Idn\T1/cmr/m/n/9 , \T1/cmtt/m/n/9 Imc1\T1/cmr/m/n/9 , \T1/cmtt/m/n/9 Imc2\
 T1/cmr/m/n/9 , \T1/cmtt/m/n/9 InverseVariance\T1/cmr/m/n/9 ,
  []
 
 
-Underfull \hbox (badness 1701) in paragraph at lines 633--640
+Underfull \hbox (badness 1701) in paragraph at lines 545--552
 \T1/cmtt/m/n/9 JointAverage\T1/cmr/m/n/9 , \T1/cmtt/m/n/9 JointEnergy\T1/cmr/m/
 n/9 , \T1/cmtt/m/n/9 JointEntropy\T1/cmr/m/n/9 , \T1/cmtt/m/n/9 MCC\T1/cmr/m/n/
 9 ,
  []
 
 
-Underfull \hbox (badness 10000) in paragraph at lines 633--640
+Underfull \hbox (badness 10000) in paragraph at lines 545--552
 \T1/cmtt/m/n/9 MaximumProbability\T1/cmr/m/n/9 , \T1/cmtt/m/n/9 SumAverage\T1/c
 mr/m/n/9 , \T1/cmtt/m/n/9 SumEntropy\T1/cmr/m/n/9 ,
  []
 
-[28]
-Overfull \hbox (51.87068pt too wide) in paragraph at lines 662--665
+[23] [24]
+Overfull \hbox (51.87068pt too wide) in paragraph at lines 576--579
 \T1/cmtt/m/n/10 strain_fro_mean \T1/cmr/m/n/10 re-sume a norma de Fro-be-nius d
 e Green--Lagrange; \T1/cmtt/m/n/10 strain_fro_variance
  []
 
 
-Overfull \hbox (30.12996pt too wide) in paragraph at lines 673--681
+Overfull \hbox (30.12996pt too wide) in paragraph at lines 586--594
  [][] 
  []
 
 
-Overfull \hbox (92.9733pt too wide) in paragraph at lines 688--699
+Overfull \hbox (92.9733pt too wide) in paragraph at lines 601--612
  [][] 
  []
 
-[29]
 
-LaTeX Warning: Reference `subsec:longitudinal-window' on page 30 undefined on i
-nput line 710.
+LaTeX Warning: Reference `subsec:longitudinal-window' on page 25 undefined on i
+nput line 622.
 
-
-Overfull \hbox (3.5577pt too wide) in paragraph at lines 721--725
+[25]
+Overfull \hbox (3.5577pt too wide) in paragraph at lines 633--637
 []\T1/cmr/m/n/10 Distinguem-se ope-ra-ções \T1/cmr/m/it/10 fi-xas por ima-gem \
 T1/cmr/m/n/10 de ope-ra-ções \T1/cmr/m/it/10 de-pen-den-tes da amos-
  []
 
-[30] [31]
-Overfull \hbox (21.67899pt too wide) in paragraph at lines 783--792
+[26]
+Overfull \hbox (21.67899pt too wide) in paragraph at lines 694--703
 \T1/cmr/m/n/10 vos. To-dos os clas-si-fi-ca-do-res ava-li-a-dos pro-du-zi-ram p
 ro-ba-bi-li-da-des via \T1/cmtt/m/n/10 predict_proba
  []
 
 
-Overfull \hbox (12.53197pt too wide) in paragraph at lines 783--792
+Overfull \hbox (12.53197pt too wide) in paragraph at lines 694--703
 \T1/cmr/m/n/10 (SVM após es-cala de Platt com \T1/cmtt/m/n/10 probability=True\
 T1/cmr/m/n/10 ); sco-res de \T1/cmtt/m/n/10 decision_function
  []
 
-[32]
-Overfull \hbox (11.44073pt too wide) in paragraph at lines 846--851
+[27] [28]
+Overfull \hbox (11.44073pt too wide) in paragraph at lines 757--762
 \T1/cmr/m/n/10 Os clas-si-fi-ca-do-res de-vol-vem \T1/cmtt/m/n/10 predict_proba
  \T1/cmr/m/n/10 (SVM: Platt com \T1/cmtt/m/n/10 probability=True\T1/cmr/m/n/10 
 );
  []
 
 
-Overfull \hbox (5.283pt too wide) in paragraph at lines 846--851
+Overfull \hbox (5.283pt too wide) in paragraph at lines 757--762
 \T1/cmr/m/n/10 que ma-xi-miza $\OML/cmm/m/it/10 J$ \T1/cmr/m/n/10 nas OOF \T1/c
 mtt/m/n/10 predict_proba \T1/cmr/m/n/10 do treino ex-terno (\T1/cmtt/m/n/10 cro
 ss_val_predict
  []
 
 
-Overfull \hbox (34.98537pt too wide) in paragraph at lines 852--854
+Overfull \hbox (34.98537pt too wide) in paragraph at lines 763--765
 \T1/cmr/m/n/10 co-luna); $\OML/cmm/m/it/10 B \OT1/cmr/m/n/10 = 50$ \T1/cmr/m/n/
 10 bo-ots-traps; $\OML/cmm/m/it/10 C \OT1/cmr/m/n/10 = 0\OML/cmm/m/it/10 :\OT1/
 cmr/m/n/10 1$ \T1/cmr/m/n/10 na L1 de ras-treio; \T1/cmtt/m/n/10 stable-pool-mi
@@ -939,104 +914,104 @@ n-timepoints$\OT1/cmr/m/n/10 =
  []
 
 
-LaTeX Warning: Reference `fig:roc_smci_pmci' on page 33 undefined on input line
- 866.
+LaTeX Warning: Reference `fig:roc_smci_pmci' on page 29 undefined on input line
+ 777.
 
-[33] [34] [35] [36]
-<graphics/nestedcv.pdf, id=652, 454.69875pt x 341.275pt>
+[29] [30] [31] [32]
+<graphics/nestedcv.pdf, id=561, 454.69875pt x 341.275pt>
 File: graphics/nestedcv.pdf Graphic file (type pdf)
 <use graphics/nestedcv.pdf>
-Package pdftex.def Info: graphics/nestedcv.pdf  used on input line 929.
+Package pdftex.def Info: graphics/nestedcv.pdf  used on input line 840.
 (pdftex.def)             Requested size: 345.0pt x 258.94467pt.
-
-Overfull \hbox (3.87613pt too wide) in paragraph at lines 943--944
+ [33 <./graphics/nestedcv.pdf>]
+Overfull \hbox (3.87613pt too wide) in paragraph at lines 854--855
 \OML/cmm/m/it/10 < \OT1/cmr/m/n/10 0\OML/cmm/m/it/10 :\OT1/cmr/m/n/10 01$\T1/cm
 r/m/n/10 , res-trito ao pool) $\OMS/cmsy/m/n/10 !$ \T1/cmtt/m/n/10 StandardScal
 er $\OMS/cmsy/m/n/10 !$ \T1/cmr/m/n/10 SVM (\T1/cmtt/m/n/10 probability=True\T1
 /cmr/m/n/10 ). 
  []
 
-[37] [38 <./graphics/nestedcv.pdf>] [39] [40]
-Overfull \hbox (61.07056pt too wide) in paragraph at lines 998--1008
+[34] [35]
+Overfull \hbox (61.07056pt too wide) in paragraph at lines 909--919
 \T1/cmr/m/n/10 dis-po-ní-veis. A frequên-cia ao ní-vel do grupo definiu-se como
  $\OML/cmm/m/it/10 ^^Y[] \OT1/cmr/m/n/10 = \OML/cmm/m/it/10 B[] [][] \U/msb/m/n
 /10 I  []$\T1/cmr/m/n/10 .
  []
 
 
-Overfull \hbox (19.33546pt too wide) in paragraph at lines 998--1008
+Overfull \hbox (19.33546pt too wide) in paragraph at lines 909--919
 \T1/cmr/m/n/10 Um grupo en-trou no pool quando $\OML/cmm/m/it/10 ^^Y[] \OMS/cms
 y/m/n/10 ^^U \OML/cmm/m/it/10 ^^R$\T1/cmr/m/n/10 , com $\OML/cmm/m/it/10 ^^R \O
 T1/cmr/m/n/10 = 70 %$ \T1/cmr/m/n/10 (\T1/cmtt/m/n/10 stable-pool-min-pct=70\T1
 /cmr/m/n/10 ),
  []
 
-
-Overfull \hbox (42.1052pt too wide) in paragraph at lines 1012--1017
+[36]
+Overfull \hbox (42.1052pt too wide) in paragraph at lines 923--928
 []\T1/cmr/m/n/10 Volume prog-nós-tico: frac-ções te-ci-du-ais \T1/cmr/m/it/10 d
 en-tro da ROI \T1/cmr/m/n/10 e \T1/cmtt/m/n/10 original_shape_MeshVolume
  []
 
 
-Overfull \hbox (6.73819pt too wide) in paragraph at lines 1012--1017
+Overfull \hbox (6.73819pt too wide) in paragraph at lines 923--928
 \T1/cmr/m/n/10 ti-ra-dos). Exem-plo: \T1/cmtt/m/n/10 hippocampus_L_T1_gm_norm \
 T1/cmr/m/n/10 e \T1/cmtt/m/n/10 hippocampus_L_D21_gm_norm
  []
 
-[41] [42] [43]
-Overfull \hbox (146.55276pt too wide) in paragraph at lines 1093--1093
+[37] [38] [39]
+Overfull \hbox (146.55276pt too wide) in paragraph at lines 1004--1004
 []\T1/cmr/m/n/10 tudo em \T1/cmtt/m/n/10 t1_only\T1/cmr/m/n/10 : \T1/cmtt/m/n/1
 0 vol:t1_only,shape:t1_only,texture:t1_only,disp:t1_only,firstorder:t1_only\T1/
 cmr/m/n/10 ; 
  []
 
 
-Overfull \hbox (95.75961pt too wide) in paragraph at lines 1093--1093
+Overfull \hbox (95.75961pt too wide) in paragraph at lines 1004--1004
 []\T1/cmr/m/n/10 âncora: \T1/cmtt/m/n/10 shape:t1_only \T1/cmr/m/n/10 e as res-
 tan-tes em \T1/cmtt/m/n/10 t1_d21_d32 \T1/cmr/m/n/10 (de-fault de \T1/cmtt/m/n/
 10 DEFAULT_LATE_FUSION_SPEC\T1/cmr/m/n/10 ). 
  []
 
 
-Overfull \hbox (103.35605pt too wide) in paragraph at lines 1095--1096
+Overfull \hbox (103.35605pt too wide) in paragraph at lines 1006--1007
 []\T1/cmr/m/n/10 Implementação. O script \T1/cmtt/m/n/10 5_ablation_late_fusion
 .py \T1/cmr/m/n/10 in-voca \T1/cmtt/m/n/10 run_late_fusion_ablation_suite\T1/cm
 r/m/n/10 .
  []
 
-[44]
-Overfull \hbox (30.99408pt too wide) in paragraph at lines 1115--1116
+[40]
+Overfull \hbox (30.99408pt too wide) in paragraph at lines 1026--1027
 []\T1/cmr/m/n/10 Parâmetros do pa-per (COM-MON_FUSION em run_ablation_full.sh):
  \T1/cmtt/m/n/10 smci_pmci\T1/cmr/m/n/10 ,
  []
 
 
-Overfull \hbox (4.99786pt too wide) in paragraph at lines 1117--1120
+Overfull \hbox (4.99786pt too wide) in paragraph at lines 1028--1031
 \T1/cmtt/m/n/10 predict_proba \T1/cmr/m/n/10 dos cinco SVMs uni-mo-dais já ajus
 -ta-dos no mesmo nes-ted (mesma
  []
 
 LaTeX Font Info:    Font shape `T1/cmtt/bx/n' in size <10> not available
-(Font)              Font shape `T1/cmtt/m/n' tried instead on input line 1130.
-[45] [46] [47] [48] [49]
-Overfull \hbox (7.29254pt too wide) in paragraph at lines 1267--1268
+(Font)              Font shape `T1/cmtt/m/n' tried instead on input line 1041.
+[41] [42] [43]
+Overfull \hbox (7.29254pt too wide) in paragraph at lines 1177--1178
 \T1/cmr/m/n/10 esvazia-se na mai-o-ria das do-bras (\T1/cmtt/m/n/10 corr_fallba
 ck\T1/cmr/m/n/10 ); o $\OT1/cmr/m/n/10 ^^A$ \T1/cmr/m/n/10 po-si-tivo em \T1/cm
 tt/m/n/10 48m_12m
  []
 
-[50] [51]
-Overfull \hbox (51.59273pt too wide) in paragraph at lines 1380--1445
+[44] [45] [46] [47]
+Overfull \hbox (51.59273pt too wide) in paragraph at lines 1290--1355
  [][] 
  []
 
-[52] [53]
-Overfull \hbox (2.32295pt too wide) in paragraph at lines 1477--1480
+[48] [49]
+Overfull \hbox (2.32295pt too wide) in paragraph at lines 1386--1389
 \T1/cmr/m/n/10 folds, não bi-o-mar-ca-dor único. Des-lo-ca-mento em 12meses cai
  em \T1/cmtt/m/n/10 corr_fallback\T1/cmr/m/n/10 :
  []
 
-[54] [55] (./artigo.bbl [56] [57] [58] [59]) [60] (./artigo.aux)
+[50] [51] (./artigo.bbl [52] [53] [54] [55]) [56] (./artigo.aux)
  ***********
 LaTeX2e <2023-11-01> patch level 1
 L3 programming layer <2024-01-22>
@@ -1054,148 +1029,32 @@ Package rerunfilecheck Warning: File `artigo.out' has changed.
 (rerunfilecheck)                or use package `bookmark'.
 
 Package rerunfilecheck Info: Checksums for `artigo.out':
-(rerunfilecheck)             Before: 8C55EBCF457D72DB5FC82267A4551BE0;7844
-(rerunfilecheck)             After:  57C00B70C0D945D62A72116912456D23;7530.
+(rerunfilecheck)             Before: 9EADA0577218944D2084CD1B7F3E1E69;7163
+(rerunfilecheck)             After:  7F23D123F25444D8C68890CDE6FC6945;8280.
  ) 
 Here is how much of TeX's memory you used:
- 14867 strings out of 474222
- 235315 string characters out of 5748733
- 1961975 words of memory out of 5000000
- 36622 multiletter control sequences out of 15000+600000
+ 14821 strings out of 474222
+ 234691 string characters out of 5748733
+ 1960975 words of memory out of 5000000
+ 36612 multiletter control sequences out of 15000+600000
  581085 words of font info for 101 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
  75i,13n,79p,4091b,645s stack positions out of 10000i,1000n,20000p,200000b,200000s
 
-pdfTeX warning (dest): name{equation.3.11} has been referenced but does not exi
-st, replaced by a fixed one
+pdfTeX warning (dest): name{table.caption.12} has been referenced but does not 
+exist, replaced by a fixed one
 
 
-pdfTeX warning (dest): name{equation.3.15} has been referenced but does not exi
-st, replaced by a fixed one
+pdfTeX warning (dest): name{table.caption.14} has been referenced but does not 
+exist, replaced by a fixed one
 
 
-pdfTeX warning (dest): name{equation.3.14} has been referenced but does not exi
-st, replaced by a fixed one
-
-
-pdfTeX warning (dest): name{equation.3.10} has been referenced but does not exi
-st, replaced by a fixed one
-
-
-pdfTeX warning (dest): name{equation.3.9} has been referenced but does not exis
-t, replaced by a fixed one
-
-
-pdfTeX warning (dest): name{equation.3.8} has been referenced but does not exis
-t, replaced by a fixed one
-
-
-pdfTeX warning (dest): name{section.7} has been referenced but does not exist, 
-replaced by a fixed one
-
-
-pdfTeX warning (dest): name{subsection.4.5} has been referenced but does not ex
-ist, replaced by a fixed one
-
-
-pdfTeX warning (dest): name{subsection.4.4} has been referenced but does not ex
-ist, replaced by a fixed one
-
-
-pdfTeX warning (dest): name{subsection.4.3} has been referenced but does not ex
-ist, replaced by a fixed one
-
-
-pdfTeX warning (dest): name{subsection.4.2} has been referenced but does not ex
-ist, replaced by a fixed one
-
-
-pdfTeX warning (dest): name{subsection.4.1} has been referenced but does not ex
-ist, replaced by a fixed one
-
-
-pdfTeX warning (dest): name{subsection.3.16} has been referenced but does not e
-xist, replaced by a fixed one
-
-
-pdfTeX warning (dest): name{subsection.3.15} has been referenced but does not e
-xist, replaced by a fixed one
-
-
-pdfTeX warning (dest): name{subsection.3.14} has been referenced but does not e
-xist, replaced by a fixed one
-
-
-pdfTeX warning (dest): name{subsection.3.13} has been referenced but does not e
-xist, replaced by a fixed one
-
-
-pdfTeX warning (dest): name{subsection.3.12} has been referenced but does not e
-xist, replaced by a fixed one
-
-
-pdfTeX warning (dest): name{subsection.3.11} has been referenced but does not e
-xist, replaced by a fixed one
-
-
-pdfTeX warning (dest): name{subsection.3.10} has been referenced but does not e
-xist, replaced by a fixed one
-
-
-pdfTeX warning (dest): name{subsection.3.9} has been referenced but does not ex
-ist, replaced by a fixed one
-
-
-pdfTeX warning (dest): name{subsubsection.3.8.3} has been referenced but does n
+pdfTeX warning (dest): name{subsubsection.3.0.2} has been referenced but does n
 ot exist, replaced by a fixed one
 
 
-pdfTeX warning (dest): name{subsubsection.3.8.2} has been referenced but does n
+pdfTeX warning (dest): name{subsubsection.3.0.1} has been referenced but does n
 ot exist, replaced by a fixed one
-
-
-pdfTeX warning (dest): name{subsubsection.3.8.1} has been referenced but does n
-ot exist, replaced by a fixed one
-
-
-pdfTeX warning (dest): name{subsection.3.8} has been referenced but does not ex
-ist, replaced by a fixed one
-
-
-pdfTeX warning (dest): name{subsection.3.7} has been referenced but does not ex
-ist, replaced by a fixed one
-
-
-pdfTeX warning (dest): name{subsubsection.3.6.4} has been referenced but does n
-ot exist, replaced by a fixed one
-
-
-pdfTeX warning (dest): name{subsubsection.3.6.3} has been referenced but does n
-ot exist, replaced by a fixed one
-
-
-pdfTeX warning (dest): name{subsubsection.3.6.2} has been referenced but does n
-ot exist, replaced by a fixed one
-
-
-pdfTeX warning (dest): name{subsubsection.3.6.1} has been referenced but does n
-ot exist, replaced by a fixed one
-
-
-pdfTeX warning (dest): name{subsection.3.6} has been referenced but does not ex
-ist, replaced by a fixed one
-
-
-pdfTeX warning (dest): name{subsubsection.3.1.2} has been referenced but does n
-ot exist, replaced by a fixed one
-
-
-pdfTeX warning (dest): name{subsubsection.3.1.1} has been referenced but does n
-ot exist, replaced by a fixed one
-
-
-pdfTeX warning (dest): name{subsection.1.2} has been referenced but does not ex
-ist, replaced by a fixed one
 
 </usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx10.pfb></usr/
 share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx8.pfb></usr/share/t
@@ -1229,10 +1088,10 @@ sr/share/texmf/fonts/type1/public/cm-super/sfti0700.pfb></usr/share/texmf/fonts
 er/sfti1000.pfb></usr/share/texmf/fonts/type1/public/cm-super/sftt0800.pfb></us
 r/share/texmf/fonts/type1/public/cm-super/sftt0900.pfb></usr/share/texmf/fonts/
 type1/public/cm-super/sftt1000.pfb>
-Output written on artigo.pdf (60 pages, 1108794 bytes).
+Output written on artigo.pdf (56 pages, 1095400 bytes).
 PDF statistics:
- 1164 PDF objects out of 1200 (max. 8388607)
- 995 compressed objects within 10 object streams
- 239 named destinations out of 1000 (max. 500000)
- 323 words of extra memory for PDF output out of 10000 (max. 10000000)
+ 1055 PDF objects out of 1200 (max. 8388607)
+ 891 compressed objects within 9 object streams
+ 203 named destinations out of 1000 (max. 500000)
+ 291 words of extra memory for PDF output out of 10000 (max. 10000000)
 

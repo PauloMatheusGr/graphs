@@ -1,6 +1,3 @@
-analise estatistica LMM
-https://chatgpt.com/share/6a89aba1-b01c-83e9-b15c-b2b0e88f1716
-
 # Notas — pipeline do paper (pós Patch A)
 
 Allowlist 4–5 nomes **morta**. Números em `cohort_results.csv` / tex antigos = experimento errado. Não citar.
