@@ -1,4 +1,4 @@
-\begin{thebibliography}{42}
+\begin{thebibliography}{40}
 \expandafter\ifx\csname natexlab\endcsname\relax\def\natexlab#1{#1}\fi
 \providecommand{\url}[1]{\texttt{#1}}
 \providecommand{\href}[2]{#2}
@@ -21,15 +21,6 @@
 \newblock \bibinfo{journal}{Alzheimer's Research \& Therapy}
   \bibinfo{volume}{17}, \bibinfo{pages}{1--13}.
 \newblock \DOIprefix\doi{10.1186/s13195-025-01827-2}.
-%Type = Inproceedings
-\bibitem[{Akiba et~al.(2019)Akiba, Sano, Yanase, Ohta and Koyama}]{akiba-2019}
-\bibinfo{author}{Akiba, T.}, \bibinfo{author}{Sano, S.} et~al.,
-  \bibinfo{year}{2019}.
-\newblock \bibinfo{title}{{Optuna: A Next-generation Hyperparameter
-  Optimization Framework}}, in: \bibinfo{booktitle}{The 25th ACM SIGKDD
-  Conference on Knowledge Discovery and Data Mining (KDD '19)},
-  \bibinfo{address}{New York, NY, USA}. pp. \bibinfo{pages}{2623--2631}.
-\newblock \DOIprefix\doi{10.1145/3292500.3330701}.
 %Type = Article
 \bibitem[{Avants et~al.(2011)Avants, Tustison, Song, Cook, Klein and
   Gee}]{avants-2011a}
@@ -121,18 +112,16 @@
   \bibinfo{booktitle}{International workshop on multiple classifier systems},
   \bibinfo{address}{Berlin, Heidelberg}. pp. \bibinfo{pages}{1--15}.
 %Type = Article
-\bibitem[{Ellis et~al.(2009)Ellis, Bush, Darby, De~Fazio, Foster, Hudson,
-  Lautenschlager, Lenzo, Martins, Maruff, Masters, Milner, Pike, Rowe, Savage,
-  Szoeke, Taddei, Villemagne, Woodward, Ames and the {AIBL Research
-  Group}}]{ellis-2009}
-\bibinfo{author}{Ellis, K.A.}, \bibinfo{author}{Bush, A.I.} et~al.,
+\bibitem[{Fonov et~al.(2009)Fonov, Evans, McKinstry, Almli and
+  Collins}]{fonov-2009}
+\bibinfo{author}{Fonov, V.}, \bibinfo{author}{Evans, A.} et~al.,
   \bibinfo{year}{2009}.
-\newblock \bibinfo{title}{{The Australian Imaging, Biomarkers and Lifestyle
-  (AIBL) study of aging: methodology and baseline characteristics of 1112
-  individuals recruited for a longitudinal study of Alzheimer's disease}}.
-\newblock \bibinfo{journal}{International Psychogeriatrics}
-  \bibinfo{volume}{21}, \bibinfo{pages}{672--687}.
-\newblock \DOIprefix\doi{10.1017/S1041610209009405}.
+\newblock \bibinfo{title}{{Unbiased nonlinear average age-appropriate brain
+  templates from birth to adulthood}}.
+\newblock \bibinfo{journal}{NeuroImage} \bibinfo{volume}{47},
+  \bibinfo{pages}{S102}.
+\newblock \DOIprefix\doi{10.1016/S1053-8119(09)70884-5}.
+  \bibinfo{note}{organization for Human Brain Mapping 2009 Annual Meeting}.
 %Type = Article
 \bibitem[{Fonov et~al.(2011)Fonov, Evans, Botteron, Almli, McKinstry and
   Collins}]{fonov-2011}
@@ -143,6 +132,17 @@
 \newblock \bibinfo{journal}{NeuroImage} \bibinfo{volume}{54},
   \bibinfo{pages}{313--327}.
 \newblock \DOIprefix\doi{10.1016/j.neuroimage.2010.07.033}.
+%Type = Article
+\bibitem[{Fortin et~al.(2018)Fortin, Cullen, Sheline, Taylor, Aselcioglu, Cook,
+  Adams, Cooper, Fava, McGrath, McInnis, Phillips, Trivedi, Weissman and
+  Shinohara}]{fortin-2018}
+\bibinfo{author}{Fortin, J.}, \bibinfo{author}{Cullen, N.} et~al.,
+  \bibinfo{year}{2018}.
+\newblock \bibinfo{title}{{Harmonization of cortical thickness measurements
+  across scanners and sites}}.
+\newblock \bibinfo{journal}{NeuroImage} \bibinfo{volume}{167},
+  \bibinfo{pages}{104--120}.
+\newblock \DOIprefix\doi{10.1016/j.neuroimage.2017.11.024}.
 %Type = Article
 \bibitem[{Grassi et~al.(2019)Grassi, Rouleaux, Caldirola, Loewenstein,
   Schruers, Perna, Dumontier and ~}]{grassi-2019}
@@ -257,15 +257,6 @@
   Algorithms}}.
 \newblock \bibinfo{address}{USA}.
 \newblock \bibinfo{note}{Wiley-Interscience}.
-%Type = Unpublished
-\bibitem[{LaMontagne et~al.(2019)LaMontagne, Benzinger, Morris, Keefe,
-  Hornbeck, Xiong, Grant, Hassenstab, Moulder, Vlassenko, Raichle, Cruchaga and
-  Marcus}]{lamontagne-2019}
-\bibinfo{author}{LaMontagne, P.J.}, \bibinfo{author}{Benzinger, T.L.} et~al.,
-  \bibinfo{year}{2019}.
-\newblock \bibinfo{title}{{OASIS-3: longitudinal neuroimaging, clinical, and
-  cognitive dataset for normal aging and Alzheimer disease}}.
-\newblock \bibinfo{note}{10.1101/2019.12.13.19014902}.
 %Type = Article
 \bibitem[{Lin et~al.(2020)Lin, Huang, Xu, Qiao, Cai, Wang and Huang}]{lin-2020}
 \bibinfo{author}{Lin, Y.}, \bibinfo{author}{Huang, K.} et~al.,
@@ -294,16 +285,6 @@
 \newblock \bibinfo{journal}{Journal of the Royal Statistical Society Series B:
   Statistical Methodology} \bibinfo{volume}{72}, \bibinfo{pages}{417--473}.
 \newblock \DOIprefix\doi{10.1111/j.1467-9868.2010.00740.x}.
-%Type = Article
-\bibitem[{Molina et~al.(2016)Molina, Pérez-Beteta, Martínez-González,
-  Martino, Velásquez, Arana and Pérez-García}]{molina-2016}
-\bibinfo{author}{Molina, D.}, \bibinfo{author}{Pérez-Beteta, J.} et~al.,
-  \bibinfo{year}{2016}.
-\newblock \bibinfo{title}{{Influence of gray level and space discretization on
-  brain tumor heterogeneity measures obtained from magnetic resonance images}}.
-\newblock \bibinfo{journal}{Computers in Biology and Medicine}
-  \bibinfo{volume}{78}, \bibinfo{pages}{49--57}.
-\newblock \DOIprefix\doi{10.1016/j.compbiomed.2016.09.011}.
 %Type = Article
 \bibitem[{Moradi et~al.(2015)Moradi, Pepe, Gaser, Huttunen and
   Tohka}]{moradi-2015}

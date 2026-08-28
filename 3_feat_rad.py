@@ -111,7 +111,7 @@ def load_id_imgs(list_path: Path) -> list[str]:
 
 
 # MRI: fixed bin count. Default CT binWidth=25 → dezenas de milhares de bins nestas imagens.
-DEFAULT_BIN_COUNT = 64
+DEFAULT_BIN_COUNT = 32
 
 
 def make_extractor(params: Path | None, *, bin_width: float | None) -> Any:
