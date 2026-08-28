@@ -19,6 +19,8 @@ backups/
 artigo/cas-model2-names-short.bst
 artigo/cas-model2-names.bst
 artigo/figures/
+artigo/tables/
+artigo/graphics/
 artigo/artigo.aux
 artigo/artigo.log
 artigo/artigo.out
@@ -28,6 +30,8 @@ artigo/artigo.pdf
 artigo_old/cas-model2-names-short.bst
 artigo_old/cas-model2-names.bst
 artigo_old/figures/
+artigo_old/tables/
+artigo_old/graphics/
 artigo_old/artigo.aux
 artigo_old/artigo.log
 artigo_old/artigo.out
