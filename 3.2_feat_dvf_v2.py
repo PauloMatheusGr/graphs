@@ -39,15 +39,15 @@ from scipy.stats import kurtosis, skew
 COHORT = "all_population"
 COHORT_DIR = f"csvs/cohorts/{COHORT}"
 
-IMAGES_CSV = f"{COHORT_DIR}/all_population.csv"
+IMAGES_CSV = f"{COHORT_DIR}/smci_pmci.csv"
 
-WARPS_DIR = "./images/displacement_field_v2"
-GROUPWISE_DIR = "./images/groupwise"
+WARPS_DIR = "./images/displacement_field_v3"
+GROUPWISE_DIR = "images/groupwise/references"
 CLINIC_DIR = "./images/resampled_1.0mm"
 REGIONS_DIR = "./images/regions"
 BRAIN_MASK_DIR = "./images/brain_mask"
 
-OUT_CSV = f"{COHORT_DIR}/features_displacement_v2.csv"
+OUT_CSV = f"{COHORT_DIR}/features_displacement_v3.csv"
 RUN_DIR = os.path.join(WARPS_DIR, "features", COHORT)
 
 RESUME = True

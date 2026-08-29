@@ -31,16 +31,16 @@ import pandas as pd
 # =========================
 
 COHORT = "all_population"
-DEFAULT_IMAGES_CSV = f"csvs/cohorts/{COHORT}/all_population.csv"
+DEFAULT_IMAGES_CSV = f"csvs/cohorts/{COHORT}/smci_pmci.csv"
 # DEFAULT_IMAGES_CSV = "csvs/pilot_cn_ad_t0.csv"
 
 DEFAULT_MIN_OUTPUT_BYTES = 1024
 
 DEFAULT_TMPDIR = "./images/displacement_field_v2/_tmp_ants"
 
-groupwise_dir = "./images/groupwise"
-clinic_dir = "./images/resampled_1.0mm"
-warps_output = "./images/displacement_field_v2"
+groupwise_dir = "images/groupwise/references"
+clinic_dir = "images/resampled_1.0mm"
+warps_output = "images/displacement_field_v3"
 
 SLOT_ORDER = {"baseline": 0, "m12": 1, "m24": 2, "t0": 0, "t1": 1, "t2": 2}
 
