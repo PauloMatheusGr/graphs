@@ -1,3 +1,20 @@
+# Testes realizados
+
+## Definição melhor abordagem longitudinal
+
+- deltas absolutos (D21=T2−T1, D31=T3−T1, D32=T3−T2)
+- deltas relativos (D21=(T2−T1)/T1, D31=(T3−T1)/T1, D32=(T3−T2)/T2)
+- absolutos atributos (T1, T2, T3)
+- deltas absolutos + deltas dos deltas (D21, D32, A=D32−D21)
+- i1 absoluto + 2 deltas sequenciais (T1, D21, D32) (Vencedor)
+- i1 absoluto + 3 deltas sequenciais (T1, D21, D31, D32)
+- i1 absoluto + ritmo + aceleração (T1, M=(D21+D32)/2, A=D32−D21)
+
+
+
+
+
+
 # Notas — pipeline do paper (pós Patch A)
 
 Allowlist 4–5 nomes **morta**. Números em `cohort_results.csv` / tex antigos = experimento errado. Não citar.

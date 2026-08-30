@@ -31,7 +31,7 @@ import pandas as pd
 # =========================
 
 COHORT = "all_population"
-DEFAULT_IMAGES_CSV = f"csvs/cohorts/{COHORT}/smci_pmci.csv"
+DEFAULT_IMAGES_CSV = f"csvs/cohorts/{COHORT}/all_population.csv"
 # DEFAULT_IMAGES_CSV = "csvs/pilot_cn_ad_t0.csv"
 
 DEFAULT_MIN_OUTPUT_BYTES = 1024

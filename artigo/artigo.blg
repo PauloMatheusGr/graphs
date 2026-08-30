@@ -125,45 +125,45 @@ ptr=1, stack=
 
 ---the literal stack isn't empty for entry zwanenburg-2020
 while executing---line 1648 of file cas-model2-names-short.bst
-You've used 42 entries,
+You've used 45 entries,
             3018 wiz_defined-function locations,
-            1033 strings with 29632 characters,
-and the built_in function-call counts, 48872 in all, are:
-= -- 3673
-> -- 4291
-< -- 13
-+ -- 1704
-- -- 1662
-* -- 5772
-:= -- 8070
-add.period$ -- 162
-call.type$ -- 42
-change.case$ -- 1032
-chr.to.int$ -- 42
-cite$ -- 42
-duplicate$ -- 2025
-empty$ -- 2082
-format.name$ -- 1814
-if$ -- 8631
+            1051 strings with 30122 characters,
+and the built_in function-call counts, 50529 in all, are:
+= -- 3802
+> -- 4340
+< -- 16
++ -- 1722
+- -- 1677
+* -- 5932
+:= -- 8311
+add.period$ -- 174
+call.type$ -- 45
+change.case$ -- 1050
+chr.to.int$ -- 45
+cite$ -- 45
+duplicate$ -- 2156
+empty$ -- 2223
+format.name$ -- 1840
+if$ -- 8951
 int.to.chr$ -- 1
 int.to.str$ -- 1
-missing$ -- 375
-newline$ -- 261
-num.names$ -- 168
-pop$ -- 1352
+missing$ -- 399
+newline$ -- 279
+num.names$ -- 180
+pop$ -- 1404
 preamble$ -- 1
-purify$ -- 989
+purify$ -- 1006
 quote$ -- 0
-skip$ -- 631
+skip$ -- 678
 stack$ -- 0
-substring$ -- 1401
-swap$ -- 1408
+substring$ -- 1459
+swap$ -- 1487
 text.length$ -- 3
 text.prefix$ -- 0
 top$ -- 0
-type$ -- 372
+type$ -- 393
 warning$ -- 0
-while$ -- 175
+while$ -- 186
 width$ -- 0
-write$ -- 677
+write$ -- 723
 (There were 30 error messages)

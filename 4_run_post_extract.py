@@ -21,7 +21,7 @@ LONGITUDINAL = BASE / "adnimerged_longitudinal.csv"
 MERGE_KEYS = ["ID_IMG", "roi", "side", "label"]
 
 # DVF store: visita → template CN (3_feat_gen_dvf.py + 3_feat_dvf.py)
-DISP_FEATURES = "features_displacement_v2.csv"
+DISP_FEATURES = "features_displacement_v3.csv"
 
 VOL_FEAT_COLS = [
     "mask_mm3", "gm_mm3", "gm_norm", "wm_mm3", "wm_norm",

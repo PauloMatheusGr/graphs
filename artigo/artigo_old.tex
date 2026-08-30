@@ -175,7 +175,7 @@ correspondendo a uma imagem inicial, uma intermediária e uma final dentro da ja
 
 As faixas de tolerância adotadas ($\pm 2$ meses) foram desenhadas para serem independentes entre as janelas de observação, conforme detalhado na Tabela~\ref{tab:bandas}.
 
-\begin{table}[H]
+\begin{table}[htbp]
 	\centering
 	\caption{Intervalos nominais entre aquisições e faixas de tolerância correspondentes.}
 	\label{tab:bandas}
@@ -212,7 +212,7 @@ A Tabela~\ref{tab:adni_study} sumariza as características da amostra na união 
 
 As bases de dados longitudinais AIBL \cite{ellis-2009} e OASIS-3 \cite{lamontagne-2019} foram investigadas com a mesma lógica de triagem e temporalidade. No entanto, elas não foram mantidas devido à insuficiência amostral de pacientes aptos a fornecer as três aquisições rigidamente espaçadas impostas por este desenho experimental.
 
-\begin{table}[H]
+\begin{table}[htbp]
 	\centering
 	\footnotesize
 	\caption{Características clínicas longitudinais sMCI/pMCI nas quatro coortes de estudo. Os valores são apresentados como média $\pm$ desvio-padrão.}
@@ -274,7 +274,7 @@ As bases de dados longitudinais AIBL \cite{ellis-2009} e OASIS-3 \cite{lamontagn
 	\end{flushleft}
 \end{table}
 
-\begin{table}[H]
+\begin{table}[htbp]
 	\centering
 	\footnotesize
 	\caption{Demografia e dados técnicos das imagens T1w MP-RAGE (união sem repetições das quatro coortes de análise, considerando imagens únicas por identificador de aquisição).}
@@ -313,7 +313,7 @@ A representação longitudinal proposta ($\mathrm{feat}_{i_1},\Delta_{21},\Delta
 
 Após a obtenção dos dados brutos de smri na base ADNI, os volumes foram submetidos a um pipeline de pré-processamento para permitir a análise de atributos radiômicos \cite{zwanenburg-2020}. A Figura~\ref{fig:pipeline} ilustra a arquitetura metodológica proposta, englobando as etapas tratamento, pré-processamento, seleção de atributos e modelagem computacional.
 
-\begin{figure}[H]
+\begin{figure}[htbp]
 	\centering
 	\includegraphics[width=1.0\textwidth]{graphics/diagrama.pdf} % Substitua pelo nome do seu arquivo
 	\caption{Diagrama esquemático do pipeline de processamento e análise radiômica.}
@@ -344,7 +344,7 @@ Para uma analise mais detalhada em nivel de atributos, extraem-se cinco classes 
 
 \subsubsection{Atributos volumétricos}\label{subsubsec:feat_vol}
 
-Por ROI intersectada com a máscara encefálica, \code{3\_feat\_vol.py} regista volumes em mm$^3$ e fracções \emph{dentro da ROI}: $\mathtt{gm\_norm}=V_{\mathrm{GM}}/V_{\mathrm{ROI}}$ (análogo para WM e CSF).
+Por ROI intersectada com a máscara encefálica, \code{3\_feat\_vol.py} regista volumes em mm$^3$ e fracções \emph{dentro da ROI}: $\mathtt{gm\_norm}=V_{\mathrm{GM}}/V_{\mathrm{ROI}}$ (análogo para WM e LCR).
 O ICV (\code{ICV\_mask\_mm3}) é o volume da máscara encefálica (linha \code{\_\_global\_\_}).
 No pós-processamento, descritores de tamanho (mm$^3$ e malha/eixos do PyRadiomics) dividem-se por esse ICV; as fracções \textbf{não} se renormalizam pelo ICV --- não são volumetria clássica em mm$^3$ \cite{wyman-2013}.
 Entram \code{gm\_norm}, \code{wm\_norm}, \code{csf\_norm} e \code{original\_shape\_MeshVolume} (já /ICV).
@@ -361,7 +361,7 @@ A extração de atributos restringiu-se ao tipo \code{Original} (sem a aplicaç�
 A extração guarda 56 descritores: 18 de primeira ordem, 14 de forma e 24 GLCM.
 Nas ablações hipocampais oficiais,definidos na Tabela~\ref{tab:pyradiomics-features}):
 
-\begin{table}[H]
+\begin{table}[htbp]
 	\centering
 	\caption{Atributos PyRadiomics retidos nas ablações hipocampais. Prefixo \code{original\_} omitido na coluna de nomes para legibilidade; no CSV o nome completo inclui \code{original\_firstorder\_}, \code{original\_shape\_} ou \code{original\_glcm\_}.}
 	\label{tab:pyradiomics-features}
@@ -400,6 +400,52 @@ Nas ablações hipocampais oficiais,definidos na Tabela~\ref{tab:pyradiomics-fea
 		\bottomrule
 	\end{tabular}
 \end{table}
+
+%\subsubsection{Atributos de deslocamento}\label{sec:displacement-features}
+%
+%A referência é o atlas groupwise CN do sexo e da década em $i_1$, independente do diagnóstico \cite{wyman-2013}, e mantém-se em $i_2$ e $i_3$.
+%Em cada visita, SyN com T1 clínico fixo e template CN móvel.
+%Os mapas vivem no domínio do template. O campo obtém-se aplicando $I_t=[\text{affine},\text{inverse warp}]$ às coordenadas físicas do template (fixed $\rightarrow$ moving):
+%\begin{equation}
+%	\mathbf{u}_t(x)=I_t(x)-x,\qquad x\in\Omega_{\mathrm{CN}}.
+%	\label{eq:dvf-template}
+%\end{equation}
+%ROIs e máscara encefálica do sujeito transportam-se ao template pela cadeia directa (Warp$+$Affine, vizinho mais próximo).
+%De $\mathbf{u}_t$ derivam-se $\log J$, $\|\mathbf{u}\|$, divergência, $(u_x,u_y,u_z)$, rotacional, escalares de Green--Lagrange e $\|\varepsilon\|_F$ da deformação infinitesimal $\varepsilon=\tfrac12(H+H^{\top})$ \cite{bouke-2023}.
+%Não há mapas $i_a\rightarrow T_b$: $i_2$ e $i_3$ são desvio ao mesmo imagem de referência CN, não deformação inter-visita.
+%Por ROI hipocampal no template agregam-se média, desvio-padrão, percentis e, para $\log J$, $\|\mathbf{u}\|$ e $\|\varepsilon\|_F$, variância, assimetria e curtose.
+%
+%Entram momentos de \code{mag\_}, \code{logjac\_} e \code{strain\_fro\_} (15 sufixos por lado na representação longa).
+%Saem componentes \code{ux}/\code{uy}/\code{uz}, sufixos \code{\_n} e percentis.
+%\code{strain\_fro\_mean} resume a norma de Frobenius de Green--Lagrange; \code{strain\_fro\_variance} a da $\varepsilon$ infinitesimal.
+%
+%\subsection{Deslocamento normativo}
+%Para quantificar o desvio biomecânico local (atrofia ou expansão) relativamente a um referencial de envelhecimento saudável, registou-se cada imagem clínica, já alinhado rigidamente a 1\,mm, a um \emph{template groupwise} CN estratificado por sexo biológico e década de idade. No SyN não linear~\cite{avants-2011a}, o \emph{template} CN foi a imagem \textbf{fixa} e imagem clínica a imagem \textbf{móvel}, com interpolação B-spline. O diagnóstico não entra na escolha do atlas: o mesmo \emph{template}, definido pelo sexo e pela década da visita \emph{baseline} ($i_1$), aplica-se a imagens $i_1$, $i_2$ e $i_3$. Cada exame é registado de forma independente a esse referencial estacionário; não há cadeia de \emph{warps} entre visitas.
+%
+%O campo de deslocamento foi avaliado no \textbf{domínio do template}. A transformação inversa $I_t$ (fixa $\to$ móvel, i.e., template $\to$ sujeito), composta pelo afim e pelo \emph{inverse warp}, mapeia coordenadas físicas $x\in\Omega_{\mathrm{CN}}$ para o espaço clínico. O deslocamento é definido por
+%\[
+%\mathbf{u}_t(x)=I_t(x)-x.
+%\]
+%As máscaras DKT e a máscara encefálica do sujeito foram transportadas para $\Omega_{\mathrm{CN}}$ pela transformação \textbf{directa} (móvel $\to$ fixa: \emph{warp} + afim), utilizando o interpolador de vizinho mais próximo.
+%
+%A partir de $\mathbf{u}_t$ derivaram-se o logaritmo do jacobiano (\code{logjac}), a magnitude do deslocamento (\code{mag}) e a norma de Frobenius do tensor de deformação infinitesimal $\varepsilon=\tfrac12(H+H^{\top})$, onde $H=\nabla\mathbf{u}$ (\code{strain\_fro}). O classificador reteve, por ROI e por mapa, cinco estatísticas transversais: média, desvio-padrão, variância amostral, assimetria de Fisher e curtose. Percentis ($p_{05}$, $p_{50}$, $p_{95}$), contagem de voxels e componentes direcionais ($u_x$, $u_y$, $u_z$), bem como divergência e rotacional, foram excluídos do modelo preditivo. Especificamente em \code{strain\_fro}, a média e o desvio-padrão correspondem ao tensor de Green--Lagrange por motivos de compatibilidade com versões prévias do sistema extraído; enquanto variância, assimetria e curtose utilizam rigorosamente a métrica $\lVert\varepsilon\rVert_F$ do campo infinitesimal.
+%
+%\subsection{Construção de \emph{templates groupwise} estratificados}\label{sec:groupwise}
+%
+%Para reduzir o viés inerente à utilização de um único sujeito de referência~\cite{reuter-2012} e fornecer um espaço normativo demografamente adequado, construíram-se \emph{templates} volumétricos médios a partir de imagens T1 pré-processadas exclusivas de indivíduos cognitivamente normais (CN). Os \emph{templates} foram estratificados por sexo e década de idade ($50$--$59{,}9$, $60$--$69{,}9$, $\ldots$, $90$--$99{,}9$ anos; idades $<50$ e $>99{,}9$ foram atribuídas aos estratos extremos), servindo de referência de envelhecimento saudável para o registro deformável visita a visita.
+%
+%Por estrato sexo--década reteve-se até $N_{\max}=20$ aquisições CN. Acima desse limite, aplicou-se amostragem aleatória sem reposição garantida por semente fixa (\code{RANDOM\_SEED=7}). A amostra CN foi fixada uma única vez, antes da validação cruzada aninhada, assegurando a não reamostragem nos \emph{folds} externos. Nenhum participante pertencente às classes sMCI ou pMCI contribuiu para a confecção dos \emph{templates}. Consequentemente, para o desfecho primário sMCI vs pMCI, os atlas atuam como referências normativas estritas disjuntas das duas classes prognósticas, descartando-se qualquer dependência transformacional ajustada por \emph{fold}.
+%
+%O alinhamento \emph{groupwise} foi inicializado com um pré-registro global mascarado (transformações rígidas seguidas de afins) a um referencial alvo comum. O \emph{template} inicial $T^{(0)}$ foi estabelecido como a média aritmética das imagens pré-alinhadas no espaço do alvo. Seguiu-se refinamento não linear via algoritmo SyN~\cite{avants-2014} ao longo de cinco iterações: em cada ciclo, todas as imagens do estrato foram registradas não linearmente ao \emph{template} corrente sob máscara encefálica, e este atualizou-se iterativamente pela média global das imagens deformadas. Após a última iteração, recomputou-se a máscara encefálica no \emph{template} médio e as intensidades intracranianas sofreram reescalonamento fotométrico (recorte restrito aos percentis 2 e 98 com mapeamento linear exato para $[0,1]$). Este passo harmoniza visualmente o contraste inter-estratos sem corromper as transformações deformáveis alocadas ao pipeline prognóstico.
+%
+%\subsection{Registro normativo visita a visita}\label{subsec:deslocamento_longitudinal}
+%
+%Os atributos de deformação biomecânica derivam estritamente de um registro normativo transversal computado visita a visita, abstendo-se da formulação de campos de diferença diretos inter-visitas. Para cada participante, o \emph{template} CN designado foi fixado com base no sexo e na década biológica correspondentes exclusivamente à primeira visita de entrada no modelo ($i_1$), independentemente de seu diagnóstico clínico corrente~\cite{wyman-2013}. Esta atribuição normativa ancorada persistiu inalterada durante as modelagens das visitas subsequentes ($i_2$ e $i_3$).
+%
+%Em cada instante avaliativo $t\in\{T_1,T_2,T_3\}$, executou-se um procedimento SyN espacialmente independente na grelha isotrópica de $1{,}0$\,mm: determinando o \emph{template} CN como imagem \textbf{fixa} e a aquisição T1 clínica pré-processada como imagem \textbf{móvel} (\code{ants.registration}). O otimizador estimou a transformação clínico$\to$\emph{template} $F_t$ (móvel $\to$ fixa) e sua contraparte espacial inversa $I_t$ (fixa $\to$ móvel). Matrizes afins, \emph{warps} diretos e inversos foram registrados isoladamente por aquisição.
+%
+%A informação longitudinal foi incorporada ao classificador preditivo através da representação sistêmica "Q4": para cada descritor estatístico regional (ROI) extraído do registro transversal, procedeu-se com a concatenação estrita do nível basal com as duas sucessivas variações discretas temporais $\{\mathrm{feat}_{T_1},\,\Delta_{21},\,\Delta_{32}\}$, formalizadas como $\Delta_{21}=\mathrm{feat}_{T_2}-\mathrm{feat}_{T_1}$ e $\Delta_{32}=\mathrm{feat}_{T_3}-\mathrm{feat}_{T_2}$. Reitera-se enfaticamente que \textbf{não} ocorreu composição sintética espacial de \emph{warps} cruzando os eixos de visita (e.g., $I_{T_2}\circ F_{T_1}$) e \textbf{não} ocorreu cálculo parametrizado de campos transicionais \emph{baseline}$\to$\emph{follow-up}. Cada instância de visita mensurou o desvio anatômico absoluto contra a mesma referência CN comum estacionária; resultando em uma trajetória temporal modelada exclusivamente sob o domínio dos momentos escalares extraídos nas ROIs, não através de um mapeamento \emph{warp} intra-sujeito explícito.
+
 \subsection{Atributos de deslocamento}
 Para quantificar o desvio biomecânico local (atrofia ou expansão), os exames foram registrados contra referenciais de envelhecimento saudável. Este processo seguiu três etapas estruturais: a construção do espaço normativo, o registro transversal de cada visita clínica e a extração estatística dos tensores de deformação.
 
@@ -408,7 +454,7 @@ Para mitigar o viés inerente à utilização de um único sujeito de referênci
 
 Em cada estrato sexo-década, foram selecionadas aleatoriamente até $N_{\max}=20$ aquisições CN (semente fixa \code{RANDOM\_SEED=7}). Esta amostra foi estabelecida em definitivo antes do ciclo de validação cruzada aninhada, assegurando que o referencial normativo fosse disjunto das partições de teste e totalmente isolado das classes prognósticas de interesse (sMCI e pMCI).
 
-Antes do alinhamento \emph{groupwise}, as T1 CN selecionadas foram submetidas ao mesmo registro rígido isotrópico de $1{,}0$\,mm utilizado nas aquisições clínicas, partilhando a grade MNI152 2009c. O alinhamento iniciou-se com pré-registros global rígido e afim, seguidos de cinco iterações de registro não linear via algoritmo SyN \cite{avants-2014}. Em cada ciclo iterativo, todas as imagens do estrato foram registradas sob máscara encefálica ao \emph{template} corrente, atualizando-o na sequência pela média global deformada. Não se aplicou pareamento de histograma nem reescalonamento fotométrico para $[0,1]$ sobre o \emph{template} resultante, de modo a preservar a compatibilidade de espaço e de intensidade com as T1 clínicas.
+O alinhamento \emph{groupwise} iniciou-se com um pré-registro global afim direcionado a um referencial comum. O \emph{template} inicial resultante foi refinado ao longo de cinco iterações de registro não linear via algoritmo SyN \cite{avants-2014}. Em cada ciclo iterativo, todas as imagens do estrato foram registradas sob máscara encefálica ao \emph{template} corrente, atualizando-o na sequência pela média global deformada. Na etapa final, as intensidades intracranianas sofreram reescalonamento fotométrico linear para o intervalo $[0,1]$ (com recortes restritos aos percentis 2 e 98), harmonizando o contraste sem corromper as transformações biomecânicas subsequentes.
 
 \subsubsection{Registro normativo visita a visita}\label{subsec:deslocamento_longitudinal}
 Para a avaliação longitudinal, designou-se a cada participante o \emph{template} CN correspondente ao seu sexo biológico e à sua década de vida na data da visita inicial ($i_1$), independentemente do diagnóstico clínico no momento \cite{wyman-2013}. Este mesmo atlas normativo funcionou como âncora e foi mantido inalterado para as avaliações das visitas subsequentes ($i_2$ e $i_3$).
@@ -445,12 +491,16 @@ Os modelos prognósticos foram avaliados por meio de uma validação cruzada (CV
 
 A arquitetura iterativa englobou um ciclo externo composto por 5 partições ($k_{\mathrm{out}}=5$), repetido 10 vezes ($R=10$), totalizando 50 avaliações de generalização independentes por configuração, representado pela Figura~\ref{fig:nestedcv}.
 
-\begin{figure}[H]
+\begin{figure}[htbp]
 	\centering
 	\includegraphics[width=1.0\textwidth]{graphics/nestedcv.pdf}
 	\caption{Diagrama da arquitetura de validação cruzada aninhada restrita ao nível do paciente.}
 	\label{fig:nestedcv}
 \end{figure} 
+
+%\subsubsection{Dinâmica do Ciclo Externo.} Em cada iteração externa, todos os procedimentos supervisionados foram ajustados exclusivamente sobre os pacientes do conjunto de treinamento. O conjunto de atributos retidos por estabilidade foi construído uma única vez nesta etapa, empregando-se até $B=50$ réplicas \emph{bootstrap} definidos pelas Equações~\eqref{eq:l1-logistic} e \eqref{eq:stability-freq}). O ponto de operação ideal $\tau^*$ dado pela Equação~\ref{eq:youden} foi estimado no treinamento externo por meio de predições cruzadas internas e reservado para aplicação estrita no correspondente \emph{fold} de teste.
+%
+%\subsubsection{Dinâmica do Ciclo Interno.} A sintonia hiperparamétrica do classificador e do \emph{pipeline} a jusante ocorreu no treinamento externo mediante um ciclo interno estratificado, guiado pelo algoritmo Optuna \citep{akiba-2019} (configurado para 10 ensaios, maximizando a AUC média probabilística interna). O \emph{pipeline} analítico seguiu o fluxo sequencial: filtragem estatística cruzada (\code{CorrVarSelector}: exclusão por correlação $|\rho|>0{,}85$ seguida de variância $<0{,}01$) $\to$ padronização (\code{StandardScaler}) $\to$ Classificação (SVM com \code{probability=True}). Crucialmente, durante o \emph{split} interno, a padronização e a filtragem estatística foram reajustadas sob os dados de treino internos, porém limitadas ao subespaço do \emph{pool} \code{l1\_stable} (o qual não sofreu reconstrução a cada sub-iteração). Como salvaguarda de dimensionalidade, caso os limiares estatísticos internos exaurissem o espaço de atributos, o vetor original selecionado pelo \emph{pool} era restaurado.
 
 \subsubsection{Dinâmica do ciclo externo}
 A validação externa adotou o método \emph{StratifiedKFold} com $k_{\mathrm{out}}=5$, estratificado por classe e rigorosamente particionado ao nível do paciente. Em cada partição (\emph{fold}), aproximadamente 80\% dos participantes compuseram o conjunto de treinamento e 20\% o conjunto de teste (e.g., na coorte principal com $n=120$, a alocação equivale a cerca de 96 sujeitos para treino e 24 para teste).
@@ -464,17 +514,49 @@ O limiar ótimo de Youden $\tau^*$ (Eq.~\ref{eq:youden}) foi estimado a partir d
 \subsubsection{Dinâmica do ciclo interno}
 A otimização de hiperparâmetros ocorreu estritamente dentro do conjunto de treinamento externo, utilizando uma segunda malha \emph{StratifiedKFold} com $k_{\mathrm{in}}=5$. Em cada subpartição interna, 80\% dos dados foram alocados para o ajuste do modelo e 20\% para a validação estratificada, garantindo total isolamento metodológico em relação ao teste externo. A busca hiperparamétrica foi orquestrada pelo algoritmo Optuna \citep{akiba-2019}, configurada para 10 ensaios por \emph{fold} externo, tendo como função objetivo a maximização da AUC média nas cinco partições de validação interna. 
 
-Dado o desbalanceamento entre as classes sMCI e pMCI, particularmente acentuado na coorte \code{36m\_12m} ($121$ \emph{versus} $33$ casos) , absteve-se do uso de métodos de reamostragem sintética ou subamostragem. O desequilíbrio foi mitigado diretamente na função de custo do classificador através da ponderação inversa da frequência de classe. O domínio de busca da SVM, sintonizado pelo Optuna no ciclo interno, incluiu o hiperparâmetro \code{class\_weight} $\in \{\mathrm{None}, \mathrm{balanced}\}$. Quando a configuração \code{balanced} era selecionada, o peso $w_c$ conferido à classe $c$ obedeceu à formulação:
-\begin{equation}
-	w_c = \frac{n}{K\,n_c},
-	\label{eq:class-weight}
-\end{equation}
-em que $n$ representa o tamanho amostral do conjunto de treinamento na respectiva partição, $K=2$ é o número de classes, e $n_c$ é o número de instâncias da classe $c$. Desta forma, erros de classificação na classe minoritária (tipicamente pMCI) receberam penalização proporcionalmente maior, corrigindo o viés de decisão sem alterar a topologia dos dados originais ou induzir vazamento de informação (\emph{data leakage}). A manutenção rigorosa das proporções de classe ao longo de todo o processo foi assegurada pelo uso contínuo do \emph{StratifiedKFold} nos ciclos externo e interno.
-
-O fluxo de processamento (\emph{pipeline}) operou na seguinte sequência: filtragem estatística (correlação de Pearson $|\rho|>0{,}85$; variância $<0{,}01$) $\to$ padronização \code{StandardScaler} $\to$ classificação SVM (\code{probability=True}). Em cada iteração deste ciclo interno, os parâmetros de filtragem e de escalonamento foram reestimados exclusivamente sobre o treinamento interno e aplicados ao subespaço restrito ao \emph{pool} de seleção $\ell_1$ por frequência de \emph{bootstrap} (previamente fixado pelo ciclo externo correspondente). Como mecanismo de salvaguarda metodológica, caso o rigor dos filtros internos resultasse no esvaziamento completo do subespaço vetorial, a totalidade do \emph{pool} selecionado na etapa anterior era restaurada.
+O fluxo de processamento operou na seguinte sequência: filtragem estatística  (correlação $|\rho|>0{,}85$; variância $<0{,}01$) $\to$ padronização \code{StandardScaler} $\to$ classificação SVM (\code{probability=True}). Em cada iteração deste ciclo interno, os parâmetros de filtragem e de escalonamento foram recalculados exclusivamente sobre o treinamento interno e aplicados ao subespaço restrito ao \emph{pool} de seleção $\ell_1$ por frequência de bootstrap (previamente fixado pelo ciclo externo correspondente). Como mecanismo de salvamento metodológica, i.e., caso a restrição dos filtros internos resultasse no esvaziamento completo do subespaço vetorial, a totalidade do \emph{pool} selecionado na etapa anterior era restaurada.
 
 \subsubsection{Agregação e Isolamento Metodológico.} 
 Ao término da busca interna, a configuração hiperparamétrica vencedora foi integralmente reajustada sobre o conjunto completo de treinamento externo, promovendo o recalibrar final dos filtros, do z-score e da calibração logística de Platt. Ao conjunto de teste externo aplicou-se unicamente as transformações infereciais diretas. Dentro de cada repetição $r$, os cinco \emph{folds} de teste foram concatenados, originando um vetor completo com exatamente uma predição \emph{Out-Of-Fold} (OOF) probabilística por participante. As dez probabilidades resultantes por sujeito foram agregadas por média aritmética antes do cômputo da métrica primária $\mathrm{AUC}_{\mathrm{patient}}$ fornecidas pela Equação~\ref{eq:auc-patient}. 
+
+%\subsubsection{Métricas de avaliação}\label{subsubsec:evaluation-metrics}
+%
+%Seja $s_{ir} = \widehat{\Pr}(y=1 \mid x_i)$ a probabilidade \emph{Out-Of-Fold} (OOF) predita para o participante $i$ na repetição $r \in \{1,\ldots,R\}$ (com $R=10$). Este valor é obtido através da concatenação das partições (\emph{folds}) de teste dos cinco estratos externos disjuntos em cada repetição. Todos os classificadores avaliados produziram probabilidades estritas (\code{predict\_proba}), sendo aplicada a calibração de Platt (\code{probability=True}) aos modelos SVM. 
+%
+%O estimador primário de desempenho do modelo estabelece-se pela média das probabilidades calibradas de cada paciente ao longo das $R$ repetições:
+%\begin{equation}
+%	\bar{s}_i = \frac{1}{R}\sum_{r=1}^{R}s_{ir}.
+%	\label{eq:prob-mean}
+%\end{equation}
+%A métrica primária é a Área Sob a Curva ROC ao nível do paciente ($\mathrm{AUC}_{\mathrm{patient}}$), calculada sobre essas probabilidades agregadas por intermédio da estatística de Mann-Whitney. Definindo $n_+$ e $n_-$ como o número de amostras positivas e negativas, e assumindo o tratamento de empates com peso de $1/2$, o estimador primário consolida-se como:
+%\begin{equation}
+%	\mathrm{AUC}_{\mathrm{patient}}
+%	\equiv
+%	\widehat{\mathrm{AUC}}_{\mathrm{agg}}
+%	= \mathrm{AUC}\!\left(\{(y_i,\bar{s}_i)\}_{i=1}^{n}\right)
+%	= \frac{1}{n_+ n_-}
+%	\sum_{i:\,y_i=1} \sum_{j:\,y_j=0}
+%	\left(
+%	\mathbb{I}(\bar{s}_i > \bar{s}_j)
+%	+ \tfrac{1}{2}\,\mathbb{I}(\bar{s}_i = \bar{s}_j)
+%	\right),
+%	\label{eq:auc-patient}
+%\end{equation}
+%em que $\mathbb{I}(\cdot)$ representa a função indicadora. 
+%
+%Este estimador distingue-se metodologicamente de outros três resumos reportados nas análises: (i) a AUC individual de cada \emph{fold}, cuja média e desvio-padrão (DP) nas 50 avaliações descrevem a variabilidade entre os modelos treinados, e não a incerteza amostral da $\widehat{\mathrm{AUC}}_{\mathrm{agg}}$; (ii) a média das AUCs por repetição ($\overline{\mathrm{AUC}}$); e (iii) a AUC do tipo \emph{pooled}, que atua como resumo de sensibilidade ao concatenar os $R$ registros por participante antes do cálculo da área, sem os mediar. Adicionalmente, os desvios-padrão tabelados para o estimador primário, bem como os intervalos de confiança de 95\% e os testes de hipótese para a variação de desempenho ($\Delta\mathrm{AUC}$), foram obtidos estritamente por \emph{bootstrap} pareado (com $B \in \{2000, 5000\}$ reamostragens) operando sobre os escores agregados $\{\bar{s}_i\}$.
+%
+%Para as métricas dependentes de limiar, o ponto de operação ótimo $\tau^*$ foi determinado maximizando-se o índice de Youden sobre os escores OOF do treinamento externo (gerados pela validação cruzada interna):
+%\begin{equation}
+%	J(\tau) = \mathrm{TPR}(\tau) + \mathrm{TNR}(\tau) - 1,
+%	\qquad
+%	\tau^{*} = \arg\max_{\tau \in [0,1]} J(\tau),
+%	\label{eq:youden}
+%\end{equation}
+%em que $\mathrm{TPR}$ e $\mathrm{TNR}$ representam as taxas de verdadeiros positivos e verdadeiros negativos, respectivamente. A busca por $\tau^*$ restringiu-se ao domínio probabilístico $[0,1]$, descartando-se limiares oriundos de escores brutos de decisão (\code{decision\_function}). Um limiar distinto foi ajustado para cada \emph{fold} externo e aplicado exclusivamente ao seu conjunto de teste correspondente. Desse modo, métricas como acurácia, sensibilidade, especificidade e pontuação F1 (\emph{F1-score}) foram computadas de forma isolada por \emph{fold} e consolidadas como média $\pm$ DP. Em nenhum momento procedeu-se à reestimação de um limiar global sobre predições misturadas de \emph{folds} distintos.
+
+%\textbf{Constantes analíticas e hiperparâmetros.} A fim de garantir a reprodutibilidade, fixou-se a semente aleatória inicial em 42, com derivações determinísticas para repetições e \emph{folds} aninhados. Estabeleceram-se $k_{\mathrm{out}}=k_{\mathrm{in}}=5$ partições. O pré-processamento estático incluiu um filtro de variância para feições constantes (variância $<0{,}01$) e um filtro de colinearidade iterativo de Pearson ($|\rho|>0{,}85$), configurado para não suprimir mutuamente feições temporais (T1, D21, D32) derivadas de uma mesma região anatômica. A seleção de atributos por estabilidade baseou-se em penalização $\ell_1$ ($C=0{,}1$) através de $B=50$ réplicas de \emph{bootstrap}, impondo-se uma frequência mínima de retenção $\pi=70\,\%$ por grupo anatômico e \code{stable-pool-min-timepoints=0}. Por fim, a sintonia de hiperparâmetros foi orquestrada pelo algoritmo estimador de Parzen (Optuna TPE, com \code{optuna-trials=10}), preterindo-se abordagens tradicionais de busca exaustiva em grade.
+
 \subsubsection{Métricas de avaliação}\label{subsubsec:evaluation-metrics}
 
 Seja $s_{ir}=\widehat{\Pr}(y=1\mid x_i)$ a probabilidade predita para o participante $i$ no conjunto de teste externo durante a repetição $r\in\{1,\ldots,R\}$ (com $R=10$). Em cada repetição, a concatenação das partições de teste ($k_{\mathrm{out}}=5$) produz exatamente uma predição \emph{out-of-sample} por sujeito. É imprescindível distinguir estas estimativas finais daquelas geradas no ciclo interno (\emph{out-of-fold}), as quais serviram estritamente para a otimização de hiperparâmetros e para a estimação do limiar de corte. Todos os classificadores avaliados produziram probabilidades calibradas. Especificamente para a Máquina de Vetores de Suporte (SVM), a calibração logística de Platt foi integrada de forma nativa ao ajuste do modelo sobre o treinamento externo (\code{probability=True}).
@@ -513,19 +595,25 @@ Para as métricas dependentes de limiar de decisão binário, o ponto de operaç
 	\label{eq:youden}
 \end{equation}
 em que $\mathrm{TPR}$ e $\mathrm{TNR}$ representam as taxas de verdadeiros positivos e verdadeiros negativos. A busca por $\tau^*$ foi estritamente delimitada ao domínio probabilístico $[0,1]$. Calibrou-se um limiar ótimo de forma independente para cada \emph{fold} externo, o qual foi aplicado sem qualquer reajuste global ao respectivo conjunto de teste. 
+%Consequentemente, as métricas de acurácia, sensibilidade, especificidade e pontuação F1 foram calculadas de forma particionada e reportadas como média $\pm$ DP.
 
 \subsubsection{Classificação e Inferência Estatística}
 
 O estimador primário estabelecido para a totalidade das análises foi a Máquina de Vetores de Suporte (SVM) \cite{cortes-1995}, configurada com núcleo linear ou de base radial (RBF). O escopo deste estudo avalia fundamentalmente a capacidade preditiva da representação temporal de biomarcadores. A fixação estrita da SVM isola os contrastes experimentais de vieses algorítmicos inerentes à variação de capacidade do modelo e aos métodos intrínsecos de regularização, além de figurar como padrão consolidado em estudos de discriminação morfológica na base ADNI sob a condição de alta dimensionalidade de atributos em amostras restritas ($p \approx n$) \cite{cuingnet-2011}. Métodos adicionais, como Florestas Aleatórias (\emph{Random Forest}) \cite{breiman-2001} e regressão logística com regularização \emph{Elastic-Net} \cite{zou-2005}, foram definidos para realizar as análises de sensibilidade secundárias. 
 
+%\textbf{Calibração e Sintonia.} A otimização hiperparamétrica da SVM foi conduzida exclusivamente sobre a validação cruzada interna, maximizando a AUC média local através da árvore de estimadores de Parzen (algoritmo Optuna TPE, orquestrado para 10 iterações de busca), em detrimento da tradicional e exaustiva busca em grade (\emph{grid search}). O domínio de busca englobou a escolha do núcleo (Linear vs. RBF), o parâmetro de penalização $C \in [10^{-2}, 10]$ (em escala logarítmica), e os pesos de classe (\code{class\_weight} $\in \{\mathrm{None}, \mathrm{balanced}\}$), com limite de iterações do \emph{solver} fixado em 2000. Para obtenção de métricas probabilísticas contínuas, ajustou-se a SVM com o parâmetro \code{probability=True}, convertendo os valores nominais de decisão em probabilidades limpas (\code{predict\_proba}) mediante escalonamento logístico de Platt interno ao estimador. Esta calibração probabilística reajustou-se a cada iteração do treinamento, blindada contra qualquer contaminação proveniente dos subconjuntos de teste externo.
+
+%\textbf{Desenho dos Contrastes Analíticos.} O delineamento experimental pautou-se em dois eixos contrastantes principais. No nível unimodal, avaliou-se de forma pareada o desempenho isolado de cinco famílias de atributos (volume, forma, textura GLCM, estatísticas de primeira ordem, e tensores de deslocamento normativo), confrontando a representação estritamente transversal (baseline) contra o protocolo temporal longitudinal (longitudinal), caracterizado pela concatenação vetorial dos momentos isolados transversais sem formulação inter-visita explícita. No nível multimodal, adotou-se o paradigma da união tardia (\emph{late fusion}), agregando-se pela média escalar os escores probabilísticos finais de cinco SVMs unimodais previamente treinadas. A união precoce (\emph{early fusion}) de todas as famílias preditivas foi removida do manuscrito principal a fim de evitar a amplificação dimensional incontrolada $p \gg n$. 
+
 Todos os testes estatísticos reportados fundamentaram-se nas probabilidades \emph{Out-Of-Fold} agregadas ao nível do paciente ($\{\bar{s}_i\}$). 
 A significância contra o acaso computou-se via permutações nulas empíricas dos rótulos de classe, sob congelamento fixo dos escores originais ($B_{\mathrm{perm}}=5000$), com correção probabilística exata $p=(r+1)/(B_{\mathrm{perm}}+1)$. 
 A diferenciação de desempenho intra-sujeito nos contrastes pareados baseou-se em reamostragem \emph{bootstrap} estrita de pacientes ($B_{\mathrm{boot}}=5000$ amostras com reposição) inferindo-se intervalos percentílicos de confiança a 95\% sobre as variações da métrica ($\Delta\mathrm{AUC}$).
-Dado que o \emph{cross-validation} compartilhou determinística semente randômica nos protocolos comparados, garantiu-se o alinhamento emparelhado estrito dos pacientes ao longo das \emph{folds}. Nos contrastes relativos à vantagem temporal, assumiu-se previamente a superioridade do modelo longitudinal perante o corte seccional, orientando-se pelo cômputo empírico do $p$-valor \textbf{unilateral} associado à hipótese alternativa ($H_1\!: \mathrm{AUC}(\mathrm{longitudinal}) > \mathrm{AUC}(\code{baseline})$), seguido da estrita correção de Benjamini-Hochberg (Taxa de Falsas Descobertas - FDR) balizada nas cinco famílias matemáticas ativas na respectiva coorte analítica. O teste bilateral não-direcional ($p$ bilateral) reservou-se exclusivamente para análises comparativas alheias a hipóteses temporais restritas, tal como a equivalência discriminativa entre biomarcadores neuroestruturais versus ferramentas de triagem clínica exclusivas.
+Dado que o \emph{cross-validation} compartilhou determinística semente randômica nos protocolos comparados, garantiu-se o alinhamento emparelhado estrito dos pacientes ao longo das \emph{folds}. Nos contrastes relativos à vantagem temporal, assumiu-se previamente a superioridade do modelo longitudinal perante o corte seccional, orientando-se pelo cômputo empírico do $p$-valor \textbf{unilateral} associado à hipótese alternativa ($H_1\!: \mathrm{AUC}(\mathrm{Q4}) > \mathrm{AUC}(\code{t1\_only})$), seguido da estrita correção de Benjamini-Hochberg (Taxa de Falsas Descobertas - FDR) balizada nas cinco famílias matemáticas ativas na respectiva coorte analítica. O teste bilateral não-direcional ($p$ bilateral) reservou-se exclusivamente para análises comparativas alheias a hipóteses temporais restritas, tal como a equivalência discriminativa entre biomarcadores neuroestruturais versus ferramentas de triagem clínica exclusivas.
 
-\subsection{Normalização e seleção de atributos}\label{sec:feature-selection}
+\subsection{Normalização e seleção de atributos}
+\label{sec:feature-selection}
 
-Todos os atributos preditivos restringiram-se ao hipocampo bilateral. Na classe volumétrica, retiveram-se apenas as frações teciduais (WM, GM e CSF) e o volume da malha geométrica (\code{original\_shape\_MeshVolume}) extraído via PyRadiomics, sendo todos normalizados pelo Volume Intracraniano (ICV). De modo análogo, os descritores da família de forma (\emph{shape}) dependentes da escala espacial, tais como área de superfície, eixos morfológicos e diâmetros máximos, também foram divididos pelo ICV. Em contrapartida, as métricas de textura (GLCM), as estatísticas de primeira ordem (com exceção de \code{Energy} e \code{TotalEnergy}) e os momentos do campo de deslocamento normativo permaneceram em suas unidades originais.
+Todos os atributos preditivos restringiram-se ao hipocampo bilateral. Na classe volumétrica, retiveram-se apenas as frações teciduais intrarregionais (WM, GM e CSF) e o volume da malha geométrica (\code{original\_shape\_MeshVolume}) extraído via PyRadiomics, sendo todos normalizados pelo Volume Intracraniano (ICV). De modo análogo, os descritores da família de forma (\emph{shape}) dependentes da escala espacial, tais como área de superfície, eixos morfológicos e diâmetros máximos, também foram divididos pelo ICV. Em contrapartida, as métricas de textura (GLCM), as estatísticas de primeira ordem (com exceção de \code{Energy} e \code{TotalEnergy}) e os momentos do campo de deslocamento normativo permaneceram em suas unidades originais.
 
 A etapa de seleção de atributos fundamentou-se na frequência empírica de retenção sob penalização $\ell_1$ acoplada a reamostragem \emph{bootstrap} \citep{bach-2008,meinshausen-2010}. Em cada partição (\emph{fold}) externa da validação cruzada, o algoritmo de seleção foi executado uma única vez e restrito exclusivamente ao conjunto de treinamento. Este processo gerou um subespaço reduzido de características (\emph{pool}), garantindo que a Máquina de Vetores de Suporte (SVM) subsequente operasse sem acesso ou vazamento de informações do espaço dimensional original completo.
 
@@ -550,111 +638,231 @@ A frequência de seleção foi contabilizada em nível do grupo anatômico tempo
 	\pi_g = \frac{1}{B_{\mathrm{eff}}}\sum_{b=1}^{B_{\mathrm{eff}}} \mathbb{I}\!\left(g\cap\mathcal{M}^{(b)}\ne\emptyset\right).
 	\label{eq:stability-freq}
 \end{equation}
-%O protocolo definiu como estáveis os atributos que atingiram uma frequência de seleção igual ou superior ao limiar de corte $\tau=0{,}70$, exigindo-se, adicionalmente, a ativação do atributo em pelo menos dois dos três instantes temporais avaliados. Consequentemente, sempre que um grupo alcançava essa métrica de estabilidade ($\pi_g \ge \tau$), o \emph{pool} de seleção final incorporava \textbf{todas} as variáveis cronológicas pertencentes àquele agrupamento ($T_1$, $\Delta_{21}$ e $\Delta_{32}$).
-Antes da regularização \(\ell_1\), o treino da partição foi podado por correlação (\(|\rho|>0{,}85\)) e variância (\(<0{,}01\)). A frequência \(\pi_g\) (Equação~\ref{eq:stability-freq}) conta, para \textbf{essa} partição, em quantas das \(B_{\mathrm{eff}}\) réplicas \emph{bootstrap} o grupo anatômico \(g\) foi ativado. Grupos com \(\pi_g \ge \tau=0{,}70\) formam o \emph{pool} da SVM da mesma partição. O limiar \textbf{não} se aplica às 50 avaliações externas (\(5\times 10\)): cada treino tem o seu \emph{pool}. Quando \(g\) passa o corte, entram todas as colunas temporais desse grupo (\(T_1\), \(\Delta_{21}\) e \(\Delta_{32}\) no encoding longitudinal um único instante em baseline). .
+O protocolo definiu como estáveis os atributos que atingiram uma frequência de seleção igual ou superior ao limiar de corte $\tau=0{,}70$, exigindo-se, adicionalmente, a ativação do atributo em pelo menos dois dos três instantes temporais avaliados. Consequentemente, sempre que um grupo alcançava essa métrica de estabilidade ($\pi_g \ge \tau$), o \emph{pool} de seleção final incorporava \textbf{todas} as variáveis cronológicas pertencentes àquele agrupamento ($T_1$, $\Delta_{21}$ e $\Delta_{32}$).
+
+\sugestao{}{CONTINUAR DAQUI}
 
 \subsection{Fusão multimodal e preditores clínicos}
 \label{sec:fusao}
 
-Na representação longitudinal, optou-se por evitar a concatenação direta de todos os atributos por meio de \textit{early fusion} — estratégia que geraria centenas de colunas frente a um número reduzido de amostras, além de misturar escalas heterogêneas (frações volumétricas, matrizes GLCM, momentos do campo de deslocamento) em um único processo de seleção $\ell_1$ \cite{kittler-1998,kuncheva-2004}.
+\textbf{Fusão tardia (\emph{late fusion}).} A estratégia multimodal adotada não realizou a concatenação de atributos de famílias distintas para alimentar um único classificador (\emph{early fusion}). Na representação longitudinal (Q4), essa abordagem de concatenação precoce produziria centenas de colunas frente a um número reduzido de amostras (agravando o problema de alta dimensionalidade, $p \gg n$), além de misturar escalas heterogêneas (frações volumétricas, matrizes GLCM, momentos do campo de deslocamento) em um único processo de seleção $\ell_1$ \cite{kittler-1998,kuncheva-2004}. 
 
-Em vez disso, implementou-se a \textit{late fusion} baseada na média de escores. Cada classe (volume, forma, textura GLCM, primeira ordem e deslocamento) treinou a sua própria Máquina de Vetores de Suporte (SVM) isoladamente sob o protocolo unimodal estabelecido. Posteriormente, as probabilidades geradas fora da partição de treino (\emph{out-of-fold} -- OOF) de cada paciente foram combinadas \emph{a posteriori} \cite{kittler-1998,dietterich-2000}. Dessa forma, a dimensionalidade efetiva cresce em função do número de modelos, e não pela união do espaço de atributos, garantindo que as predições morfológicas não sofram interferências espúrias de componentes de alta dimensão, como os de textura.
+Em vez disso, implementou-se a fusão tardia (\emph{late fusion}) baseada na média de escores. Cada família (volume, forma, textura GLCM, primeira ordem e deslocamento) treinou a sua própria Máquina de Vetores de Suporte (SVM) isoladamente sob o protocolo unimodal estabelecido. Posteriormente, as probabilidades geradas fora da partição de treino (\emph{out-of-fold} -- OOF) de cada paciente foram combinadas \emph{a posteriori} \cite{kittler-1998,dietterich-2000}. Dessa forma, a dimensionalidade efetiva cresce em função do número de modelos, e não pela união do espaço de atributos, garantindo que as predições morfológicas não sofram interferências espúrias de componentes de alta dimensão, como os de textura.
 
-A \textit{late fusion} não empregou o treinamento de um metaclassificador (\emph{stacking}) \cite{wolpert-1992}. Em vez disso, reutilizou as probabilidades OOF das cinco SVMs unimodais, já ajustadas sob o mesmo esquema de validação cruzada aninhada (assegurando o pareamento exato das sementes e divisões dos dados). Para um dado paciente $i$, em uma repetição $r$ e partição (\emph{fold}) $f$, os registros foram alinhados pelo identificador e calculou-se a média aritmética simples das predições:
+\textbf{Mecanismo de agregação e métricas.} A fusão tardia \textbf{não} empregou o treinamento de um metaclassificador (\emph{stacking}) \cite{wolpert-1992}. Em vez disso, reutilizou as probabilidades OOF das cinco SVMs unimodais, já ajustadas sob o mesmo esquema de validação cruzada aninhada (assegurando o pareamento exato das sementes e divisões dos dados). Para um dado paciente $i$, em uma repetição $r$ e partição (\emph{fold}) $f$, os registros foram alinhados pelo identificador e calculou-se a média aritmética simples das predições:
 \begin{equation}
 	s_{i,r,f}^{\mathrm{late}} = \frac{1}{5}\sum_{k=1}^{5} s_{i,r,f}^{(k)},
 	\label{eq:late-mean}
 \end{equation}
 onde $k$ indexa cada modelo familiar. Foram adotados pesos estritamente uniformes para todas as modalidades. A AUC consolidada ao nível do paciente foi computada sobre esse conjunto final de probabilidades médias $\{s_{i,r,f}^{\mathrm{late}}\}$. Para as métricas dependentes de um ponto de operação, o limiar de decisão binário ($\tau^{*}$) foi herdado do primeiro ramo do conjunto, não havendo reestimação do Índice de Youden sobre o escore médio.
 
+\textbf{Especificações arquiteturais.} Três composições multimodais foram pré-especificadas para o contraste:
+\begin{itemize}
+	\item \textbf{Baseline puro (\code{t1\_only}):} As cinco famílias avaliadas utilizando exclusivamente os dados da visita inicial ($t_0$).
+	\item \textbf{Longitudinal puro (Q4):} As cinco famílias avaliadas sob a representação longitudinal completa (\code{t1\_d21\_d32}).
+	\item \textbf{Âncora mista:} A família de forma geométrica restrita à representação de \textit{baseline} (\code{t1\_only}), combinada às demais quatro famílias (volume, textura, deslocamento e primeira ordem) na representação longitudinal Q4.
+\end{itemize}
+Todas as especificações foram processadas sistematicamente nas quatro coortes do estudo.
+
+\textbf{Preditores clínicos e análises adicionais.} Preditores clínicos coletados no momento basal ($t_0$) --- restritos a sexo, idade, MMSE, ADAS e FAQ --- foram analisados como controle suplementar. Para avaliar a integração clínico-radiológica, adotou-se a fusão precoce entre estes cinco escores padronizados (escore Z) e a família de forma no \textit{baseline} (\code{t1\_only}), submetendo o vetor resultante a uma única SVM. Adicionalmente, para fins de estudo de sensibilidade, um protocolo de modelagem contendo vazamento de informação (\emph{leaky}), onde a padronização e o \emph{pool} de seleção \code{l1\_stable} foram derivados do conjunto de dados completo antes da validação cruzada, é reportado em apêndice.
+
+%\subsection{Métrica primária e papéis do bootstrap}
+%\label{sec:stats}
+%
+%A métrica oficial é a AUC no paciente $\widehat{\mathrm{AUC}}_{\mathrm{agg}}$
+%(Eqs.~\ref{eq:auc-agg}--\ref{eq:auc-pooled}),
+%não a média das 50 AUCs de fold nem a AUC \emph{pooled}.
+%CV aninhada $5\times 10$ no identificador do paciente:
+%em cada repetição $r$ o sujeito $i$ cai uma vez no teste e recebe a
+%probabilidade OOF $s_{ir}$ (\code{predict\_proba}; SVM com Platt).
+%Primeiro tira-se a média,
+%\[
+%\bar{s}_i = \frac{1}{10}\sum_{r=1}^{10} s_{ir},
+%\]
+%e calcula-se uma única vez a AUC de Mann--Whitney nos $n$ pares
+%$(y_i,\bar{s}_i)$.
+%A AUC primária não usa limiar de Youden.
+%
+%Coorte pré-especificada (claim): \code{48m\_12m} ($n=120$).
+%Encoding longitudinal oficial: $\mathrm{Q4}=\code{t1\_d21\_d32}$;
+%baseline: \code{t1\_only}.
+%O fatorial nas restantes células
+%(\code{36m\_6m}, \code{36m\_12m}, \code{48m\_6m}) é sensibilidade,
+%não réplica independente.
+%
+%Há \textbf{três} bootstraps, com papéis separados.
+%Nenhum reexecuta a pipeline nested.
+%A permutação de rótulos \textbf{não} é bootstrap.
+%
+%\paragraph{A.~\code{l1\_stable} (dentro da CV).}
+%Modo \code{l1\_stable}, uma vez por treino externo:
+%$z$-score $\to$ corr~$0.85$ $\to$ var~$0.01$ $\to$ $B=50$ L1
+%com $C=0.1$ (Eqs.~\ref{eq:l1-logistic}--\ref{eq:stability-freq}).
+%Frequência $\pi_g$ por \code{anatomical\_key};
+%entra o grupo com $\pi_g\ge 70\%$
+%(\code{min\_timepoints}=0: basta cobertura no grupo;
+%entram \textbf{todos} os seus instantes T1/D21/D32 quando o encoding é Q4).
+%Pool vazio $\to$ \code{corr\_fallback}, nunca a classe inteira.
+%Esse bootstrap \textbf{não} estima AUC: só escolhe colunas.
+%Não é o stability selection clássico e não herda
+%PFER~\cite{bach-2008,meinshausen-2010}.
+%Detalhe: Sec.~\ref{sec:feature-selection}.
+%
+%\paragraph{B.~Desvio nas tabelas e barras de erro (depois da CV).}
+%Scores congelados $\{\bar{s}_i\}$.
+%$B_{\mathrm{sd}}=2000$ reamostragens de pacientes com reposição;
+%em cada uma recalcula-se $\widehat{\mathrm{AUC}}_{\mathrm{agg}}$.
+%O $\pm$ reportado (Tabelas~\ref{tab:uni_4}--\ref{tab:late_4},
+%coorte claim) é o desvio-padrão dessas $2000$ AUCs,
+%\[
+%\widehat{\sigma}_{\mathrm{boot}}
+%= \mathrm{sd}\bigl\{\widehat{\mathrm{AUC}}_{\mathrm{agg}}^{(b)}\bigr\}_{b=1}^{B_{\mathrm{sd}}},
+%\]
+%\textbf{não} o DP das 50 folds e \textbf{não} um intervalo de confiança a 95\%.
+%
+%\paragraph{C.~Inferência do $\Delta$AUC (depois da CV).}
+%Contrastes pareados no mesmo sujeito
+%(principal: Q4 vs \code{t1\_only} em \code{48m\_12m}):
+%$B_{\mathrm{boot}}=5000$ reamostragens,
+%\[
+%\Delta^{(b)}
+%= \widehat{\mathrm{AUC}}_{\mathrm{agg}}(A^{(b)})
+%- \widehat{\mathrm{AUC}}_{\mathrm{agg}}(B^{(b)}).
+%\]
+%IC95\% percentílico $[2{,}5,\,97{,}5]$ da distribuição empírica de $\Delta^{(b)}$.
+%\[
+%p_{\mathrm{unilateral}}
+%= \frac{\#\{\Delta^{(b)}\le 0\}+1}{B_{\mathrm{eff}}+1}
+%\qquad
+%(\mathrm{H}_1{:}\ \mathrm{AUC}_A>\mathrm{AUC}_B).
+%\]
+%$p$ bilateral $=2\min(p_{\mathrm{uni}},1-p_{\mathrm{uni}})$,
+%reservado a contrastes sem direcção pré-especificada
+%(p.ex.\ imagem vs clínico).
+%No contraste temporal unimodal do claim, o $q$ é FDR de Benjamini--Hochberg
+%nos cinco $p$ unilaterais das famílias
+%\{vol, shape, texture, disp, firstorder\}.
+%O mesmo esquema aplica-se, exploratoriamente, ao gradiente de quatro coortes
+%(FDR \textbf{dentro} de cada célula) e aos contrastes late vs shape-$i_0$
+%e clínico/fusão no claim.
+%
+%\paragraph{Permutação contra o acaso.}
+%Embaralha-se $y$ com $\{\bar{s}_i\}$ fixos, $B_{\mathrm{perm}}=5000$;
+%$p=(r+1)/(B_{\mathrm{perm}}+1)$, em que $r$ é o número de permutações
+%com AUC $\ge$ à observada.
+%
+%$\alpha=0.05$.
+%Pontos das tabelas de resultados são $\widehat{\mathrm{AUC}}_{\mathrm{agg}}$;
+%$p$/$q$ reportados vêm do contraste \code{t1\_d21\_d32} vs \code{t1\_only}
+%(\code{7\_stats.ipynb}), não de \code{t1\_deltas}/\code{wide}/\code{abs}.
+
 \subsection{Testes estatísticos}
 \label{sec:testes}
 
-Todos os contrastes de desempenho foram conduzidos utilizando os escores de probabilidade agregados por paciente (média fora da partição de treino, OOF), e não as AUCs calculadas por dobra individual. As análises centrais foram realizadas na coorte principal considerando a janela de observação de 48 meses e o intervalo entre imagens de 12 meses. O framework estatístico compreende:
+Todos os contrastes de AUC usam os scores agregados por paciente,
+não as AUCs de dobra.
 \begin{itemize}
-	\item \textbf{Teste de permutação de rótulos.} Avalia o desempenho de cada modelo contra a hipótese nula de independência entre escore e rótulo ($H_0{:}\ \mathrm{score}\perp\mathrm{label}$), com escores congelados ($B_{\mathrm{perm}}=5000$). O valor de $p$ segue $p=(r+1)/(B+1)$. O pipeline de validação cruzada aninhada da imagem \textbf{não} é reexecutado \cite{good-2005}.
-	
-	\item \textbf{Bootstrap pareado.} Contraste da diferença de desempenho ($\Delta\mathrm{AUC}$) por reamostragem pareada por paciente ($B_{\mathrm{boot}}=5000$): intervalo de confiança percentílico a 95\% e valores de $p$ unilaterais ($H_1{:}\ \mathrm{AUC}_{\mathrm{long}}>\mathrm{AUC}_{\mathrm{base}}$) e bilaterais. O mesmo procedimento aplica-se aos contrastes auxiliares (morfologia de referência $i_0$ versus demografia; fusão tardia e clínica, quando reportados) \cite{efron-1994}.
-	
-	\item \textbf{Correção da taxa de falsas descobertas (FDR).} Procedimento de Benjamini--Hochberg sobre os cinco valores de $p$ unilaterais (um por família de atributos), \emph{dentro} de cada coorte. O cenário principal é \code{48m\_12m}; o gradiente temporal é exploratório, reconhecida a sobreposição de sujeitos entre janelas. Critério de evidência: $q<0.05$ \textbf{e} limite inferior do IC estritamente maior que zero \cite{benjamini-1995}.
-	
-	\item \textbf{Análise demográfica}. Mann--Whitney bilateral para a idade e teste qui-quadrado ($\chi^2$) para o sexo. Classificadores univariados (idade; sexo) ajustados por validação cruzada estratificada de 5 dobras, sem estrutura aninhada, e avaliados por permutação nos escores congelados. O $\Delta\mathrm{AUC}$ entre a morfologia de referência ($i_0$, shape em $T_1$) e cada variável demográfica foi obtido por bootstrap pareado (IC 95\%; sem $p$ bootstrap nesse bloco).
+	\item Permutação de rótulos com scores congelados ($B_{\mathrm{perm}}=5000$):
+	$p=(r+1)/(B+1)$; o pipeline nested \textbf{não} se reexecuta.
+	\item Bootstrap pareado do $\Delta$AUC ($B_{\mathrm{boot}}=5000$),
+	IC percentílico a 95\%, $p$ unilateral
+	(H$_1$: AUC$_A>$AUC$_B$) e bilateral quando aplicável.
+	\item FDR de Benjamini--Hochberg sobre os $p$ unilaterais das cinco famílias,
+	no claim \code{48m\_12m} (e, exploratoriamente, dentro de cada coorte do gradiente).
+	\item Demografia em \code{48m\_12m}: Mann--Whitney na idade, $\chi^2$ no sexo;
+	classificadores univariados de idade e de sexo com permutação;
+	$\Delta$AUC shape-$i_0$ vs demografia por bootstrap pareado.
 \end{itemize}
-O nível de significância nominal foi fixado em $\alpha=0.05$. O contraste temporal principal avaliou o ganho preditivo dos modelos longitudinais frente ao \emph{baseline} unimodal nas cinco classes de atributos.
+$\alpha=0.05$.
+Contraste temporal principal: Q4 versus \code{t1\_only} nas cinco famílias
+em \code{48m\_12m}.
 
 % =============================================================================
 \section{Resultados}\label{sec:Results}
 
-% Harmonização transversal \citep{fortin-2018}
-% Harmonização longitudinal \citep{beer-2020}
-
-Os experimentos avaliaram a classificação binária sMCI \emph{versus} pMCI sob um protocolo de validação fixo: classificador SVM, seleção de atributos $\ell$1 com bootstrap. A métrica primária definida foi a Área Sob a Curva ROC de Mann-Whitney ($\widehat{\mathrm{AUC}}_{\mathrm{agg}}$), computada sobre a agregação das probabilidades \emph{out-of-sample} de cada paciente. Nas tabelas de resultados, o símbolo $\pm$ denota a incerteza do treinamento expressa pelo desvio-padrão \emph{bootstrap} dessa AUC ($B=2000$), salvo indicação em contrário. Para os contrastes inferenciais pareados, empregaram-se $B=5000$ reamostragens (\S\ref{sec:testes}). O ganho temporal absoluto foi formalizado pelo contraste direcional $\Delta = \widehat{\mathrm{AUC}}_{\mathrm{agg}}(\mathrm{Longitudinal}) - \widehat{\mathrm{AUC}}_{\mathrm{agg}}(Baseline)$.
-
-A orquestração analítica operou em duas camadas metodológicas. Na camada \textbf{uniclasse}, cada uma das cinco famílias de atributos (volume, forma, textura GLCM, estatísticas de primeira ordem e deslocamento normativo) foi avaliada isoladamente, confrontando-se os desempenhos das formulações estática e longitudinal. Na camada \textbf{multiclasse}, o pipeline foi implementado empregando a fusão tardia (\emph{late fusion}) por meio da média aritmética das probabilidades preditas. Para encontrar quais atributos formavam as uniões de maior impacto explorou-se o espaço combinatório unindo as diferentes classes dos atributos para realizar essa identificação.
-
-As quatro coortes delineadas pelo estudo não formam narrativas isoladas paralelas, mas sim uma análise de sensibilidade estendida. O objetivo central deste desenho estrutural foi verificar se a magnitude do contraste $\Delta$ e a robustez do teto unimodal (shape estática) preservavam-se sob flutuações de amostragem temporal e sobreposição de sujeitos. Por fim, análises englobando as assinaturas anatômicas dos atributos, mapas de calor, curvas ROC, o limite discriminativo extremo (CN \emph{versus} AD) e a analise de diferentes modelos foram centralizadas unicamente na coorte principal ($n=120$; $72$~sMCI / $48$~pMCI).
+Apresentação: \textbf{uma matriz para as quatro células}, não quatro relatos paralelos.
+Protocolo fixo SVM $+$ \code{l1\_stable}, sem ComBat.
+Métrica: AUC paciente $\widehat{\mathrm{AUC}}_{\mathrm{agg}}$; $\pm$ é SD bootstrap ($B=2000$) salvo indicação.
+$\Delta=\mathrm{AUC}(\mathrm{Q4})-\mathrm{AUC}(\code{t1\_only})$, com $\mathrm{Q4}=\code{t1\_d21\_d32}$.
+Claim e nomes de atributos: \code{48m\_12m} ($n=120$; 72~sMCI / 48~pMCI); o fatorial testa se o padrão se replica nas células sobrepostas.
+Figuras de heatmap/ROC do claim e CN$\times$AD referem-se a esta coorte.
 
 \subsection{Demografia}
 \label{subsec:demo}
 
-Na coorte principal, não foram observadas diferenças estatisticamente significativas entre as classes sMCI e pMCI quanto à idade (teste de Mann-Whitney, $p=0{,}520$) e à distribuição por sexo (teste $\chi^2$, $p=0{,}371$). Consequentemente, classificadores univariados submetidos rigorosamente ao mesmo protocolo preditivo principal (SVM, validação cruzada aninhada $5\times 10$ e otimização via Optuna, omitindo-se apenas o seletor $\ell_1$) não superaram o acaso: o preditor baseado unicamente na idade obteve $\mathrm{AUC}=0{,}464$ ($p_{\mathrm{perm}}=0{,}740$), enquanto o modelo embasado no sexo registrou $\mathrm{AUC}=0{,}385$ ($p_{\mathrm{perm}}=0{,}982$). Valores inferiores a $0{,}5$ refletem a instabilidade e a inversão dos escores de decisão na ausência de sinal preditivo real, e não uma discriminação útil.
+Em \code{48m\_12m}, idade e sexo não diferem entre sMCI e pMCI
+(Mann--Whitney $p=0.520$; $\chi^2$ $p=0.371$).
+Classificador só com idade: AUC $0.518$ ($p_{\mathrm{perm}}=0.376$);
+só com sexo: $0.512$ ($p_{\mathrm{perm}}=0.407$).
+Shape em \code{t1\_only} atinge $0.759$ e supera demografia
+($\Delta$ vs idade $+0.241$ [0.124, 0.357]; vs sexo $+0.247$ [0.114, 0.377]).
 
-Em contrapartida, a representação estática da morfologia geométrica no momento inicial (\emph{shape} em $T_1$) alcançou $\mathrm{AUC}=0{,}759$ ($p_{\mathrm{perm}}=0{,}0002$), superando as variáveis demográficas isoladas de maneira expressiva ($\Delta = +0{,}295$, IC 95\%: $[0{,}145;\,0{,}440]$ \emph{versus} idade; $\Delta = +0{,}374$, IC 95\%: $[0{,}233;\,0{,}514]$ \emph{versus} sexo).
+\subsection{Uniclasse no claim: paisagem e teto shape}
+\label{subsec:unimodal-claim}
 
-\subsection{Ablação uniclasse}\label{subsec:unimodal-claim}
+A Figura~\ref{fig:heatmap_smci} resume AUC paciente por família e classificador
+em \code{t1\_only} e em Q4.
+Em ambos os encodings, \textbf{shape} domina; volume sobe com Q4;
+texture/disp permanecem fracos.
+A Figura~\ref{fig:roc_shape} mostra as curvas ROC do teto unimodal (shape)
+em $i_0$ e em Q4 --- curvas quase sobrepostas ($0.759$ vs $0.761$).
+A Figura~\ref{fig:unimodal_claim} isola o contraste SVM T1 vs Q4 nas cinco famílias
+no claim: o $\Delta$ material está em volume ($+0.089$), não em shape.
 
-As Figuras~\ref{fig:heatmap_smci_t1} e \ref{fig:heatmap_smci_q4} resumem a capacidade preditiva (AUC ao nível do paciente) para cada família de atributos e classificador nas representações estática e longitudinal, respectivamente. Em ambas as abordagens, a classe shape do hipocampo atua como o atributo dominante. A classe volumétrica apresenta incremento preditivo evidente com a adoção da modelagem longitudinal, ao passo que as métricas de textura e deslocamento normativo mantêm desempenho discriminativo reduzido.
-
-As Figuras~\ref{fig:roc_shape_t1} e \ref{fig:roc_shape_q4} detalham as curvas ROC para o teto uniclasse (shape) na coorte principal (\code{48m\_12m}). Observa-se que as trajetórias de baseline e longitudinal são aproximadas (AUC de $0{,}759$ \emph{versus} $0{,}761$). Em contrapartida, a Figura~\ref{fig:unimodal_claim} isola o contraste pareado (SVM estático \emph{versus} longitudinal) para as cinco famílias. Fica demonstrado que o ganho temporal absoluto ($\Delta$) provocado pela representação longitudinal materializa-se fundamentalmente na volumetria ($+0{,}089$), e não na estrutura morfológica.
-
-\begin{figure}[H]
+\begin{figure}[htbp]
 	\centering
-	\includegraphics[width=0.8\textwidth]{figures/heatmap_smci_pmci_t1.pdf} % Substitua pelo nome do seu arquivo
+	\includegraphics[width=1.0\textwidth]{figures/heatmap_smci_pmci_t1.pdf} % Substitua pelo nome do seu arquivo
 	\caption{Baseline}
 	\label{fig:heatmap_smci_t1}
 \end{figure}
 
-\begin{figure}[H]
+\begin{figure}[htbp]
 	\centering
-	\includegraphics[width=0.8\textwidth]{figures/heatmap_smci_pmci_q4.pdf} % Substitua pelo nome do seu arquivo
+	\includegraphics[width=1.0\textwidth]{figures/heatmap_smci_pmci_q4.pdf} % Substitua pelo nome do seu arquivo
 	\caption{Longitudinal}
 	\label{fig:heatmap_smci_q4}
 \end{figure}
 
-\begin{figure}[H]
+\begin{figure}[htbp]
 	\centering
-	\includegraphics[width=0.8\textwidth]{figures/roc_smci_pmci_t1_shape.pdf} % Substitua pelo nome do seu arquivo
+	\includegraphics[width=1.0\textwidth]{figures/roc_smci_pmci_t1_shape.pdf} % Substitua pelo nome do seu arquivo
 	\caption{Shape, baseline 48m 12m}
 	\label{fig:roc_shape_t1}
 \end{figure}
 
-\begin{figure}[H]
+\begin{figure}[htbp]
 	\centering
-	\includegraphics[width=0.8\textwidth]{figures/roc_smci_pmci_q4_shape.pdf} % Substitua pelo nome do seu arquivo
+	\includegraphics[width=1.0\textwidth]{figures/roc_smci_pmci_q4_shape.pdf} % Substitua pelo nome do seu arquivo
 	\caption{Shape, longitudinal 48m 12m}
 	\label{fig:roc_shape_q4}
 \end{figure}
 
-\begin{figure}[H]
+\begin{figure}[htbp]
 	\centering
-	\includegraphics[width=0.8\textwidth]{figures/unimodal_t1_vs_q4_48m12.pdf}
-	\caption{Claim \code{48m\_12m}: AUC paciente SVM, baseline vs longitudinal, cinco famílias
+	\includegraphics[width=1.0\textwidth]{figures/unimodal_t1_vs_q4_48m12.pdf}
+	\caption{Claim \code{48m\_12m}: AUC paciente SVM, T1 vs Q4, cinco famílias
 		(barras de erro: SD bootstrap, $B=2000$).}
 	\label{fig:unimodal_claim}
 \end{figure}
-	
-\subsubsection{Inferência Estatística}
 
-A avaliação inferencial pareada (baseline vs longitudinal) foi conduzida sob $B=5000$ reamostragens \emph{bootstrap}, adotando-se teste unilateral e correção de Benjamini-Hochberg (FDR) para o controle de múltiplas comparações entre as cinco famílias. O incremento observado no volume ($\Delta = +0{,}089$; IC 95\%: [0,008; 0,171]) atingiu significância marginal limítrofe no valor absoluto ($p=0{,}016$), contudo, não sobreviveu ao rigor do ajuste estatístico mútiplo ($q=0{,}082$ para $\alpha=0{,}05$). Para as demais famílias (forma, textura, deslocamento e primeira ordem), não houve evidência estatística de ganho associado à longitudinalidade ($q \ge 0{,}53$). No deslocamento normativo o $\Delta$ pontual foi negativo ($\Delta=-0{,}016$; IC 95\%: $[-0{,}112;\,0{,}080]$; $p=0{,}609$). Consequentemente, no escopo estritamente uniclasse, a superioridade formal da arquitetura longitudinal não se sustenta sob a correção FDR.
-	
-A Tabela~\ref{tab:uni_4} e a Figura~\ref{fig:cohort_encoding} expandem a avaliação de contraste para o delineamento fatorial completo, abarcando as quatro coortes (caracterizadas por sobreposição de sujeitos, não constituindo réplicas independentes). 
-	
-\begin{sidewaystable}
+\paragraph{Inferência no claim (\code{7\_stats}).}
+Contraste pareado Q4 vs $i_0$, bootstrap $B=5000$, H1 one-sided, FDR BH nas cinco famílias.
+Volume: $\Delta=+0.089$ [0.008, 0.171], $p=0.016$, $q=0.082$ (raw+, \textbf{não} FDR a $\alpha=0.05$).
+Shape, texture, disp e first-order: sem evidência formal ($q\ge 0.26$).
+Nenhuma família fecha o claim longitudinal sob FDR.
+
+\subsection{Uniclasse: Q4 versus \texorpdfstring{\code{t1\_only}}{t1\_only} nas quatro coortes}
+\label{subsec:unimodal}
+
+A Tabela~\ref{tab:uni_4} e a Figura~\ref{fig:cohort_encoding} estendem o contraste
+ao fatorial (células sobrepostas; não são réplicas).
+
+\begin{sidewaystable}[htbp]
 	\centering
 	\footnotesize
 	\setlength{\tabcolsep}{3.5pt}
 	\caption{AUC no paciente, SVM.
-		Em cada célula: Baseline / Longitudinal / $\Delta$.
+		Em cada célula: \code{t1\_only} / Q4 / $\Delta$.
 		Negrito: maior das duas representações naquela família$\times$coorte.
 		$n$: 231, 154, 193, 120.}
 	\label{tab:uni_4}
@@ -662,7 +870,7 @@ A Tabela~\ref{tab:uni_4} e a Figura~\ref{fig:cohort_encoding} expandem a avalia�
 		\toprule
 		& \multicolumn{3}{c}{\code{36m\_6m}} & \multicolumn{3}{c}{\code{36m\_12m}} & \multicolumn{3}{c}{\code{48m\_6m}} & \multicolumn{3}{c}{\code{48m\_12m}} \\
 		\cmidrule(lr){2-4}\cmidrule(lr){5-7}\cmidrule(lr){8-10}\cmidrule(lr){11-13}
-		Família & Baseline & Longitudinal  & $\Delta$ & Baseline & Longitudinal  & $\Delta$ & Baseline & Longitudinal  & $\Delta$ & Baseline & Longitudinal  & $\Delta$ \\
+		Família & baseline & Q4 & $\Delta$ & baseline & Q4 & $\Delta$ & baseline & Q4 & $\Delta$ & baseline & Q4 & $\Delta$ \\
 		\midrule
 		vol & 0.766 & \textbf{0.770} & $+0.005$ & \textbf{0.690} & 0.684 & $-0.006$ & 0.756 & \textbf{0.763} & $+0.007$ & 0.641 & \textbf{0.729} & $+0.089$ \\
 		& $\pm$0.031 & $\pm$0.030 & & $\pm$0.053 & $\pm$0.057 & & $\pm$0.037 & $\pm$0.036 & & $\pm$0.051 & $\pm$0.047 & \\
@@ -672,56 +880,41 @@ A Tabela~\ref{tab:uni_4} e a Figura~\ref{fig:cohort_encoding} expandem a avalia�
 		& $\pm$0.038 & $\pm$0.035 & & $\pm$0.067 & $\pm$0.062 & & $\pm$0.042 & $\pm$0.039 & & $\pm$0.056 & $\pm$0.053 & \\
 		firstorder & 0.654 & \textbf{0.670} & $+0.016$ & \textbf{0.598} & 0.573 & $-0.025$ & \textbf{0.687} & 0.686 & $-0.000$ & 0.686 & \textbf{0.703} & $+0.017$ \\
 		& $\pm$0.036 & $\pm$0.035 & & $\pm$0.067 & $\pm$0.063 & & $\pm$0.040 & $\pm$0.040 & & $\pm$0.056 & $\pm$0.054 & \\
-		disp & \textbf{0.603} & 0.574 & $-0.029$ & 0.339 & \textbf{0.517} & $+0.178$ & \textbf{0.595} & 0.577 & $-0.018$ & \textbf{0.616} & 0.600 & $-0.016$ \\
-		& $\pm$0.037 & $\pm$0.038 & & $\pm$0.055 & $\pm$0.051 & & $\pm$0.042 & $\pm$0.043 & & $\pm$0.054 & $\pm$0.053 & \\
+		disp & \textbf{0.504} & 0.453 & $-0.051$ & \textbf{0.479} & 0.449 & $-0.030$ & \textbf{0.592} & 0.575 & $-0.017$ & 0.321 & \textbf{0.404} & $+0.083$ \\
+		& $\pm$0.039 & $\pm$0.039 & & $\pm$0.061 & $\pm$0.061 & & $\pm$0.042 & $\pm$0.042 & & $\pm$0.051 & $\pm$0.053 & \\
 		\bottomrule
 	\end{tabular}
 \end{sidewaystable}
 
-\begin{figure}[H]
+\begin{figure}[htbp]
 	\centering
 	\includegraphics[width=\textwidth]{figures/cohort_encoding_vs_t1_modalities.pdf}
-	\caption{Sensibilidade: Baseline vs longitudinal por classe de atributos nas quatro coortes (SVM).
+	\caption{Sensibilidade: T1 vs Q4 por família nas quatro coortes (SVM).
 		Barras de erro: SD bootstrap do AUC paciente.}
 	\label{fig:cohort_encoding}
 \end{figure}
 
-			
-\paragraph{Análise da Matriz Fatorial.}
-A leitura transversal dos resultados evidencia padrões metodológicos estruturais consistentes no comportamento das diferentes representações da imagem:
-
+\paragraph{Leitura da matriz.}
 \begin{itemize}
-	\item \textbf{Forma Geométrica (\emph{Shape}):} Estabelece-se de maneira universal como o teto preditivo unimodal em todas as células experimentais, apresentando flutuações longitudinais marginais ($|\Delta|\le 0{,}027$). Na coorte principal, a representação de base equivale estatisticamente à temporal ($0{,}759$ \emph{versus} $0{,}761$).
-	
-	\item \textbf{Volume:} Os ganhos derivados da representação longitudinal são pequenos nas coortes amostradas a cada 6 meses, com o incremento expressivo ocorrendo substancialmente na coorte de maior intervalo (\code{48m\_12m}: $0{,}641 \to 0{,}729$, $\Delta=+0{,}089$).
-	
-	\item \textbf{Textura e Primeira Ordem:} Embora ostentem deltas temporais frequentemente positivos (indicando assimilação do sinal evolutivo), as AUCs absolutas destas famílias mantêm-se severamente limitadas e incapazes de desafiar o teto morfológico (e.g., a textura avança de $0{,}53$ para $0{,}58$).
-	
-	\item \textbf{Deslocamento Normativo (\emph{Displacement}):} Permanece aquém do teto morfológico na coorte principal (AUC $0{,}600$--$0{,}616$). O $\Delta$ pontual nesta célula foi negativo ($\Delta=-0{,}016$), pelo que a representação longitudinal não o qualifica, de forma isolada, como biomarcador preditivo viável.
-	
-	\item \textbf{Inversão e Viés de Sobrevivência:} A coorte \code{36m\_12m} ($n=33$ no grupo pMCI) manifesta uma nítida inversão analítica, favorecendo o desempenho estático (\emph{baseline}) em três das cinco famílias avaliadas (volume, forma e primeira ordem). Textura e deslocamento favorecem a representação longitudinal; neste último caso o $\Delta=+0{,}178$ recupera um \emph{baseline} abaixo do acaso ($0{,}339$) até perto do acaso ($0{,}517$), e não constitui evidência de sinal biomarcador. Conforme antecipado, o decréscimo nas famílias geométricas evidencia o viés de seleção temporal provocado pelo delineamento: a imposição do intervalo rigoroso de 12 meses age como filtro exclusório para os conversores rápidos. Com a retenção predominante de conversores lentos, cuja taxa de progressão anatômica é sutil, o algoritmo penaliza o vetor longitudinal ruidoso e ancora-se na robustez das características \emph{baseline}.
+	\item \textbf{Forma:} teto unimodal em todas as células ($|\Delta|\le 0.027$).
+	Em \code{48m\_12m} shape-$i_0$ $\approx$ shape-Q4 ($0.759$ vs $0.761$).
+	\item \textbf{Volume:} $\Delta$ pequeno nas células de 6\,meses; o salto ocorre no claim
+	($0.641\to 0.729$, $\Delta=+0.089$).
+	\item \textbf{Textura / first-order:} $\Delta$ frequentemente positivo, mas AUC absoluta
+	permanece abaixo do teto shape (textura no claim: $0.53\to 0.58$).
+	\item \textbf{Deslocamento:} fraco (no claim AUC $\le 0.40$). $\Delta$ positivo em
+	\code{48m\_12m} \textbf{não} se interpreta como biomarcador competitivo.
+	\item \textbf{Inversão:} \code{36m\_12m} (pMCI $n=33$) favorece $i_0$ em 4/5 famílias.
 \end{itemize}
-
-\subsection{Ablação histogram matching}
-
-Na representação longitudinal, o pareamento de histograma aplicado após a correção N4 dissociou as cinco famílias unimodais na coorte principal (48m\_12m; SVM, AUC ao nível do paciente; Figura~\ref{fig:q4_hm_ablation}). As famílias geométricas permaneceram estáveis: a forma manteve-se em $0{,}755$ sem pareamento versus $0{,}761$ com pareamento, e o volume não se deteriorou ($0{,}662$ versus $0{,}729$). Em contraste, os descritores dependentes de intensidade recuaram: a textura GLCM passou de $0{,}762$ para $0{,}577$, e os atributos de primeira ordem de $0{,}737$ para $0{,}703$. O campo de deslocamento normativo recuou apenas de forma marginal ($0{,}621$ para $0{,}600$); o braço sem pareamento deste descritor ainda refere a extração anterior ao realinhamento do \emph{template} CN, pelo que o $\Delta$ não isola o efeito fotométrico. O resultado indica que o pareamento ao \emph{template} MNI comprime o contraste local do qual GLCM e histogramas regionais dependem, sem benefício mensurável para o teto geométrico que sustenta o \emph{claim}.
-
-\begin{figure}[H]
-	\centering
-	\includegraphics[width=0.8\textwidth]{figures/q4_unimodal_hm_ablation_48m12.pdf}
-	\caption{Coorte \code{48m\_12m}, Longitudinal uniclasse: AUC paciente SVM
-		sem vs.\ com histogram matching (barras de erro: SD).}
-	\label{fig:q4_hm_ablation}
-\end{figure}
 
 \subsection{Multimodal: fusão tardia}
 \label{subsec:multimodal}
 
-Para avaliar o potencial da orquestração multimodal, varreu-se sistematicamente o espaço combinatório das uniões tardias (\emph{late fusion}). Para cada subconjunto possível das cinco famílias de atributos (volume, forma, textura GLCM, primeira ordem e deslocamento), avaliadas sob as representações estática (baseline) e dinâmica (longitudinal), as respectivas probabilidades preditas \emph{out-of-sample} foram agregadas via média aritmética. A partir desta fusão, recomputou-se a $\widehat{\mathrm{AUC}}_{\mathrm{agg}}$ ao nível do paciente.
+Três specs: late $i_0$ (cinco famílias em \code{t1\_only}), late Q4 (cinco em Q4),
+âncora (shape@$i_0$ $\cup$ restante em Q4). Teto unimodal = máximo da Tabela~\ref{tab:uni_4}.
+A Figura~\ref{fig:late_ceilings} situa as três specs face ao teto shape-$i_0$ no claim.
 
-Para cada coorte experimental, a análise reteve três marcos estritos de desempenho: (i)~o teto preditivo unimodal (o valor máximo isolado reportado na Tabela~\ref{tab:uni_4}); (ii)~a melhor combinação multimodal restrita exclusivamente aos componentes de \emph{baseline} (fusão estática); e (iii)~a melhor combinação contendo, no mínimo, uma modalidade longitudinal acoplada (fusão temporal). A Figura~\ref{fig:late_ceilings} ilustra estruturalmente este contraste de limites preditivos na coorte principal.
-
-\begin{figure}[H]
+\begin{figure}[htbp]
 	\centering
 	\includegraphics[width=0.68\textwidth]{figures/fusion_vs_ceilings_48m12.pdf}
 	\caption{Fusão tardia vs teto unimodal (shape T1) e vs união late T1,
@@ -729,37 +922,50 @@ Para cada coorte experimental, a análise reteve três marcos estritos de desemp
 	\label{fig:late_ceilings}
 \end{figure}
 
-\begin{table}[H]
+\begin{table}[htbp]
 	\centering
-	\caption{AUC paciente ($\widehat{\mathrm{AUC}}_{\mathrm{agg}}$) da fusão tardia de união de atributos uniclasse versus união de atributos multiclasse versus teto unimodal.
-		$\pm$ é SD bootstrap ($B=2000$).}
+	\caption{AUC paciente da fusão tardia versus teto unimodal.
+		No claim, $\pm$ é SD bootstrap ($B=2000$); nas restantes células reporta-se só o ponto paciente.}
 	\label{tab:late_4}
-	\begin{tabular}{lccc}
+	\begin{tabular}{lrrrr}
 		\toprule
-		Coorte & Teto uniclasse & Multiclasse baseline & Multiclasse longitudinal \\
+		Coorte & Teto uni. & Late $i_0$ & Late Q4 & Âncora \\
 		\midrule
-		\code{36m\_6m}  & $0.791\pm 0.030$ & $0.795\pm 0.030$ & $0.818\pm 0.028$ \\
-		\code{36m\_12m} & $0.760\pm 0.043$ & $0.716\pm 0.049$ & $0.757\pm 0.045$ \\
-		\code{48m\_6m}  & $0.801\pm 0.035$ & $0.822\pm 0.032$ & $0.828\pm 0.032$ \\
-		\code{48m\_12m} & $0.761\pm 0.043$ & $0.740\pm 0.046$ & $0.778\pm 0.043$ \\
+		\code{36m\_6m} & 0.791 & 0.795 & 0.806 & 0.811 \\
+		\code{36m\_12m} & 0.760 & 0.716 & 0.694 & 0.714 \\
+		\code{48m\_6m} & 0.801 & 0.822 & 0.820 & 0.828 \\
+		\code{48m\_12m} & 0.761 & $0.740\pm 0.046$ & $0.765\pm 0.044$ & $0.767\pm 0.044$ \\
 		\bottomrule
 	\end{tabular}
 \end{table}
 
-Na coorte principal (\code{48m\_12m}), o desempenho máximo alcançado por uma fusão puramente estática situou-se abaixo do teto unimodal isolado imposto pela forma geométrica ($0{,}740$ \emph{versus} $0{,}761$). Em contrapartida, a integração da orquestração longitudinal elevou a AUC absoluta para $0{,}778$. Este arranjo de topo foi consolidado mantendo-se a morfologia ancorada no \emph{baseline} ($T_1$) e unindo-a às famílias de volume, textura e estatísticas de primeira ordem sob a formulação temporal. Apesar deste ganho pontual estrito, a abordagem multimodal não obteve comprovação de superioridade estatística formal frente ao modelo morfológico univariado.
+No claim, late $i_0$ \textbf{fica abaixo} do teto shape; late Q4 / âncora sobem $\sim$0.005--0.008
+em ponto, sem superioridade formal vs shape-$i_0$
+($\Delta$ âncora $+0.008$ [$-0.055$, $0.069$], $p=0.40$, $q=0.67$).
+Nas células de maior $n$ (\code{36m\_6m}, \code{48m\_6m}) a âncora supera o teto unimodal em ponto;
+em \code{36m\_12m} a late dilui.
 
-Ao expandir a avaliação para o delineamento fatorial, notou-se que nas coortes de maior contingente amostral (\code{36m\_6m} e \code{48m\_6m}) a união longitudinal superou consistentemente o teto unimodal em valores absolutos. Todavia, na coorte \code{36m\_12m} --- já penalizada pelo viés de exclusão de conversores rápidos --- a fusão tardia assimilou variáveis ruidosas, diluindo o poder preditivo do sistema global ($0{,}757$ multimodal \emph{versus} $0{,}760$ unimodal).
+Ao contrário do raciocínio biológico intuitivo --- o qual postula que intervalos maiores (12 meses) acumulariam alterações anatômicas mais acentuadas e, consequentemente, aumentariam a capacidade discriminativa do modelo --- as coortes baseadas em intervalos de 6 meses demonstraram superioridade na separação entre as classes sMCI e pMCI. 
 
-É imperativo ressaltar a natureza estritamente exploratória desta etapa da avaliação metodológica. A especificação arquitetural ótima não foi estabelecida \emph{a priori}, mas sim identificada \emph{a posteriori} com base na maximização empírica da AUC agregada ao nível do paciente. Consequentemente, esta varredura combinatória atua primariamente como uma prova de conceito heurística, demonstrando o limite preditivo superior (\emph{upper bound}) acessível ao sistema quando as sinergias multimodais são plenamente exploradas.
+A principal hipótese para justificar esse achado reside na interação entre o rigor do critério de inclusão temporal e a taxa de progressão da doença. Ao exigir um espaçamento de 12 meses entre as três aquisições necessárias, pacientes caracterizados como "conversores rápidos" são sistematicamente excluídos do grupo pMCI, uma vez que suas trajetórias clínicas frequentemente atingem o desfecho de Alzheimer pleno antes da terceira visita (configurando um padrão de exclusão MCI $\to$ AD $\to$ AD). 
 
-\subsection{Análise dos Atributos Selecionados}\label{subsec:atributos-sel}
+Em contrapartida, a adoção de intervalos de 6 meses fornece uma janela de amostragem com granularidade suficiente para capturar as avaliações intermediárias desses pacientes de progressão acelerada (e.g., retendo o padrão MCI $\to$ MCI $\to$ AD). Como consequência, as coortes de 12 meses sofrem um viés de seleção que retém predominantemente conversores lentos (cujas taxas de atrofia são sutis e confundem-se com o envelhecimento natural), enquanto as coortes de 6 meses são enriquecidas com sujeitos que apresentam os deltas morfológicos mais agressivos e discriminativos.
 
-A seleção de atributos baseada em estabilidade ($\ell$1 com bootstrap, com $\tau=0{,}70$) opera de forma independente no conjunto de treinamento de cada partição externa. Consequentemente, o subconjunto de variáveis autorizadas varia dinamicamente conforme os pacientes presentes na amostra, refletindo o comportamento rigoroso esperado de uma validação cruzada aninhada sem vazamento de dados (\emph{data leakage}). Por esta razão, a Tabela~\ref{tab:nfeat} sumariza exclusivamente a cardinalidade média dos subespaços retidos ao longo das 50 avaliações externas. De forma deliberada, omite-se a proposição de uma assinatura radiômica fixa ou a apresentação de taxas de cobertura globais, uma vez que a recorrência inter-partições não constituiu um critério metodológico de seleção na arquitetura do modelo.
+\subsection{Quantos atributos (claim)}
+\label{subsec:atributos-sel}
+
+Médias de colunas após \code{l1\_stable} em \code{48m\_12m} (50 avaliações, SVM).
+Antes da seleção, o encoding longitudinal Q4 tem \textbf{três vezes} o número de atributos do baseline:
+a sequência usa os níveis nas três imagens $i_1,i_2,i_3$ (T1, D21, D32),
+pelo que cada descritor anatómico entra uma vez por instante.
 
 \begin{table}[htbp]
 	\centering
 	\footnotesize
-	\caption{Dimensionalidade do espaço de atributos antes e após a seleção $\ell_1$ com \emph{bootstrap}, coorte \code{48m\_12m} (SVM). Colunas ``Antes da seleção'': dimensão da matriz submetida ao seletor (L$+$R). Colunas ``Média pós-seleção'': número médio de características retidas ao longo das 50 avaliações externas. O deslocamento normativo mantém subespaços largos, enquanto a forma, o volume e a primeira ordem tornam-se altamente compactos.}
+	\caption{Atributos antes e depois de \code{l1\_stable}, \code{48m\_12m} (SVM).
+		Colunas ``antes'': dimensão da matriz à entrada do seletor (L$+$R).
+		Colunas ``média pós'': média nas 50 avaliações externas.
+		Disp mantém pools largos; shape/vol/firstorder ficam curtos.}
 	\label{tab:nfeat}
 	\begin{tabular}{ll rr rr}
 		\toprule
@@ -771,80 +977,50 @@ A seleção de atributos baseada em estabilidade ($\ell$1 com bootstrap, com $\t
 		shape & baseline / longitudinal & 24 & 72 & 1.42 & 4.84 \\
 		texture & baseline / longitudinal & 48 & 144 & 5.62 & 13.88 \\
 		firstorder & baseline / longitudinal & 32 & 96 & 1.56 & 6.08 \\
-		disp & baseline / longitudinal & 30 & 90 & 10.68 & 15.78 \\
+		disp & baseline / longitudinal & 30 & 90 & 16.36 & 25.20 \\
 		\bottomrule
 	\end{tabular}
 \end{table}
 
-Ainda que a assinatura preditiva varie entre as partições de treino, observou-se qualitativamente que os subespaços selecionados foram dominados por um grupo restrito de descritores típicos. Destacam-se: a fração de CSF normalizado para a volumetria; a razão superfície-volume (\code{SurfaceVolumeRatio}) para a forma geométrica; \code{ClusterShade} e \code{SumAverage} na textura GLCM; métricas de dispersão de intensidades (\code{RobustMeanAbsoluteDeviation} e \code{InterquartileRange}) nas estatísticas de primeira ordem; e os momentos estatísticos dos mapas de magnitude, log-Jacobiano e tensor de deformação (\emph{strain}) no deslocamento normativo. 
+\subsection{Clínico, sanidade e literatura}
+\label{subsec:controlos}
 
-Na formulação longitudinal, quando o grupo anatômico supera o limiar de estabilidade $\tau$ no treinamento, o \emph{pool} incorpora as três colunas temporais ($T_1$, $\Delta_{21}$, $\Delta_{32}$) em bloco. Isto explica o salto de cardinalidade documentado na Tabela~\ref{tab:nfeat} para as famílias de volume, forma e primeira ordem (cerca de $\times 3$). Textura e deslocamento normativo crescem menos: como o \emph{pool} basal destas classes já era largo, os votos do seletor $\ell_1$ repartem-se pelos instantes, sem implicar a existência de um segundo filtro temporal.
+Em \code{48m\_12m}: clínico (sexo, idade, MMSE, ADAS, FAQ) $0.812$;
+clínico$+$shape \code{t1\_only} $0.846$
+($\Delta$ vs shape $i_0$ $+0.087$ [0.022, 0.157], $q=0.017$).
+A RM hipocampal isolada não supera o clínico; a fusão clínica$+$forma sobe o ponto
+(controlo, não claim das perguntas 1--3).
 
-\subsection{Comparação com a Literatura}\label{subsec:controlos}
+Como controlo de teto de detecção (não de conversão), a Figura~\ref{fig:cn_ad}
+mostra CN$\times$AD no mesmo stack (volume Q4): AUC paciente $0.873\pm 0.027$.
+A tarefa fácil funciona; sMCI/pMCI permanece a difícil.
+Leaky (volume Q4, stats globais): $0.734$ vs nested $0.729$ ($\Delta\approx 0$).
 
-Na coorte principal (\code{48m\_12m}), um classificador treinado exclusivamente com variáveis clínicas e marcadores cognitivos (sexo, idade, MMSE, ADAS e FAQ) alcançou uma AUC de $0{,}812$. A fusão tardia destas escalas clínicas com o teto morfológico de \emph{baseline} (forma geométrica em $T_1$) elevou o desempenho preditivo para $0{,}846$. Este arranjo proporcionou um ganho absoluto de $\Delta = +0{,}087$ (IC 95\%: [0,022; 0,157], $q=0{,}017$) frente à modelagem estritamente baseada em imagem. Embora a ressonância magnética hipocampal isolada não supere a precisão dos testes neuropsicológicos consolidados, a sua integração multimodal agrega valor preditivo complementar significativo. Ressalta-se que esta avaliação atua como um controle de referência, transcendendo a hipótese primária focada unicamente nas trajetórias de imagem.
-
-Como verificação metodológica e para estabelecer o teto máximo de detecção morfológica (em oposição ao prognóstico de conversão), a Figura~\ref{fig:heatmap_cn_ad} e a Figura~\ref{fig:roc_cn_ad} ilustram a separação extrema entre controles cognitivamente normais (CN) e pacientes com diagnóstico pleno de Alzheimer (AD). Sob a arquitetura volumétrica temporal, o modelo atingiu uma AUC expressiva de $0{,}873 \pm 0{,}027$. Este resultado comprova que o \emph{pipeline} matemático é altamente competente em tarefas de separação anatômica franca, sublinhando que a dificuldade no contraste sMCI \emph{versus} pMCI advém da sobreposição biológica intrínseca das classes. Adicionalmente, conduziu-se uma simulação de vazamento de dados (\emph{data leakage}) --- aplicando o escalonamento estatístico globalmente antes das partições cruzadas. O modelo simulado com vazamento mínimo de normalização global dos atributos obteve uma AUC de $0{,}734$ para a classe volumétrica na abordagem longitudinal, ligeiramente superior ao desempenho sob validação aninhada estrita ($0{,}729$, $\Delta \approx 0$), demonstrando a integridade do protocolo de isolamento.
-
-\begin{figure}[H]
+\begin{figure}[htbp]
 	\centering
 	\includegraphics[width=1.0\textwidth]{figures/heatmap_cn_ad.pdf} % Substitua pelo nome do seu arquivo
-	\caption{Desempenho discriminativo no contraste extremo (CN \emph{versus} AD).}
+	\caption{Heatmap CN$\times$AD}
 	\label{fig:heatmap_cn_ad}
 \end{figure}
 
-\begin{figure}[H]
+\begin{figure}[htbp]
 	\centering
-	\includegraphics[width=0.8\textwidth]{figures/roc_cn_ad.pdf} % Substitua pelo nome do seu arquivo
-	\caption{Curvas ROC do contraste estrutural CN \emph{versus} AD na coorte \code{48m\_12m}.}
+	\includegraphics[width=1.0\textwidth]{figures/roc_cn_ad.pdf} % Substitua pelo nome do seu arquivo
+	\caption{Sanidade CN$\times$AD em 48m\_12m}
 	\label{fig:roc_cn_ad}
 \end{figure}
 
-%%=============================================================
-\section{Discussão}\label{sec:Discussions}
+Na Tabela~\ref{tab:literature_comparison}, linhas próprias:
+teto shape $i_0$ $0.759\pm 0.043$ (sens $75.4\pm 13.5$\,\% / esp $62.6\pm 9.6$\,\%);
+melhor unimodal Q4 = shape $0.761\pm 0.043$ (\textbf{não} textura);
+late âncora $0.767\pm 0.044$ (\textbf{não} $0.802$).
 
-Os experimentos conduzidos avaliaram o desempenho prognóstico para a classificação de sMCI \emph{versus} pMCI sob duas óticas principais: modelos unimodais (avaliando cada família de atributos isoladamente) e modelos multimodais via fusão tardia (\emph{late fusion}). Em ambos os cenários, o poder discriminatório da visita inicial ($T_1$) foi sistematicamente contrastado com a representação longitudinal proposta (Q4).
-
-\subsection{Desempenho uniclasse: Ablação e teto baseline}
-
-Na análise isolada das famílias de características, a morfometria geométrica da visita inicial (\emph{shape} no \textit{baseline}) estabeleceu o limite de desempenho absoluto (teto unimodal) em três das quatro coortes do estudo (\code{36m\_6m}, \code{36m\_12m} e \code{48m\_6m}), com a AUC variando entre $0{,}760$ e $0{,}801$. A representação longitudinal correspondente desta mesma família não conseguiu superar esse teto, corroborando a hipótese de que a assinatura anatômica estrutural de risco já se encontra substancialmente definida no momento do diagnóstico inicial.
-
-Em contrapartida, a incorporação da dinâmica temporal demonstrou agregar valor discriminatório nas famílias focadas em intensidade e proporção, embora de forma heterogênea. A textura GLCM apresentou ganhos longitudinais em todas as quatro coortes. Para o volume, os ganhos nominais ocorreram nas células de 6 meses e expressivamente em \code{48m\_12m} ($\Delta=+0{,}089$), sofrendo leve inversão em \code{36m\_12m} ($\Delta=-0{,}006$). As estatísticas de primeira ordem mostraram incrementos limitados, apresentando ganho pontual na coorte \code{48m\_12m} ($\Delta=+0{,}017$), mas desempenho nulo ou negativo em \code{36m\_12m} e \code{48m\_6m}. Por outro lado, a modelagem baseada no campo de deslocamento normativo permaneceu abaixo do teto morfológico na coorte principal (AUC $\sim 0{,}60$), sem evidência de ganho longitudinal ($\Delta=-0{,}016$).
-
-\subsection{Paradoxo Temporal}
-
-Ao avaliar o comportamento do modelo sob diferentes janelas de amostragem, observou-se um fenômeno contrário ao raciocínio biológico intuitivo. Embora postulasse-se que intervalos maiores (12 meses) acumulariam alterações anatômicas mais acentuadas e, consequentemente, aumentariam a capacidade discriminativa do modelo, as coortes baseadas em intervalos de 6 meses demonstraram superioridade empírica na separação entre as classes sMCI e pMCI. 
-
-A principal hipótese para justificar esse achado reside na interação entre o rigor do critério de inclusão temporal e a taxa de progressão anatômica da doença. Ao exigir um espaçamento estrito de 12 meses entre as três aquisições necessárias, pacientes caracterizados como "conversores rápidos" são sistematicamente excluídos do grupo pMCI, uma vez que suas trajetórias clínicas frequentemente atingem o desfecho de Alzheimer pleno antes da terceira visita (configurando um padrão de exclusão MCI $\to$ AD $\to$ AD). 
-
-Em contrapartida, a adoção de intervalos de 6 meses fornece uma janela de amostragem com granularidade suficiente para capturar as avaliações intermediárias desses pacientes de progressão acelerada (e.g., retendo o padrão MCI $\to$ MCI $\to$ AD). Como consequência estrutural do delineamento, as coortes de 12 meses sofrem um viés de seleção (\emph{survival bias}) que retém predominantemente conversores lentos --- cujas taxas de atrofia são sutis e confundem-se com o envelhecimento natural ---, enquanto as coortes de 6 meses são enriquecidas com sujeitos que apresentam os deltas morfológicos mais agressivos e discriminativos.
-
-\subsection{Desempenho Multimodal: Ablação e comparação com teto baseline}
-
-A transição para a abordagem multimodal confirmou a utilidade da longitudinalidade como complemento, e não como substituto, ao \textit{baseline}. Por coorte reportam-se duas configurações de união tardia: a de maior $\widehat{\mathrm{AUC}}_{\mathrm{agg}}$ (resultado da varredura combinatória exploratória, \emph{argmax}) e a âncora parcimoniosa pré-estabelecida, unindo estritamente a shape baseline ao volume longitudinal. Modelos de fusão tardia com dimensionalidade reduzida no rastreio $\ell_1$ foram favorecidos de forma secundária, visto que atenuam o risco de sobreajuste (\emph{overfitting}).
-
-\begin{itemize}
-	\item \textbf{Coorte \code{36m\_6m}:} O teto unimodal atingiu $0{,}791$. A união longitudinal combinatória (\emph{argmax}) da tríade forma, volume e textura obteve a AUC máxima ($0{,}818$), utilizando em média $21{,}6$ atributos. Guiando-se pela parcimônia, a especificação em âncora (forma basal + volume longitudinal) alcançou a marca de $0{,}809$ com o custo de apenas $9{,}4$ atributos.
-	
-	\item \textbf{Coorte \code{36m\_12m}:} Sendo o cenário de maior desafio amostral, a forma no \textit{baseline} manteve o seu teto invicto ($0{,}760$). A melhor formulação de fusão, onde o \emph{argmax} exploratório e a âncora parcimoniosa coincidem (forma $T_1$ + volume Q4), alcançou $0{,}757$. Ao falhar em transpor o limite estático, sugere-se que a agregação temporal assimilou ruído frente ao viés de conversores lentos.
-	
-	\item \textbf{Coorte \code{48m\_6m}:} Com o teto unimodal em $0{,}801$, a fusão mais complexa (\emph{argmax}: âncora morfológica aliada a todas as modalidades Q4) atingiu o pico de $0{,}828$ (média de $28{,}4$ atributos). A união estrita e parcimoniosa em âncora (forma $T_1$ + volume Q4) alcançou a marca de $0{,}821$ utilizando apenas $11{,}3$ atributos, confirmando a concentração da informação temporal útil nas variações volumétricas.
-	
-	\item \textbf{Coorte \code{48m\_12m}:} A forma longitudinal ($0{,}761$) e a do \textit{baseline} ($0{,}759$) praticamente empataram. Na varredura multimodal exploratória, a união mista (\emph{argmax}: forma $T_1$ + volume/textura/primeira ordem Q4) atingiu a AUC máxima de $0{,}778$ ao custo de $27{,}0$ atributos. A alternativa parcimoniosa estrita (forma $T_1$ + volume Q4) exibiu desempenho competitivo ($0{,}770$), mobilizando em média apenas $7{,}0$ características.
-\end{itemize}
-
-\subsection{Comparação com a literatura e Limitações Radiômicas}
-
-A questão central desta investigação residia em determinar se a modelagem longitudinal do hipocampo agregaria poder discriminativo na predição de conversão MCI, para além da informação já presente na visita diagnóstica basal. Os resultados demonstram que a longitudinalidade proporciona incrementos nas famílias preditivamente fracas, mas atua com redundância para a morfologia geométrica, que consolida o seu potencial já em $T_1$. No escopo multimodal, a união tardia eleva o teto de forma exploratória, mas carece de superioridade estatística formal na coorte principal, evidenciando que a extração puramente radiômica esbarra em um limite biológico imposto pela ressonância magnética estrutural.
-
-Este limite de saturação torna-se evidente na Tabela~\ref{tab:literature_comparison}, que enquadra os achados deste estudo frente ao estado da arte. Destacam-se os limites preditivos obtidos sob validação cruzada aninhada estrita: o teto unimodal basal ($0{,}759$) e o teto multimodal exploratório ($0{,}778$) estabilizam-se em patamares conservadores. A superação expressiva desta barreira radiômica só ocorre quando os dados de imagem são fundidos aos testes neuropsicológicos consolidados (AUC de $0{,}846$).
-
-\begin{sidewaystable}
+\begin{sidewaystable}[htbp]
 	\centering
 	\footnotesize
 	\setlength{\tabcolsep}{4pt}
 	\renewcommand{\arraystretch}{1.15}
-	\caption{Comparação indicativa de desempenho prognóstico publicado na distinção sMCI \emph{versus} pMCI em relação aos resultados deste estudo sob validação cruzada aninhada no nível do paciente.}
+	\caption{Comparação indicativa de desempenho prognóstico publicado em sMCI versus pMCI e dos resultados ADNI deste estudo sob validação aninhada no paciente.}
 	\label{tab:literature_comparison}
 	\begin{tabular}{@{}lllccc@{}}
 		\toprule
@@ -854,95 +1030,209 @@ Este limite de saturação torna-se evidente na Tabela~\ref{tab:literature_compa
 		\citet{bucholc-2023} & NACC &
 		Cognitivo + funcional &
 		3 visitas; CV retido &
-		$0{,}601 \pm 0{,}054$ & $95{,}4 \pm 1{,}8$ / $24{,}7 \pm 12{,}0$ \\
+		$0.601 \pm 0.054$ & $95.4 \pm 1.8$ / $24.7 \pm 12.0$ \\
 		\citet{bucholc-2023} & NACC &
 		Cognitivo + funcional &
 		4 visitas; CV retido &
-		$0{,}756 \pm 0{,}103$ & $92{,}9 \pm 4{,}6$ / $58{,}3 \pm 19{,}1$ \\
+		$0.756 \pm 0.103$ & $92.9 \pm 4.6$ / $58.3 \pm 19.1$ \\
 		\citet{grassi-2019} & ADNI &
 		Sociodemográfico + clínico &
 		Baseline; CV 10 folds &
-		$0{,}88$ & $77{,}7$ / $79{,}9$ \\
+		$0.88$ & $77.7$ / $79.9$ \\
 		\citet{moradi-2015} & ADNI &
 		Densidade de GM (cérebro inteiro) &
 		Baseline; CV 10 folds &
-		$0{,}766$ & $88{,}9$ / $51{,}6$ \\
+		$0.766$ & $88.9$ / $51.6$ \\
 		\citet{moradi-2015} & ADNI &
 		GM (cérebro inteiro) + cognitivo &
 		Baseline; CV 10 folds &
-		$0{,}902$ & $86{,}7$ / $73{,}6$ \\
+		$0.902$ & $86.7$ / $73.6$ \\
 		\citet{ye-2012}$^{\S}$ & ADNI &
 		Cérebro inteiro + cognitivo &
 		Baseline; stability selection &
-		$0{,}859$ & \textemdash\ / \textemdash \\
+		$0.859$ & \textemdash\ / \textemdash \\
 		\citet{casanova-2013}$^{\P}$ & ADNI &
 		Tecidos (cérebro inteiro) + cognitivo &
 		Baseline; CV aninhada &
-		\textemdash & $45{,}8$ / $75{,}5$ \\
+		\textemdash & $45.8$ / $75.5$ \\
 		\citet{guo-2017a}$^{\|}$ & ADNI &
 		Córtex &
 		Baseline; LOOCV &
-		\textemdash & $85{,}0$ / $84{,}8$ \\
+		\textemdash & $85.0$ / $84.8$ \\
 		\citet{cuingnet-2011} & ADNI &
 		Volume hipocampal &
 		Baseline; LOOCV &
-		\textemdash & $62{,}0$ / $69{,}0$ \\
+		\textemdash & $62.0$ / $69.0$ \\
 		\midrule
-		\textbf{Este trabalho (teto $T_1$)}$^{\dagger}$ & ADNI &
+		\textbf{Este trabalho (teto $i_0$)}$^{\dagger}$ & ADNI &
 		Forma hipocampal &
-		$T_1$; CV aninhada (SVM) &
-		$\mathbf{0{,}759 \pm 0{,}043}$ & $\mathbf{75{,}4 \pm 13{,}5}$ / $\mathbf{62{,}6 \pm 9{,}6}$ \\
+		$i_0$; nested CV (SVM) &
+		$\mathbf{0.761 \pm 0.043}$ & $\mathbf{70.5 \pm 15.4}$ / $\mathbf{63.7 \pm 12.7}$ \\
 		\textbf{Este trabalho (Q4 unimodal)} & ADNI &
-		Forma hipocampal (níveis $T_1+\Delta_{21}+\Delta_{32}$) &
-		3 visitas; CV aninhada &
-		$\mathbf{0{,}761 \pm 0{,}043}$ & \textemdash\ / \textemdash \\
+		Textura GLCM (níveis T1+D21+D32) &
+		3 visitas; nested CV &
+		$\mathbf{0.762 \pm 0.044}$ & $\mathbf{68.3 \pm 17.8}$ / $\mathbf{67.3 \pm 15.1}$ \\
 		\textbf{Este trabalho (fusão tardia)}$^{\ddagger}$ & ADNI &
-		Forma $T_1$ $\cup$ Vol/Textura/FO Q4 (4 SVMs) &
-		3 visitas; CV aninhada &
-		$\mathbf{0{,}778 \pm 0{,}043}$ & \textemdash\ / \textemdash \\
+		Âncora / late Q4 (5 SVMs) &
+		3 visitas; nested CV &
+		$\mathbf{0.802 \pm 0.040}$ & $\mathbf{74.2 \pm 18.3}$ / $\mathbf{66.8 \pm 14.8}$ \\
 		\textbf{Este trabalho} & ADNI &
 		Clínico (sexo, idade, MMSE, ADAS, FAQ) &
-		$T_1$; CV aninhada (SVM) &
-		$\mathbf{0{,}812 \pm 0{,}040}$ & $\mathbf{70{,}0 \pm 14{,}2}$ / $\mathbf{70{,}9 \pm 14{,}1}$ \\
+		$i_0$; nested CV (SVM) &
+		$\mathbf{0.812 \pm 0.040}$ & $\mathbf{70.0 \pm 14.2}$ / $\mathbf{70.9 \pm 14.1}$ \\
 		\textbf{Este trabalho} & ADNI &
-		Clínico $+$ Forma geométrica $T_1$ &
-		CV aninhada (SVM) &
-		$\mathbf{0{,}846 \pm 0{,}036}$ & $\mathbf{77{,}1 \pm 13{,}0}$ / $\mathbf{73{,}2 \pm 13{,}6}$ \\
+		Clínico $+$ forma $i_0$ &
+		nested CV (SVM) &
+		$\mathbf{0.843 \pm 0.036}$ & $\mathbf{77.1 \pm 13.0}$ / $\mathbf{73.2 \pm 13.6}$ \\
 		\bottomrule
 	\end{tabular}
 	\vspace{0.5em}
 	\begin{flushleft}
 		\scriptsize
-		\textit{Nota:} Linhas referentes a este estudo processadas na coorte \code{48m\_12m} ($n=120$).
-		$^{\dagger}$Teto preditivo unimodal estático (forma, \code{t1\_only}).
-		$^{\ddagger}$Fusão tardia multimodal otimizada pela métrica AUC empírica (argmax).
-		O termo anterior ao sinal $\pm$ indica a AUC (ou sens/esp) pontual agregada por paciente; o termo posterior indica o desvio-padrão computado via \emph{bootstrap} ($B=2000$).
+		\textit{Nota:}
+		Linhas próprias: coorte \code{48m\_12m} ($n=120$).
+		$^{\dagger}$Teto unimodal de baseline (forma, \code{t1\_only}).
+		$^{\ddagger}$Fusão tardia; Sens/Esp da linha late Q4 (Youden por dobra).
+		Antes de $\pm$ na AUC: estimando paciente; depois: SD bootstrap ($2000$).
+		Sens/Esp: média $\pm$ SD nas 50 avaliações externas.
 	\end{flushleft}
 \end{sidewaystable}
 
-A discrepância entre os nossos patamares de desempenho radiômico e os resultados altamente otimistas reportados na literatura (frequentemente superiores a $0{,}88$) sublinha a necessidade crítica de metodologias de validação robustas. A preservação da integridade do teste de generalização --- garantida no presente estudo pela validação cruzada aninhada rigorosa e pela ausência de reamostragem sintética da coorte, limitando-se à ponderação inversa restrita ao ciclo de treinamento --- é essencial para reportar o real limite da utilidade prognóstica da imagem médica. Em síntese, a morfometria hipocampal no diagnóstico encerra o núcleo informacional resistente; a trajetória longitudinal agrega refinamento, mas o salto prognóstico definitivo reside na fusão da anatomia computacional com a clínica neuropsicológica.
 
+%\section{Discussão}\label{sec:Discussions}
+
+%% Principais resultados e discussões
+%
+%coorte 36m\_6m
+%
+%Uniclasse: shape baseline 0.7907 > shape longitudinal 0.7875 > vol longitudinal 0.7702 > vol baseline 0.7655 > Textura longitudinal 0.6891 > primeira ordem longitudinal 0.6695 > primeira ordem baseline 0.6538 > textura baseline 0.6186 > DVF baseline 0.5035 > DVF longitudinal 0.4528.
+%
+%Multiclasse: (melhor) união tardia vol longitudinal + shape longitudinal + texture longitudinal (união longitudinal) (late\_\_t1\_d21d32\_vol\_\_t1\_d21d32\_shape\_\_t1\_d21d32\_texture) 0.8178 $\approx$ (união longitudinal) (late\_\_t1\_shape\_\_t1\_d21d32\_vol\_\_t1\_d21d32\_texture\_\_t1\_d21d32\_firstorder) 0.8147 $\approx$ (união longitudinal) (late\_\_t1\_shape\_\_t1\_d21d32\_vol\_\_t1\_d21d32\_texture\_\_t1\_d21d32\_disp) 0.8138  $\approx$ (união longitudinal) (late\_\_t1\_d21d32\_vol\_\_t1\_d21d32\_shape\_\_t1\_d21d32\_texture\_\_t1\_d21d32\_disp) 0.8133 $\approx$ (união longitudinal) (late\_\_t1\_shape\_\_t1\_d21d32\_vol\_\_t1\_d21d32\_texture\_\_t1\_d21d32\_disp\_\_t1\_d21d32\_firstorder) 0.8113 $\approx$ (união longitudinal) (late\_\_t1\_d21d32\_vol\_\_t1\_d21d32\_shape\_\_t1\_d21d32\_texture\_\_t1\_d21d32\_firstorder) 0.8107 > melhor multiclasse baseline (late\_\_t1\_vol\_\_t1\_shape) 0.8071 > melhor uniclasse baseline (shape baseline 0.7907).
+%
+%
+%
 %%=============================================================
-\section{Conclusão}\label{sec:Conclusions}
+%% discussão
+%
+%Uniclasse shape baseline vence todos os atributos e vence o longitudinal.
+%volume longitudinal vence volume baseline.
+%textura longitudinal vence textura baseline.
+%primeira ordem longitudinal vence primeira ordem baseline.
+%DVF baseline e longitudinal perto do acaso, maneira atual do DVF não agrega informação.
+%
+%multiclasse longitudinal supera melhor baseline uniclase e multiclasse em varias configurações.
+%%=============================================================
+%
+%% Principais resultados e discussões
+%
+%coorte 36m\_12m
+%
+%Uniclasse: shape baseline 0.7595 > shape longitudinal 0.7325 > volume baseline 0.6899 $\approx$ vol longitudinal 0.6836 > primeira ordem baseline 0.5982 > primeira ordem longitudinal 0.5732 > Textura longitudinal 0.5159 > textura baseline 0.4996 > dvf baseline 0.4788 > dvf longitudinal 0.4492
+%
+%Multiclasse: (melhor) shape baseline + volume longitudinal (late\_\_t1\_shape\_\_t1\_d21d32\_vol) 0.7568 $\approx$, i.e., não supera melhor baseline.
+%
+%
+%%=============================================================
+%% discussão
+%Melhor baseline (shape baseline 0.7595) supera todos os longitudinais (uniclasse ou multiclasse), provavelmente por ser a coorte com maior desbalanceamento entre sMCI e pMCI, textura longitudinal e baseline, e dvf longitudinal e bseline perto do acaso, i.e., não agregam informação relevante.
+%
+%Quando a janela de observação sobe de 36m para 48m alguns pacientes que eram sMCI progridem para pMCI.
+%
+%
+%%=============================================================
+%
+%% Principais resultados e discussões
+%
+%coorte 48m\_6m
+%
+%Uniclasse: shape baseline 0.8009 > shape longitudinal > volume longitudinal 0.7630 > volume baseline 0.7559 > primeira ordem baseline 0.6865 $\approx$ primeira ordem longitudinal 0.6860 > textura longitudinal 0.6742 > textura baseline 0.6276 > dvf baseline 0.5917 > dvf longitudinal 0.5751
+%
+%Multiclasse: (melhor) shape baseline + volume longitudinal + textura longitudinal + dvf longitudinal + primeira ordem longitudinal 0.7909 > (união longitudinal) (late\_\_t1\_shape\_\_t1\_d21d32\_vol\_\_t1\_d21d32\_texture\_\_t1\_d21d32\_disp\_\_t1\_d21d32\_firstorder) 0.8279 $\approx$ (união longitudinal) (late\_\_t1\_shape\_\_t1\_d21d32\_vol\_\_t1\_d21d32\_disp\_\_t1\_d21d32\_firstorder) 0.8253  $\approx$ (união longitudinal) (late\_\_t1\_shape\_\_t1\_d21d32\_vol\_\_t1\_d21d32\_texture\_\_t1\_d21d32\_firstorder) 0.8253 $\approx$ (união longitudinal) (late\_\_t1\_shape\_\_t1\_d21d32\_vol\_\_t1\_d21d32\_texture\_\_t1\_d21d32\_disp) 0.8247 $\approx$ (união baseline) (late\_\_t1\_vol\_\_t1\_shape\_\_t1\_disp\_\_t1\_firstorder) 0.8232 $\approx$ (late\_\_t1\_vol\_\_t1\_shape\_\_t1\_texture\_\_t1\_disp\_\_t1\_firstorder) 0.8223 $\approx$ (união baseline) (late\_\_t1\_shape\_\_t1\_d21d32\_vol) 0.8212 > melhor uniclasse baseline (shape baseline 0.8009)
+%
+%
+%%=============================================================
+%% discussão
+%
+%multiclasse longitudinal supera melhor baseline uniclase e multiclasse em varias configurações.
+%
+%%=============================================================
+%
+%% Principais resultados e discussões
+%
+%coorte 48m\_12m
+%
+%Uniclasse: shape longitudinal 0.7609 > shape baseline 0.7592 > volume longitudinal 0.7294 > volume baseline 0.6409 > primeira ordem longitudinal 0.7031 > primeira ordem baseline 0.6860 > textura longitudinal 0.5769 > textura baseline 0.5286 > dvf longitudinal 0.4039 > dvf baseline 0.3206
+%
+%Multiclasse: (melhor) união longitudinal (late\_\_t1\_shape\_\_t1\_d21d32\_vol\_\_t1\_d21d32\_texture\_\_t1\_d21d32\_firstorder) 0.7783 $\approx$ (late\_\_t1\_d21d32\_vol\_\_t1\_d21d32\_shape\_\_t1\_d21d32\_texture\_\_t1\_d21d32\_firstorder) 0.7766 $\approx$ (late\_\_t1\_shape\_\_t1\_d21d32\_vol) 0.7705 $\approx$ > (melhor shape longitudinal 0.7609) > (melhor multiclasse baseline) (late\_\_t1\_vol\_\_t1\_shape\_\_t1\_texture\_\_t1\_firstorder) 0.7537
+%
+%%=============================================================
+%% discussão
+%
+%
+%
+%%=============================================================
+\section{Discussão}\label{sec:Discussions}
 
-Sob uma validação cruzada aninhada rigorosa ao nível do paciente (classificador SVM conjugado à seleção $\ell$1 + bootstrap, a morfologia geométrica no momento do diagnóstico inicial (\emph{shape} em $T_1$) consolidou-se como o teto de desempenho unimodal em três das quatro coortes do delineamento prognóstico sMCI \emph{versus} pMCI (\code{36m\_6m}, \code{36m\_12m}, \code{48m\_6m}). Na coorte principal (\code{48m\_12m}), a forma em $T_1$ e Q4 praticamente empataram ($0{,}759$ \emph{versus} $0{,}761$). A codificação longitudinal proposta (Q4) demonstrou utilidade preditiva ao agregar capacidade discriminatória em famílias de atributos inicialmente mais fracas; o ganho mais consistente transversalmente ocorreu na textura GLCM, ao passo que as estatísticas de primeira ordem exibiram incrementos limitados e voláteis. Na coorte principal, o ganho longitudinal absoluto mais expressivo concentrou-se na família de volume ($\Delta = +0{,}089$), contudo, sem atingir significância estatística formal após correção para comparações múltiplas. Em contrapartida, os momentos do campo de deslocamento normativo operaram como preditores fracos na coorte principal (AUC $\sim 0{,}60$), aquém do teto geométrico e sem ganho longitudinal, não justificando a sua manutenção neste modelo de suporte à decisão.
+Os experimentos conduzidos avaliaram o desempenho prognóstico para a classificação de sMCI versus pMCI sob duas óticas principais: modelos unimodais (avaliando cada família de atributos isoladamente) e modelos multimodais via fusão tardia (\emph{late fusion}). Em ambos os cenários, o poder discriminatório da visita inicial (\textit{baseline}) foi sistematicamente contrastado com a representação longitudinal proposta.
 
-A arquitetura multimodal via fusão tardia (\emph{late fusion}) demonstrou ser o mecanismo adequado para a integração sinérgica destas informações. Configurações parcimoniosas pré-estabelecidas (em formato de âncora, preservando a forma no \textit{baseline} e incorporando o volume longitudinalmente) superaram o teto estático nas coortes com acompanhamento mais denso (intervalos de 6 meses). Na coorte principal, a fusão tardia atingiu uma estimativa pontual máxima de $0{,}778$ sob varredura exploratória (\emph{argmax}), sem contraste estatístico pré-registrado contra o teto unimodal ($0{,}759$--$0{,}761$). A âncora de cinco ramos pré-especificada (forma $T_1$ $\cup$ restantes Q4) também não superou o teto ($\Delta=+0{,}008$, $p=0{,}40$). Notavelmente, as uniões altamente parcimoniosas provaram ser capazes de capturar a quase totalidade do ganho multimodal utilizando um subespaço vetorial restrito, mitigando os riscos de sobreajuste. Paralelamente, os escores clínicos basais confirmaram a sua robusta força preditiva; neste contexto, a ressonância magnética hipocampal atua como um adjunto estrutural complementar, e não como um substituto absoluto da avaliação neuropsicológica.
+\subsection*{Desempenho Unimodal: O Teto do \textit{Baseline} e o Papel Modulador da Longitudinalidade}
 
-O principal contributo deste trabalho reside na orquestração de um protocolo metodológico auditável --- abrangendo avaliação fatorial, validação aninhada estrita por paciente, controle de vazamento de dados (\emph{data leakage}) e integração multimodal ---, fornecendo evidências sólidas de que a longitudinalidade socorre preditores fracos, enquanto a forma geométrica basal ancora firmemente o limite de generalização do modelo.
+Na análise isolada das famílias de características, a morfometria geométrica da visita inicial (\emph{shape} no \textit{baseline}) estabeleceu o limite de desempenho absoluto (teto unimodal) em três das quatro coortes do estudo (\code{36m\_6m}, \code{36m\_12m} e \code{48m\_6m}), com a AUC variando entre $0,759$ e $0,801$. A representação longitudinal correspondente desta mesma família não conseguiu superar esse teto, corroborando a hipótese de que a assinatura anatômica estrutural já se encontra substancialmente definida no momento do diagnóstico inicial.
 
-\subsection{Limitações}
-O estudo apresenta limitações intrínsecas que devem ponderar a interpretação dos achados:
-(i) A dependência exclusiva da base de dados ADNI e a exigência de casos temporalmente completos (três aquisições rigorosamente espaçadas com desfechos validados) restringiram o tamanho amostral final, limitando a generalização externa; 
-(ii) As quatro coortes avaliadas possuem sobreposição topológica de sujeitos, e cenários dilatados (como \code{36m\_12m}) sofreram com o desbalanceamento acentuado de classes; 
-(iii) A definição operacional do desfecho admitiu uma tolerância de inclusão ampliada (onde a última imagem poderia coincidir com o diagnóstico clínico pleno) e baseou-se em janelas temporais fixas de classificação, em vez de modelar o tempo até a conversão como um desfecho contínuo; 
-(iv) A representação Q4 fundamentou-se na concatenação de níveis discretos e diferenças pontuais, não englobando a modelagem de trajetórias ou taxas contínuas de atrofia; 
-(v) O escopo radiômico restringiu-se propositalmente ao hipocampo bilateral, representando uma visão anatômica localizada frente à extensa rede de neurodegeneração envolvida na demência; 
-(vi) Processos de controle de qualidade e a construção do espaço normativo (\emph{template}) operaram globalmente, antecedendo as partições cruzadas; 
-(vii) As configurações multimodais de pico absoluto (\emph{argmax}) resultaram de exploração heurística \emph{a posteriori} dentre as dezenas de combinações testadas, servindo como demonstração de limites do sistema, e não como desfechos primários pré-registrados.
+Em contrapartida, a incorporação da dinâmica temporal demonstrou agregar valor discriminatório consistente nas famílias focadas em intensidade e proporção. Em todas as quatro coortes, o volume longitudinal superou o desempenho do volume no \textit{baseline}. A textura e as estatísticas de primeira ordem (FO) também apresentaram ganhos através da representação longitudinal em relação aos seus correspondentes basais. Por outro lado, a modelagem baseada no campo de deslocamento normativo (DVF) operou sistematicamente com desempenhos próximos ao acaso (AUC em torno de $0,45$ a $0,50$) em ambas as representações temporais, indicando que a formulação atual dessa métrica não captura o sinal necessário para a discriminação prognóstica imposta pelo desenho.
 
-\subsection{Trabalhos Futuros}
-Como desdobramento metodológico natural desta investigação, o próximo passo consiste na expansão do domínio topológico. Propõe-se a aplicação deste mesmo arcabouço validativo rigoroso a estruturas parceladas sistêmicas (e.g., amígdala, tálamo, cíngulo, córtex orbitofrontal e ínsula), visando quantificar se a avaliação longitudinal de redes límbico-corticais estendidas supera o teto preditivo que o hipocampo isolado impôs matematicamente. Complementarmente, desenvolvimentos futuros focarão na validação do protocolo em coortes independentes, na fusão arquitetônica profunda (\emph{early/joint fusion}) com os marcadores clínicos e na transição para uma modelagem temporal contínua da evolução atrófica da doença.
+\subsection*{Desempenho Multimodal: Superação do Teto via Fusão Tardia Parcimoniosa}
+
+A transição para a abordagem multiclasse confirmou a utilidade da longitudinalidade como complemento, e não como substituto, ao \textit{baseline}. O uso da arquitetura em "âncora" --- que congela a geometria no \textit{baseline} e a une com atributos de outras famílias na representação longitudinal --- foi capaz de superar o teto unimodal em quase todos os cenários. 
+
+Para a escolha da melhor combinação em cada coorte, aplicou-se o princípio da parcimônia. Modelos de fusão tardia com um número médio de atributos retidos substancialmente menor no rastreio L1 foram favorecidos, visto que a redução da dimensionalidade atenua o risco de sobreajuste (\emph{overfitting}) e eleva o potencial de generalização do classificador.
+
+\begin{itemize}
+	\item \textbf{Coorte \code{36m\_6m}:} Enquanto o teto unimodal da forma atingiu $0,791$, múltiplas combinações multimodais superaram a marca de $0,81$. O desempenho absoluto máximo ($0,818$) foi obtido pela união longitudinal da tríade forma, volume e textura (\code{late\_\_t1\_d21d32\_vol\_\_t1\_d21d32\_shape\_\_t1\_d21d32\_texture}), utilizando em média $21,6$ atributos. Contudo, guiando-se pela parcimônia, a especificação em âncora unindo a forma no \textit{baseline} e o volume longitudinal (\code{late\_\_t1\_shape\_\_t1\_d21d32\_vol}) atingiu uma excelente AUC de $0,809$ com o custo de apenas $9,4$ atributos selecionados em média, configurando-se como uma das alternativas mais eficientes.
+	
+	\item \textbf{Coorte \code{36m\_12m}:} Este foi o cenário de maior desafio devido ao espaçamento das aquisições e ao extremo desbalanceamento das classes (apenas 33 pMCI). A forma no \textit{baseline} manteve o seu teto invicto ($0,760$). A melhor formulação de fusão --- novamente unindo forma no \textit{baseline} e volume longitudinal --- alcançou $0,757$, falhando em transpor o limite estático. Isso sugere que, com janelas de \textit{follow-up} dilatadas e sob baixa incidência de conversões ativas, a agregação temporal pode diluir o sinal preditivo em vez de fortalecê-lo.
+	
+	\item \textbf{Coorte \code{48m\_6m}:} Com o teto unimodal fixado em $0,801$, a fusão tardia retomou a sua eficácia. A combinação mais complexa (âncora com forma no \textit{baseline} aliada a volume, textura, deslocamento e primeira ordem longitudinais) atingiu o pico de $0,828$, requerendo a média de $28,4$ atributos. Reafirmando o padrão parcimonioso, a simples união entre a forma no \textit{baseline} e o volume longitudinal (\code{late\_\_t1\_shape\_\_t1\_d21d32\_vol}) alcançou robustos $0,821$ utilizando apenas $11,3$ atributos, confirmando que o núcleo da informação temporal útil se concentra nas variações das frações volumétricas.
+	
+	\item \textbf{Coorte \code{48m\_12m}:} Nesta coorte, observou-se uma equalização na família geométrica, onde a forma longitudinal ($0,761$) e a do \textit{baseline} ($0,759$) praticamente empataram. A abordagem multimodal conseguiu superar a marca, com a união âncora envolvendo volume, textura e primeira ordem (\code{late\_\_t1\_shape\_\_t1\_d21d32\_vol\_\_t1\_d21d32\_texture\_\_t1\_d21d32\_firstorder}) atingindo a AUC máxima de $0,778$ ao custo de cerca de $27,0$ atributos. A alternativa de baixa dimensionalidade ancorada unicamente na forma e no volume longitudinal também exibiu um desempenho competitivo ($0,770$), mobilizando em média apenas $7,0$ características.
+\end{itemize}
+
+Em síntese, os resultados ratificam que a morfometria em estado estacionário no momento do diagnóstico inicial encerra o maior e mais resistente fator de predição isolado. Entretanto, a orquestração multimodal evidencia que a trajetória volumétrica (e em menor grau a de textura) fornece sinais complementares inestimáveis. A arquitetura de fusão ancorada estritamente na forma basal (\textit{baseline}) suplementada pela variação longitudinal das frações volumétricas revelou-se a estratégia ideal por combinar alta acurácia discriminatória e drástica redução da dimensionalidade paramétrica.
+
+A pergunta era se níveis longitudinais hipocampais agregam discriminação sMCI/pMCI além do $i_0$.
+
+\paragraph{Uniclasse agrega em papéis fracos; não passa o teto.}
+No claim, Q4 sobe volume de forma nominal ($\Delta=+0.089$, sem FDR).
+Shape já satura no $i_0$; Q4 é redundante.
+Textura e first-order sobem em ponto mas permanecem abaixo do teto shape.
+Nenhuma família Q4 substitui shape-$i_0$.
+
+\paragraph{União tardia não coroa o claim.}
+Late Q4 / âncora empatam ou sobem marginalmente o teto em \code{48m\_12m},
+sem evidência bootstrap formal.
+Late-$i_0$ dilui (abaixo do teto).
+O ganho ``late $>$ teto'' aparece em células de maior $n$, não no claim pré-especificado.
+
+\section{Conclusões}\label{sec:Conclusions}
+
+Sob uma validação aninhada rigorosa ao nível do paciente (classificador SVM conjugado à seleção \code{l1\_stable}), a morfologia hipocampal no momento do diagnóstico inicial (\emph{shape} em $t_0$) consolidou-se como o teto de desempenho unimodal nas quatro coortes do delineamento prognóstico sMCI/pMCI. A codificação longitudinal proposta (Q4) demonstrou utilidade preditiva ao agregar capacidade discriminatória em famílias de atributos inicialmente mais fracas, com destaque para a volumetria e, em menor grau, para a textura e estatísticas de primeira ordem. Em contrapartida, os momentos do campo de deslocamento normativo (DVF) operaram próximos ao acaso, não justificando a sua manutenção neste modelo de suporte à decisão. Na coorte principal (\code{48m\_12m}, $n=120$), o ganho longitudinal mais expressivo ocorreu na família de volume ($\Delta\mathrm{AUC}\approx +0{,}09$), contudo, sem atingir significância estatística após correção para comparações múltiplas.
+
+A arquitetura multimodal via fusão tardia (\emph{late fusion}) demonstrou ser o mecanismo adequado para a integração destas informações. Configurações pré-especificadas (como a fusão "âncora", que preserva a forma no \textit{baseline} e incorpora as demais famílias longitudinalmente) superaram o teto estático em coortes com acompanhamento mais denso (intervalos de 6 meses). Na coorte principal, contudo, a fusão tardia obteve estimativas pontuais de até $0,778$ (em análises exploratórias), mas não estabeleceu superioridade estatística formal sobre o teto unimodal da forma isolada ($0,761$). Notavelmente, uniões altamente parcimoniosas (ex.: forma no \textit{baseline} conjugada ao volume longitudinal) provaram ser capazes de capturar a quase totalidade do ganho multimodal utilizando um subespaço vetorial mínimo. Paralelamente, escores clínicos basais confirmaram a sua força preditiva; neste contexto, a ressonância magnética hipocampal atua como um adjunto estrutural complementar, e não como um substituto absoluto da avaliação neuropsicológica.
+
+O principal contributo deste trabalho reside na orquestração de um protocolo metodológico auditável e rigoroso — abrangendo avaliação fatorial, validação aninhada por paciente, controle de fugas de informação e integração multimodal —, fornecendo a evidência de que a longitudinalidade socorre preditores fracos, enquanto a forma geométrica basal ancora firmemente o limite de desempenho.
+
+\paragraph{Limitações.}
+O estudo apresenta limitações que devem ser consideradas na interpretação dos achados:
+(i) A dependência exclusiva da base de dados ADNI e a exigência de casos completos (pacientes com três aquisições de RM perfeitamente espaçadas e rótulo de desfecho validado) restringiram o tamanho amostral ($n=120$ na coorte principal) e limitam a generalização externa.
+(ii) As quatro coortes avaliadas possuem sobreposição topológica de sujeitos, e variações como a de \code{36m\_12m} sofreram com o desbalanceamento acentuado de classes (apenas 33 casos pMCI).
+(iii) A definição operacional do desfecho admitiu uma tolerância para pMCI em que a última imagem coincidia com o diagnóstico inicial de Alzheimer (inclusão ampliada), e baseou-se em janelas temporais fixas em vez de modelar o tempo até a progressão de forma contínua.
+(iv) A representação Q4 fundamenta-se na concatenação de níveis discretos e diferenças absolutas, não incorporando a modelagem de trajetórias contínuas ou de deformações diretas visita a visita.
+(v) O escopo espacial restringiu-se propositalmente ao hipocampo bilateral; embora seja o marcador canônico da doença, representa uma visão anatômica incompleta frente à rede global de atrofia envolvida na conversão para a demência.
+(vi) Processos de controle de qualidade e a geração de \emph{templates} normativos foram executados globalmente antes da validação cruzada.
+(vii) As configurações multimodais com os melhores desempenhos absolutos resultaram de observações \emph{a posteriori} (\emph{post-hoc}) em meio a dezenas de combinações testadas, servindo como exploração de limites e não como desfechos primários pré-registrados.
+
+\paragraph{Trabalhos Futuros.}
+Como desdobramento natural desta investigação, o próximo passo consiste em \textbf{expandir o escopo espacial} das Regiões de Interesse (ROIs). Propõe-se a aplicação deste mesmo arcabouço metodológico rigoroso a estruturas parceladas em todo o cérebro (por exemplo, amígdala, tálamo, cíngulo, córtex orbitofrontal e ínsula, através do atlas DKT), a fim de testar se a avaliação longitudinal de redes límbico-corticais estendidas consegue agregar o poder preditivo que o hipocampo isolado não foi capaz de formalizar estatisticamente. Complementarmente, desenvolvimentos futuros devem focar na validação do modelo em coortes externas independentes, na integração parcimoniosa dos dados de imagem com marcadores clínicos sob a mesma validação aninhada, e na transição para uma modelagem temporal contínua (utilizando \emph{splines} ou taxas de atrofia) em substituição a recortes de tempo discretos.
 
 \section*{Agradecimentos}
 

@@ -39,7 +39,7 @@ from scipy.stats import kurtosis, skew
 COHORT = "all_population"
 COHORT_DIR = f"csvs/cohorts/{COHORT}"
 
-IMAGES_CSV = f"{COHORT_DIR}/smci_pmci.csv"
+IMAGES_CSV = f"{COHORT_DIR}/all_population.csv"
 
 WARPS_DIR = "./images/displacement_field_v3"
 GROUPWISE_DIR = "images/groupwise/references"
