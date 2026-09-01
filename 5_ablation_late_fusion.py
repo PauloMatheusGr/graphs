@@ -31,7 +31,7 @@ if str(_MOD) not in sys.path:
 
 from ablation_analysis import prepare_ablation_df, summary_with_pooled
 from ablation_late_fusion import COMBINE_MODES, run_late_fusion_ablation_suite
-from ablation_prep import ROI_FILTER_DEFAULT
+from ablation_prep import ROI_FILTER_DEFAULT, param_soft_pmci_of
 from ablation_representation import (
     DEFAULT_LATE_FUSION_SPEC,
     FUSION_MODALITIES,
@@ -218,6 +218,8 @@ def main(argv: list[str] | None = None) -> int:
         "cohort: %s | fusion: %s | protocol: late__%s | combine=%s",
         args.cohort, fusion_label(slots), fp, args.combine,
     )
+    _long, _soft = param_soft_pmci_of(args.cohort)
+    log.info("PARAM_SOFT_PMCI=%s | csv=%s", _soft, _long)
     log.info("reuse_disk=%s run_missing=%s | out: %s", args.reuse_disk, args.run_missing, results_dir)
 
     t0 = time.monotonic()

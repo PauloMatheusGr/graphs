@@ -10,11 +10,6 @@
 - i1 absoluto + 3 deltas sequenciais (T1, D21, D31, D32)
 - i1 absoluto + ritmo + aceleração (T1, M=(D21+D32)/2, A=D32−D21)
 
-
-
-
-
-
 # Notas — pipeline do paper (pós Patch A)
 
 Allowlist 4–5 nomes **morta**. Números em `cohort_results.csv` / tex antigos = experimento errado. Não citar.

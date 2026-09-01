@@ -35,12 +35,14 @@ Sanity: `disp_long` tem `GROUP` CN e AD com feats **não-NaN**. Sem isto ablatio
 **Sem** `--results-dir` (grava em `ablation_results_d21d32/disp/`):
 
 ```bash
-.venv/bin/python 5_ablation.py --cohort 48m_12m --representation t1_d21_d32 \
-  --modality disp --tasks cn_ad --selection l1_stable --models svm \
-  --combat false --repeats 10 --seed 42 \
-  --tuner optuna --optuna-trials 10 \
-  --stable-pool-min-pct 70 --stable-pool-min-timepoints 0 \
-  --stable-bootstrap 50 --stable-l1-c 0.1
+for C in t1_only t1_d21_d32; do
+  .venv/bin/python 5_ablation.py --cohort 48m_12m --representation "$C" \
+    --modality disp --tasks cn_ad --selection l1_stable --models svm \
+    --combat false --repeats 10 --seed 42 \
+    --tuner optuna --optuna-trials 10 \
+    --stable-pool-min-pct 70 --stable-pool-min-timepoints 0 \
+    --stable-bootstrap 50 --stable-l1-c 0.1
+done
 ```
 
 Heatmap T1 também com disp CN×AD? Repete `--representation t1_only`.

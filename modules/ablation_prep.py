@@ -9,6 +9,18 @@ import pandas as pd
 
 ROI_FILTER_DEFAULT = "hippocampus"
 
+
+def param_soft_pmci_of(cohort: str) -> tuple[Path, object | None]:
+    """(csv, PARAM_SOFT_PMCI) da pasta de coorte; None se o ficheiro/coluna não existe."""
+    p = Path("csvs/cohorts") / cohort / "adnimerged_longitudinal.csv"
+    if not p.is_file():
+        return p, None
+    head = pd.read_csv(p, nrows=1)
+    if "PARAM_SOFT_PMCI" not in head.columns:
+        return p, None
+    return p, head["PARAM_SOFT_PMCI"].iloc[0]
+
+
 # ComBat: fabricante + Tesla (sem MFG_MODEL — evita micro-batches no ADNI)
 BATCH_COLS = ("MANUFACTURER", "FIELD_STRENGTH")
 
@@ -37,6 +49,8 @@ META_COLS_WIDE = {
     "MFG_MODEL",
     "batch",
     "DIAG",
+    "soft_pmci",
+    "PARAM_SOFT_PMCI",
     "MMSE_SCORE",
     "CDR_GLOBAL",
     "ADAS_SCORE",

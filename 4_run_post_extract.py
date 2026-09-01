@@ -13,11 +13,13 @@ if str(_MOD) not in sys.path:
 import pandas as pd
 from ablation_prep import assign_scanner_batch, export_ablation_long_only
 
-# Features vêm da store união; meta/ablation saem no cohort de análise.
+# Features: store união. Ablation longs: pasta nova {COHORT}_soft_{SOFT_PMCI} (não pisa paper).
 FEATURES_DIR = Path("csvs/cohorts/all_population")
-COHORT = "48m_12m"  # editar só isto → cohort de análise
-BASE = Path("csvs/cohorts") / COHORT
-LONGITUDINAL = BASE / "adnimerged_longitudinal.csv"
+SOFT_PMCI = False  # True | False — escolhe adnimerged_longitudinal_{SOFT_PMCI}.csv
+COHORT = "48m_6m"  # pasta paper (sem sufixo)
+SRC = Path("csvs/cohorts") / COHORT
+BASE = Path("csvs/cohorts") / f"{COHORT}_soft_{SOFT_PMCI}"
+LONGITUDINAL = SRC / f"adnimerged_longitudinal_{SOFT_PMCI}.csv"
 MERGE_KEYS = ["ID_IMG", "roi", "side", "label"]
 
 # DVF store: visita → template CN (3_feat_gen_dvf.py + 3_feat_dvf.py)
@@ -101,7 +103,10 @@ def add_cohort_meta(radiomics_merge: pd.DataFrame) -> pd.DataFrame:
     out = radiomics_merge.copy()
     out["ID_IMG"] = out["ID_IMG"].astype(str).str.strip()
 
-    cohort_cols = ["ID_IMG", "ID_PT", "GROUP", "SEX", "AGE", "MRI_DATE", "DIAG", "slot"]
+    cohort_cols = [
+        "ID_IMG", "ID_PT", "GROUP", "SEX", "AGE", "MRI_DATE", "DIAG", "slot",
+        "soft_pmci", "PARAM_SOFT_PMCI",
+    ]
     tech_cols = [
         "ID_IMG", "FIELD_STRENGTH", "MANUFACTURER", "MFG_MODEL",
         "MMSE_SCORE", "CDR_GLOBAL", "ADAS_SCORE", "FAQ_SCORE",
@@ -122,6 +127,7 @@ def add_cohort_meta(radiomics_merge: pd.DataFrame) -> pd.DataFrame:
     meta_order = [
         "ID_IMG", "roi", "side", "label",
         "ID_PT", "GROUP", "SEX", "AGE", "MRI_DATE", "DIAG", "slot",
+        "soft_pmci", "PARAM_SOFT_PMCI",
         "FIELD_STRENGTH", "MANUFACTURER", "MFG_MODEL",
         "MMSE_SCORE", "CDR_GLOBAL", "ADAS_SCORE", "FAQ_SCORE", "batch",
     ]
@@ -147,8 +153,11 @@ def build_feat_disp_all() -> pd.DataFrame:
         return out
 
     df_disp = norm_keys(pd.read_csv(FEATURES_DIR / DISP_FEATURES))
-    meta_extra = ["ID_IMG", "slot", "FIELD_STRENGTH", "MANUFACTURER", "MFG_MODEL",
-                  "MMSE_SCORE", "CDR_GLOBAL", "ADAS_SCORE", "FAQ_SCORE"]
+    meta_extra = [
+        "ID_IMG", "slot", "soft_pmci", "PARAM_SOFT_PMCI",
+        "FIELD_STRENGTH", "MANUFACTURER", "MFG_MODEL",
+        "MMSE_SCORE", "CDR_GLOBAL", "ADAS_SCORE", "FAQ_SCORE",
+    ]
     longitudinal = pd.read_csv(LONGITUDINAL)
     longitudinal["ID_IMG"] = longitudinal["ID_IMG"].astype(str).str.strip()
     cohort_ids = set(longitudinal["ID_IMG"])
@@ -164,6 +173,7 @@ def build_feat_disp_all() -> pd.DataFrame:
     meta_order = [
         "ID_IMG", "roi", "side", "label",
         "ID_PT", "GROUP", "SEX", "AGE", "MRI_DATE", "DIAG", "slot", "ref_tag",
+        "soft_pmci", "PARAM_SOFT_PMCI",
         "FIELD_STRENGTH", "MANUFACTURER", "MFG_MODEL",
         "MMSE_SCORE", "CDR_GLOBAL", "ADAS_SCORE", "FAQ_SCORE", "batch",
     ]
@@ -178,6 +188,7 @@ def build_feat_disp_all() -> pd.DataFrame:
 def build_feat_merge_all(rad: pd.DataFrame, disp: pd.DataFrame) -> pd.DataFrame:
     overlap_meta = {
         "ID_PT", "SEX", "DIAG", "GROUP", "AGE", "MRI_DATE", "slot",
+        "soft_pmci", "PARAM_SOFT_PMCI",
         "FIELD_STRENGTH", "MANUFACTURER", "MFG_MODEL",
         "MMSE_SCORE", "CDR_GLOBAL", "ADAS_SCORE", "FAQ_SCORE", "batch",
     }
@@ -213,12 +224,30 @@ def main() -> None:
         if not p.is_file():
             raise FileNotFoundError(f"Extração incompleta: {p}")
 
+    long = pd.read_csv(LONGITUDINAL)
+    if "PARAM_SOFT_PMCI" not in long.columns:
+        raise ValueError(f"sem PARAM_SOFT_PMCI em {LONGITUDINAL}")
+    flags = long["PARAM_SOFT_PMCI"].dropna().unique()
+    if len(flags) != 1:
+        raise ValueError(f"PARAM_SOFT_PMCI não único: {flags} em {LONGITUDINAL}")
+    # ponytail: CSV pode vir bool ou "False"; str("False") != bool path
+    flag = str(flags[0]).strip().lower() in {"true", "1"}
+    if flag != SOFT_PMCI:
+        raise ValueError(
+            f"PARAM_SOFT_PMCI={flags[0]!r} ≠ SOFT_PMCI={SOFT_PMCI} em {LONGITUDINAL}"
+        )
+    BASE.mkdir(parents=True, exist_ok=True)
+    long.to_csv(BASE / "adnimerged_longitudinal.csv", index=False)
+
     rad = add_cohort_meta(merge_rad_vol_icv())
     disp = build_feat_disp_all()
     merge = build_feat_merge_all(rad, disp)
     paths = export_ablation_long_only(rad, disp, merge, BASE)
     print(f"ablation export OK: {len(paths)} ficheiros → {list(paths.values())}")
-    print(f"features←{FEATURES_DIR} | disp←{DISP_FEATURES} | cohort←{COHORT} | out←{BASE}")
+    print(
+        f"features←{FEATURES_DIR} | disp←{DISP_FEATURES} | "
+        f"soft={SOFT_PMCI} | src←{COHORT} | out←{BASE}"
+    )
 
 
 if __name__ == "__main__":

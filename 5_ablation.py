@@ -23,7 +23,7 @@ if str(_MOD) not in sys.path:
     sys.path.insert(0, str(_MOD))
 
 from ablation_analysis import prepare_ablation_df, summary_with_pooled
-from ablation_prep import ROI_FILTER_DEFAULT
+from ablation_prep import ROI_FILTER_DEFAULT, param_soft_pmci_of
 from ablation_representation import (
     REPRESENTATIONS,
     default_results_dir,
@@ -237,6 +237,8 @@ def main(argv: list[str] | None = None) -> int:
 
     log.info("=== ablação nested CV ===")
     log.info("cohort:       %s", args.cohort)
+    _long, _soft = param_soft_pmci_of(args.cohort)
+    log.info("PARAM_SOFT_PMCI=%s | csv=%s", _soft, _long)
     log.info("representação:%s", representation)
     log.info("modalidades:  %s", modalities)
     log.info("tasks:        %s", tasks)
