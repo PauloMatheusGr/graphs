@@ -30,6 +30,7 @@ DELTA_TIME_TOKENS_LEGACY = ("D21", "D31", "SLOPE")
 REPRESENTATION_TOKENS = ("T1", "D21", "D31", "D32")
 REPRESENTATION_TOKENS_LEGACY = ("T1", "D21", "D31", "SLOPE")
 REPRESENTATION_TOKENS_Q4 = ("T1", "D21", "D32")
+REPRESENTATION_TOKENS_D21 = ("T1", "D21")
 REPRESENTATION_TOKENS_Q5 = ("T1", "M", "A")
 PROTOCOL_T1_DELTAS = "t1_deltas_abs"
 
@@ -133,6 +134,8 @@ def feature_tokens_for_delta_representation(representation: str) -> tuple[str, .
         return REPRESENTATION_TOKENS
     if representation == "t1_d21_d32":
         return REPRESENTATION_TOKENS_Q4
+    if representation == "t1_d21":
+        return REPRESENTATION_TOKENS_D21
     if representation == "t1_ma":
         return REPRESENTATION_TOKENS_Q5
     raise ValueError(f"representação delta desconhecida: {representation!r}")
@@ -143,7 +146,7 @@ def delta_kwargs_for_representation(representation: str) -> dict:
         return {"include_t1": False, "delta_kind": "abs", "include_slope": False}
     if representation == "t1_deltas_rel":
         return {"include_t1": True, "delta_kind": "rel", "include_slope": True}
-    if representation in ("t1_deltas", "t1_deltas_abs", "t1_d21_d32"):
+    if representation in ("t1_deltas", "t1_deltas_abs", "t1_d21_d32", "t1_d21"):
         return {"include_t1": True, "delta_kind": "abs", "include_slope": False}
     if representation == "t1_ma":
         return {
@@ -320,6 +323,15 @@ if __name__ == "__main__":
     assert len(q4_cols) == 3
     assert f"{roi}_L_D31_gm_norm" not in q4_cols
 
+    d21_cols = modality_wide_columns(
+        out.columns, "vol", roi=roi, use_deltas=True,
+        feature_tokens=REPRESENTATION_TOKENS_D21,
+    )
+    assert len(d21_cols) == 2
+    assert f"{roi}_L_T1_gm_norm" in d21_cols
+    assert f"{roi}_L_D21_gm_norm" in d21_cols
+    assert f"{roi}_L_D32_gm_norm" not in d21_cols
+
     ma = add_delta_columns(wide, roi, include_t1=True, delta_kind="abs", include_ma=True)
     m_col, a_col = f"{roi}_L_M_gm_norm", f"{roi}_L_A_gm_norm"
     assert m_col in ma.columns and a_col in ma.columns
@@ -405,6 +417,11 @@ if __name__ == "__main__":
             feature_tokens=REPRESENTATION_TOKENS_Q4,
         ))
         assert n_q4 == n_abs, f"{mod}: abs={n_abs} q4={n_q4}"
+        n_d21 = len(modality_wide_columns(
+            wide_d.columns, mod, roi=roi, use_deltas=True,
+            feature_tokens=REPRESENTATION_TOKENS_D21,
+        ))
+        assert n_d21 == n_abs // 3 * 2, f"{mod}: abs={n_abs} d21={n_d21}"
         wide_ma = add_delta_columns(wide, roi, include_t1=True, delta_kind="abs", include_ma=True)
         n_q5 = len(modality_wide_columns(
             wide_ma.columns, mod, roi=roi, use_deltas=True,

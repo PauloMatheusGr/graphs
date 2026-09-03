@@ -22,6 +22,7 @@ def image_ablation_path(base: Path, protocol: str, modality: str) -> Path:
         "deltas": base / "ablation_results_deltas",  # alias legado
         "deltas_only": base / "ablation_results_deltas_only",
         "deltas_rel": base / "ablation_results_deltas_rel",
+        "t1_d21": base / "ablation_results_d21",
         "t1_d21_d32": base / "ablation_results_d21d32",
         "t1_ma": base / "ablation_results_ma",
         "global": base / "ablation_results_leaky",

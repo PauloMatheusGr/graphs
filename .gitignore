@@ -13,20 +13,22 @@ colab/logs_*/
 .cursor/
 docs/
 logs/
-artigo/graphics/
-artigo/tables/
+Artigo 1 pgirardi/graphics/
+Artigo 1 pgirardi/tables/
 backups/
-artigo/cas-model2-names-short.bst
-artigo/cas-model2-names.bst
-artigo/figures/
-artigo/tables/
-artigo/graphics/
-artigo/artigo.aux
-artigo/artigo.log
-artigo/artigo.out
-artigo/artigo.synctex.gz
-artigo/artigo.pdf
-artigo/artigo.bbl
+Artigo 1 pgirardi/cas-model2-names-short.bst
+Artigo 1 pgirardi/cas-model2-names.bst
+Artigo 1 pgirardi/figures/
+Artigo 1 pgirardi/tables/
+Artigo 1 pgirardi/graphics/
+Artigo 1 pgirardi/artigo.aux
+Artigo 1 pgirardi/artigo.log
+Artigo 1 pgirardi/artigo.out
+Artigo 1 pgirardi/artigo.synctex.gz
+Artigo 1 pgirardi/artigo.pdf
+Artigo 1 pgirardi/artigo.bbl
+Artigo 1 pgirardi/manuscript_v1_package
+Artigo 1 pgirardi/old
 
 artigo_old/cas-model2-names-short.bst
 artigo_old/cas-model2-names.bst

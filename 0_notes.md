@@ -1,3 +1,277 @@
+mudança do target do artigo, agora a coorte principal é 48m_6m, pois surgiram novos estudos que viabilizam o tempo entre as imagens de 6 meses, bem como permite a ablação com soft_pmci=False com a distribuição de pacientes 74 pmci vs 73 smci.
+
+Outro experimento importante a ser feito é considerar apenas as imagens i1 e i2 dos conjuntos i={i1,i2,i3} para termos as comparações longitudinal com 3 imagens, baseline e com duas imagens.
+
+# Incorporar ou corrigir no artigo:
+
+## Quantidade de dados após o split dentro do treino/teste externo e interno.
+
+Dados presentes:
+
+Tamanho total por coorte (ex: coorte principal 48m_12m n=120, 72 sMCI / 48 pMCI)
+Razão aproximada: "80% treino, 20% teste" no fold externo
+Tabela tab:nfeat mostra cardinalidade média de features, mas não n por fold
+Faltam: contagens exatas tipo "fold 1: treino=96, teste=24" ou distribuição classe por fold no split externo, e idem para interno. Esse detalhe não está no artigo atual. Seria informação útil para reprodutibilidade — vale adicionar como tabela ou no texto descritivo da seção de validação cruzada.
+
+refazer todas as demais analises com a nova coorte principal (48m_6m) feitas a priori com a coorte 48m_12m e reescrever o artigo com base na nova coorte principal. 
+
+Sim — há suporte médico sólido para a detecção de alterações estruturais em T1-w MRI em intervalos de aproximadamente 6 meses, inclusive no MCI. Contudo, existe uma distinção essencial: a literatura demonstra muito melhor a detectabilidade estatística da alteração em grupos do que a capacidade de medir, com alta confiabilidade, uma alteração biologicamente verdadeira em cada indivíduo ao longo de apenas seis meses.
+
+Isso torna a estratégia 48m_6m defensável, mas eu mudaria ligeiramente a forma de justificá-la.
+
+O trabalho mais diretamente relacionado ao nosso problema
+
+Mubeen et al., no Journal of Neuroradiology (2017), estudaram exatamente a questão: se adicionar uma avaliação longitudinal em aproximadamente 6 meses melhora a predição de conversão sMCI → pMCI. Foram 247 indivíduos com MCI, 162 pMCI e 85 sMCI, usando MRI estrutural T1, variáveis cognitivas e demográficas. O modelo baseline apresentou AUC 0,82, enquanto o modelo incorporando baseline + 6 meses atingiu AUC 0,87, com melhora significativa (\(P<0,05\)). Os autores utilizaram, entre os biomarcadores estruturais, medidas de integridade/atrofia hipocampal e corpo caloso.
+
+Mubeen AM et al. A six-month longitudinal evaluation significantly improves accuracy of predicting incipient Alzheimer's disease in mild cognitive impairment. Journal of Neuroradiology. 2017;44(6):381–387. DOI: 10.1016/j.neurad.2017.05.008.
+
+Há uma ressalva: esse resultado não prova que T1 MRI isoladamente melhora de 0,82 para 0,87, porque o classificador era multimodal. Entretanto, os próprios autores relatam que as alterações estruturais foram particularmente informativas no intervalo curto.
+
+Evidência biológica ainda mais importante: Schuff et al., Brain
+
+Para nossa justificativa, considero este talvez o artigo mais importante.
+
+Schuff et al. analisaram ADNI multicêntrico com 127 CN, 226 MCI e 96 AD, todos examinados em baseline, 6 e 12 meses. Eles mediram diretamente a perda de volume hipocampal em T1-w MRI.
+
+No intervalo 0–6 meses, as taxas anualizadas foram aproximadamente:
+
+Grupo	Taxa anualizada de perda hipocampal
+CN	\(-0,9\%\)
+MCI	\(-2,0\%\)
+AD	\(-3,3\%\)
+
+No MCI, a perda hipocampal já era altamente significativa em 0–6 meses (\(P<0,0001\)).
+
+Isso corresponde aproximadamente, em seis meses, a:
+
+$$ \Delta V_{\rm MCI}^{6m}\approx -1.0\% $$
+
+e, para AD,
+
+$$ \Delta V_{\rm AD}^{6m}\approx -1.65\%. $$
+
+Portanto, a resposta biológica é inequívoca: sim, ocorre alteração macroscópica detectável por T1 MRI nesse intervalo.
+
+Schuff N et al. MRI of hippocampal volume loss in early Alzheimer's disease in relation to ApoE genotype and biomarkers. Brain. 2009;132(4):1067–1077. DOI: 10.1093/brain/awp007.
+
+Há uma nuance importante nesses números
+
+O hipocampo médio dos indivíduos MCI naquele estudo tinha cerca de \(1846~\mathrm{mm^3}\), e a perda anual estimada em 0–6 meses foi aproximadamente
+
+$$ -37.7~\mathrm{mm^3/ano}. $$
+
+Logo, em seis meses estamos falando de apenas aproximadamente
+
+$$ 19~\mathrm{mm^3}. $$
+
+Isso parece pequeno para uma imagem com voxels da ordem de \(1~\mathrm{mm^3}\), mas métodos longitudinais não dependem de detectar “19 voxels que desapareceram”. Registro intraindivíduo, modelos de superfície, BSI, TBM etc. acumulam pequenas alterações de fronteira distribuídas por centenas ou milhares de pontos e podem estimar deslocamentos subvoxel.
+
+Por isso é possível detectar uma variação de ~1% mesmo quando nenhum voxel isolado apresenta uma mudança inequívoca.
+
+Mas aqui está a advertência: no artigo de Schuff, a variabilidade interindividual era muito maior que a alteração média. Portanto,
+
+$$ \text{significância populacional} \;\not\Rightarrow\; \text{medição individual precisa}. $$
+
+Esse ponto deve ser explicitamente reconhecido no nosso artigo.
+
+Evidência especificamente para late MCI
+
+Hua et al., usando 5.738 exames ADNI2, estudaram TBM em T1-w MRI com aquisições em screening, 3, 6, 12 e 24 meses. A conclusão particularmente relevante foi:
+
+para obter potência estatística razoável com biomarcadores MRI-TBM, o intervalo mínimo foi 6 meses para LMCI e AD, mas 12 meses para EMCI.
+
+Hua X et al. MRI-based brain atrophy rates in ADNI phase 2: acceleration and enrichment considerations for clinical trials. Neurobiology of Aging. 2016;37:26–37. DOI: 10.1016/j.neurobiolaging.2015.09.018.
+
+Isso é extremamente relevante para nós porque mostra que a resposta à pergunta
+
+“seis meses é suficiente?”
+
+não é simplesmente sim ou não.
+
+Depende do estágio da doença:
+
+$$ \text{CN/EMCI} \quad\rightarrow\quad \text{sinal menor} $$ $$ \text{LMCI/pMCI próximo da conversão} \quad\rightarrow\quad \text{sinal maior}. $$
+
+E justamente os indivíduos pMCI deveriam estar enriquecidos no segundo cenário.
+
+Outro artigo muito pertinente: Leung et al., Neurology
+
+Leung et al. analisaram scans ADNI em
+
+$$ 0,\;6,\;12,\;18,\;24,\;36~\mathrm{meses} $$
+
+e calcularam mudanças de cérebro inteiro, hipocampo e ventrículos com BSI. Encontraram aceleração significativa da atrofia hipocampal em MCI,
+
+$$ 0.22\%/\mathrm{ano^2}, \qquad p=0.037, $$
+
+e, mais importante, uma análise posterior mostrou que essa aceleração era principalmente determinada pelos MCI que posteriormente converteram para AD, para os quais a aceleração chegou a
+
+$$ 0.50\%/\mathrm{ano^2}, \qquad p=0.003. $$
+
+Leung KK et al. Cerebral atrophy in mild cognitive impairment and Alzheimer disease: rates and acceleration. Neurology. 2013;80(7):648–654. DOI: 10.1212/WNL.0b013e318281ccd3.
+
+Isso fornece precisamente a justificativa biológica que precisamos: os pacientes MCI que caminham para AD são justamente aqueles nos quais esperamos maior dinâmica estrutural longitudinal.
+
+E existe evidência até em indivíduos cognitivamente normais
+
+Murphy et al., NeuroImage (2010), mostraram que mudanças em estruturas do lobo temporal medial entre baseline e 6 meses em T1-w MRI de 142 idosos cognitivamente normais estavam associadas ao declínio cognitivo posterior.
+
+DOI: 10.1016/j.neuroimage.2010.07.016.
+
+Portanto, seis meses não é um intervalo biologicamente absurdo mesmo em CN; naturalmente, o SNR é pior.
+
+Mas existe um ponto muito importante para o nosso próprio desenho
+
+Na realidade, nossa coorte 6m é mais forte do que a expressão “alterações em seis meses” sugere.
+
+Nós temos três imagens:
+
+$$ i_1,\;i_2,\;i_3 $$
+
+com aproximadamente
+
+$$ t_2-t_1\simeq6~\mathrm{meses}, \qquad t_3-t_2\simeq6~\mathrm{meses}. $$
+
+Portanto:
+
+$$ t_3-t_1\simeq12~\mathrm{meses}. $$
+
+Ou seja, a representação longitudinal não está observando apenas um deslocamento em seis meses. Ela contém aproximadamente:
+
+$$ x(t_1), \qquad \Delta x_{21}, \qquad \Delta x_{32}, $$
+
+e implicitamente uma trajetória cobrindo aproximadamente um ano.
+
+Isso muda bastante minha avaliação.
+
+Eu não escreveria:
+
+“we expect substantial hippocampal changes within six months.”
+
+Isso seria forte demais.
+
+Escreveria algo conceitualmente como:
+
+Six-month interscan intervals were selected to provide dense temporal sampling of structural change. Although individual morphometric changes over a single six-month interval can be subtle, previous ADNI studies have demonstrated measurable hippocampal and regional atrophy over this interval, particularly in late MCI and AD. Importantly, the present three-visit design spans approximately 12 months while providing two consecutive short-term change estimates.
+
+Essa formulação é cientificamente muito robusta.
+
+Onde eu ficaria mais cético: nem todos os nossos atributos têm a mesma sustentação
+
+Este é, para mim, o aspecto mais importante da sua pergunta.
+
+A literatura dá sustentação muito forte para mudanças de seis meses em:
+
+volume
+
+$$ V(t) $$
+
+shape/morfometria
+
+cortical thickness
+
+deslocamento/deformação obtidos de registro longitudinal apropriado
+
+ventricular expansion.
+
+Mas eu não estenderia automaticamente essa justificativa para GLCM e first-order intensity features.
+
+T1-w MRI convencional não é uma modalidade quantitativa de intensidade:
+
+$$ I_{\mathrm{T1w}} \neq T_1 $$
+
+e
+
+$$ I_{\mathrm{T1w}}(x) $$
+
+depende de coil sensitivity, ganho, scanner, sequência, bias field, reconstrução, normalização etc.
+
+Portanto, afirmar que uma mudança de textura hipocampal em seis meses representa diretamente alteração microestrutural seria muito mais difícil de defender.
+
+Aliás, o próprio resultado do nosso experimento de histogram matching — com grande alteração do comportamento de GLCM e first-order — é praticamente uma advertência empírica de que essas famílias são bastante sensíveis à transformação fotométrica.
+
+Eu faria uma distinção forte no artigo:
+
+$$ \boxed{\text{morphometric longitudinal biomarkers}} $$
+
+versus
+
+$$ \boxed{\text{intensity-derived exploratory biomarkers}}. $$
+
+Isso aumentaria a credibilidade do estudo.
+
+Portanto, eu manteria 48m_6m strict?
+
+Sim. Depois de verificar a literatura, eu a manteria — e com mais confiança.
+
+Mas com uma mudança conceitual importante:
+
+Eu não justificaria 48m_6m dizendo que:
+
+seis meses necessariamente produzem uma alteração hipocampal grande.
+
+A justificativa seria:
+
+mudanças morfométricas hipocampais já foram demonstradas em MCI em seis meses;
+a detectabilidade é maior em estágios mais avançados de MCI e em indivíduos que progridem para AD;
+estudos ADNI mostram que 6 meses pode constituir intervalo mínimo útil para LMCI;
+já existe inclusive um estudo de classificação sMCI/pMCI mostrando ganho com dados longitudinais de seis meses;
+nosso experimento contém três observações e, portanto, cobre aproximadamente 12 meses, com dois incrementos consecutivos de aproximadamente seis meses.
+
+Esse último ponto me parece particularmente forte.
+
+Uma consequência experimental que eu considero importante
+
+Diante da literatura, eu acrescentaria uma análise muito simples aos novos experimentos strict.
+
+Além de comparar
+
+$$ T1 \quad \text{vs.}\quad Q4, $$
+
+calcularia explicitamente para cada atributo longitudinal:
+
+$$ \Delta_{21}=x_2-x_1, \qquad \Delta_{32}=x_3-x_2 $$
+
+e
+
+$$ \Delta_{31}=x_3-x_1. $$
+
+Então verificaríamos a magnitude e distribuição de
+
+$$ |\Delta_{21}|,\;|\Delta_{32}|,\;|\Delta_{31}| $$
+
+em sMCI e pMCI.
+
+Se o sinal for biologicamente real e relativamente consistente, esperaríamos algo aproximadamente como
+
+$$ |\Delta_{31}| > |\Delta_{21}| $$
+
+e/ou
+
+$$ |\Delta_{31}| > |\Delta_{32}|, $$
+
+especialmente para volume e algumas características de shape.
+
+Isso nos permitiria responder empiricamente a uma pergunta que certamente um revisor da TMI poderá fazer:
+
+Are the six-month structural changes larger than the variability of the measurement itself?
+
+E eu iria um pouco além: se existirem scans repetidos muito próximos temporalmente no ADNI que possam ser usados para estimar test–retest variability, poderíamos estabelecer um noise floor para cada família:
+
+$$ \sigma_{\mathrm{retest}} $$
+
+e então avaliar
+
+$$ \frac{|\Delta x_{6m}|}{\sigma_{\mathrm{retest}}}. $$
+
+Isso transformaria uma potencial fraqueza da escolha de seis meses em uma análise metodológica bastante sofisticada.
+
+Em síntese: a literatura médica apoia claramente mudanças morfométricas detectáveis em seis meses, especialmente em LMCI/pMCI. Portanto, eu não abandonaria a coorte 48m_6m strict. Pelo contrário: com 73 sMCI × 74 pMCI, três visitas pré-conversão e ~12 meses de extensão total da trajetória, considero agora que ela tem uma fundamentação biológica e metodológica convincente. O cuidado deve estar em não extrapolar essa sustentação igualmente para todas as famílias de atributos, sobretudo textura e primeira ordem.
+
+Se desejar, posso fazer em seguida uma busca sistemática mais profunda especificamente por estudos T1-w MRI de 6 meses em sMCI/pMCI, separando evidência de volume, shape, TBM/deformação e radiômica, para decidirmos exatamente quais trabalhos devem entrar no estado da arte do manuscrito.
+
+##############################
+
 # Testes realizados
 
 ## Definição melhor abordagem longitudinal

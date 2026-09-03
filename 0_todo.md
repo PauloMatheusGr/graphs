@@ -1,134 +1,74 @@
-# v0 100%
+# Artigo 1 — fila actual (2026-09-03)
 
-**Nunca** `WIPE=1`.
+**Nunca** `WIPE=1`. `5_ablation.py` reescreve `ablation_results_all.csv` (sem merge).
 
-`cn_ad` de 2026-08-30 falhou (`minority=0` + `--results-dir vol_cn_ad`). Ignora. **Não** mistures disp em `vol_cn_ad`.
+`cn_ad`: **não** `--results-dir vol_cn_ad`. Extra Q4 grava `cn_ad` + `smci_pmci` nos 5 mods. T1 e `t1_d21` ficam só `smci_pmci` (misturar `cn_ad` no T1 quebrou `48m_12m/disp`).
 
-`3.1` a correr (`all_population.csv` → `displacement_field_v3`). SKIP sMCI/pMCI. `3.2` já aponta para a mesma lista. Late fusion (`WIPE=0 SKIP_MONO=1`) também a correr noutro terminal.
+Não lançar outro `5_ablation.py` nos mesmos paths em paralelo.
 
 ---
 
-## Feito
+## Lock
 
-- [x] SVM uniclasse disp v3 × 4 coortes (`t1_only`, `t1_d21_d32`)
-- [x] Stats claim (`7_stats`) + prosa/tabela disp no `artigo.tex`
-- [x] **A.** RF + elasticnet disp, `48m_12m`, sMCI/pMCI, T1 e Q4
-- [x] Heatmaps sMCI/pMCI T1/Q4 re-exportados
-- [x] **B.1** `3.1` CSV = `all_population.csv` (não `smci_pmci`)
+| | |
+|---|---|
+| Claim | **`48m_6m`**, `soft_pmci=True` (73 sMCI / 120 pMCI) |
+| Baseline | `t1_only` |
+| 2 visitas | `t1_d21` (T1+D21, sem i3) |
+| Long. oficial | Q4 `t1_d21_d32` |
+| Extra 4 modelos / clinic / leaky / `cn_ad` | só na claim |
+| Gradiente SVM | 4 coortes **já no disco** — não relançar |
+| Soft=False | `csvs/cohorts/48m_6m_soft_False/` (T1 vs Q4 SVM) — **sensibilidade**, não claim |
+| Early / `--modality all` | fora |
+| HM | store à parte; figura 12m = suplemento; **não** no bash |
 
-## A correr
+Primary: SVM + `l1_stable` (corr 0.85, L1 `C=0.1`, π=70%, `min_timepoints=0`) + nocombat. AUC patient-level.
 
-- [ ] **B.2** `3.1` warps CN/AD (espera `ok`/`skip`/`err` no fim)
-- [ ] **D** late fusion 3 specs × 4 coortes (`--reuse-disk`)
+Código **já feito**: `t1_d21`; bash `LATE_GRID=full` na claim = **232** late k≥2 (cada fam. T1 ou Q4). `LATE_GRID=paper` = 3 specs. Âncora nomeada = shape T1 ∪ resto Q4 (e o par shape T1+vol Q4 está na grelha).
 
-## Ainda por fazer
+`COHORT` / `COHORT_CLAIM` nos notebooks = `48m_6m`. `artigo.tex` ainda cita `48m_12m` (`n=120`).
 
-### B. DVF CN+AD — depois do 3.1 acabar
+---
 
-3. `3.2_feat_dvf_v2.py` — `IMAGES_CSV` já é `all_population.csv`, `RESUME=True`. **Não** apaga `features_displacement_v3.csv`.
-4. `4_run_post_extract.py`: `COHORT = "48m_12m"` (e as outras 3 se o left-join de CN/AD importar). Regenera `disp_long.csv`.
+## Disco agora (`48m_6m`)
 
-Sanity: `disp_long` tem `GROUP` CN e AD com feats **não-NaN**. Sem isto ablation `cn_ad` volta a `minority=0`.
+Há: `ablation_results_t1_only`, `ablation_results_d21d32`, late 3 specs — **só SVM** `smci_pmci`.
 
-### C. Ablation `cn_ad` (depois do B)
+Falta: `ablation_results_d21`, 4 modelos (svm/rf/elasticnet/xgb), `cn_ad` no Q4, clinic, clinic+img, leaky vol (Q4 e D21), late specs D21.
 
-**Sem** `--results-dir` (grava em `ablation_results_d21d32/disp/`):
+---
+
+## Feito (não voltar)
+
+- [x] Patch A / denylist / Q4 = T1+D21+D32
+- [x] SVM uniclasse T1 + Q4 × 4 coortes
+- [x] Late 3 specs × 4 coortes (SVM, reuse)
+- [x] Extra 4 modelos + `cn_ad` + clinic + leaky em **`48m_12m`** (claim antiga)
+- [x] Soft=False `48m_6m` uniclasse SVM T1 vs Q4
+- [x] Representação `t1_d21` no código + bash
+- [x] DVF CN/AD no long (Q4 `cn_ad` nas 5 fam. já correu em 12m)
+
+## A correr / próximo
+
+- [ ] **A.** Bash só claim (longo; SENS reescreve SVM T1/Q4)
 
 ```bash
-for C in t1_only t1_d21_d32; do
-  .venv/bin/python 5_ablation.py --cohort 48m_12m --representation "$C" \
-    --modality disp --tasks cn_ad --selection l1_stable --models svm \
-    --combat false --repeats 10 --seed 42 \
-    --tuner optuna --optuna-trials 10 \
-    --stable-pool-min-pct 70 --stable-pool-min-timepoints 0 \
-    --stable-bootstrap 50 --stable-l1-c 0.1
-done
+COHORTS="48m_6m" SKIP_MONO=0 SKIP_EXTRA=0 WIPE=0 \
+  ./run_ablation_full.sh 2>&1 | tee logs/ablation_d21_48m6m_$(date +%Y%m%d).log
 ```
 
-Heatmap T1 também com disp CN×AD? Repete `--representation t1_only`.
+`SKIP_EXISTING=1` salta mono SVM já existente; bloco SENS **regrava** 4 modelos. `TWO_VISIT=1` automático (`COHORTS` = claim).
 
-Depois: só a figura `heatmap_cn_ad.pdf` (sMCI/pMCI já feitos).
+DONE quando: `ablation_results_d21/{vol,shape,texture,disp,firstorder}/`, 4 `model_key` em T1/D21/Q4, Q4 com `task=cn_ad`, late D21, `ablation_results_clinic*`, `ablation_results_leaky_d21d32` + leaky D21.
 
-### D. Late fusion — **já lançado** (`--reuse-disk`)
-
-Se o bash só fez as 3 specs: 100% argmax ainda pede `ablation_results_late_fusion/*disp*` extra. Specs **sem** `disp` não mexem.
-
-### E. Rebuild + paper (depois de C e D)
-
-1. `save_cohort_comparison`
-2. Células encoding / fusion / HM / `heatmap_cn_ad` — **não** heatmaps sMCI/pMCI
-3. `7_stats` se D mudou late
-4. Se argmax mudou: `artigo.tex` (`48m_6m` `$0{,}828$`)
-5. Compila PDF
-
-### F. Opcional (fotometria limpa) — **não** bloqueia v0
-
-Warps v3 em T1 **sem** HM + `3.2` + Q4 `48m_12m` disp. Sem isto HM `$0{,}621\to0{,}600$` continua misto (`csvs_old`).
+Não crownear AUCs até `DONE`.
 
 ---
 
-**Ordem:** espera 3.1 + late → B.3–4 (`3.2`, `4_run_post_extract`) → C → E.
+## Ainda por fazer (depois do A)
 
-######################################################
-# Lock histórico (não é a fila de amanhã)
-######################################################
+### B. Rebuild planilha
 
-Estado: Patch A **no código**. Bash **corrigido**. Run `SKIP_EXTRA=0 WIPE=1` **a correr** (2026-08-17).
-Primary: SVM + `l1_stable` (corr 0.85 uma vez, L1 `C=0.1`, π=70%, `min_timepoints=0`) + nocombat.
-Métrica: AUC patient-level. Long. oficial = **Q4 `t1_d21_d32`**. Baseline = `t1_only`.
-Espaço: classe completa + denylist (`ablation_prep.py` / `ablation_deltas.py`). Allowlist morta.
-Early / `--modality all` fora. MeshVolume ∈ vol. Energy ∉ firstorder.
-
-CSVs `cohort_results.csv` e AUCs no `artigo.tex` = allowlist → **não usar**.
-
----
-
-## 1. Racional (lock)
-
-### Perguntas
-1. Q4 vs `t1_only` agrega sinal (uniclasse + late)?
-2. Principais atributos por família (freq. `selected_features`)?
-3. Late (3 specs) bate teto unimodal?
-
-### Contraste
-- Long: **`t1_d21_d32`**
-- Baseline: **`t1_only`**
-- Não crownear `wide`/`abs`/`t1_deltas`/`t1_deltas_rel`/`t1_ma`
-
-### Coortes
-| Papel | Coorte |
-|-------|--------|
-| Claim / multimodal | **`48m_12m`** |
-| Âncora n | `36m_6m` |
-| Gradiente | 4 coortes |
-
-### Multimodal
-Late = 5 SVMs, média. Specs: tudo t1 · tudo Q4 · âncora `shape:t1_only ∪ resto Q4`.
-Clinic+img (extra): shape + `t1_only`.
-
-### Script
-```bash
-# paper + extra (wipe t1_only / d21d32 / late_fusion):
-SKIP_EXTRA=0 ./run_ablation_full.sh 2>&1 | tee logs/ablation_full_$(date +%Y%m%d).log
-# RF/EN na claim (pisa Q4 svm):
-# SENS_REPS="t1_only t1_d21_d32" SKIP_EXTRA=0 ./run_ablation_full.sh ...
-```
-40 mono + 12 late + extra só `48m_12m`. `WIPE=0 SKIP_MONO=1` só se mono novo já no disco.
-
----
-
-## 2. Ainda por fazer
-
-### A. Esperar o run
-- Log: `logs/ablation_full_*.log`
-- Mono: `ablation_results_t1_only/{vol,shape,texture,disp,firstorder}/` e `ablation_results_d21d32/` nas 4 coortes
-- Late: `ablation_results_late_fusion/` × 3 fingerprints × 4
-- Extra: `vol_cn_ad/`, clínica, clinic+img, leaky na claim
-- Log cn_ad: `tasks: ('cn_ad',)` — não `smci_pmci`
-
-Não crownear AUCs até o bash `DONE`.
-
-### B. Rebuild planilha (depois do DONE)
 ```bash
 cd /mnt/study-data/pgirardi/graphs
 .venv/bin/python -c "
@@ -144,55 +84,80 @@ p_res, p_feat, *_ = save_cohort_comparison(
 print(p_res, p_feat)
 "
 ```
-Snapshot opcional de `cohort_comparison/` antes. cn_ad não entra.
-Q2: `cohort_features_long.csv` (freq. por família, t1 vs Q4 à parte).
 
-### C. Stats
-`7_stats.ipynb` top→bottom, **CSV fresco**:
-- `PROTOCOL_LONGITUDINAL = "t1_d21_d32"`
-- `MODS_COMPARE` = vol, shape, texture, disp, firstorder (sem `all`)
-- Claim B: `48m_12m` Q4 vs `t1_only`, FDR 5 mods
-- Gradiente 4 coortes
-- clinic/leaky em `BASE_CLAIM` se extra acabou
+Snapshot opcional de `cohort_comparison/` antes. `cn_ad` não entra. Q2: `cohort_features_long.csv`.
 
-### D. Figs
-`6_results.ipynb`: `PROTO_ENC` = `t1_d21_d32`; âncora late spec 3. Heatmaps sMCI/pMCI **já v3** (svm/rf/en). Falta `heatmap_cn_ad` depois do DVF CN/AD. Sem early.
+### C. Notebooks — patches (funções já existem)
 
-### E. Artigo (`artigo.tex` = draft allowlist)
-Reescrever **depois** dos números:
-- Classe completa + denylist (não lista de 4 GLCM)
-- Seletor: var → corr 0.85 (`|ρ|` com y; protecção temporal) → 50× L1 → π=70% → SVM
-- `tab:dims`: contagens **antes** do seletor (texture Q4 = 144, não 24)
-- Firstorder = família (16), não “excluído das isoladas”
-- Late only; early fora
-- Q4 vs `t1_only`; representante colinear ≠ melhor nome IBSI
-- Cruzar AUCs com CSV fresco
+`6_results.ipynb`:
 
-### F. Armadilhas
-- `WIPE=1` apaga t1_only / d21d32 / late — não os long
-- Late `--reuse-disk` com CSVs allowlist = experimento errado (bash já wipeia)
-- `SENS_REPS=... SKIP_EXTRA=0` reescreve SVM nocombat na claim
-- `--tasks smci_pmci` depois de `cn_ad` no mesmo argparse = bug (já evitado)
-- Não `4_run_post_extract` (IBSI já no long)
-- Grade 72 late / early = fora
+- Heatmap + ROC `t1_d21` (hoje só T1 e Q4)
+- `PROTOCOL_COMPARE`: linhas Shape/Vol D21
+- `HM_COHORT` ainda `48m_12m` — pular célula ou deixar suplemento 12m
+- `FIG_DIR`: figs vão a `artigo/figures`; draft em `Artigo 1 pgirardi/` — copiar ou apontar
+
+`7_stats.ipynb`:
+
+- Contrastes SVM: `t1_d21` vs T1 **e** Q4 vs `t1_d21` (além Q4 vs T1)
+- Tabela n/fold a partir de `test_id_pts` (tex ainda diz ~96/24, n=120)
+- Markdown / `save_table(..., "*_48m12")` — nomes velhos; dados = `COHORT_CLAIM`
+
+Kernel cwd = raiz. Reexecutar top→bottom (outputs em cache ainda dizem 12m). Stats oficiais = **SVM**. Heatmaps = 4 modelos.
+
+### D. Artigo
+
+Reescrever **depois** dos números (`Artigo 1 pgirardi/artigo.tex` e/ou `artigo/artigo.tex`):
+
+- Claim `48m_6m`, n=193 (73/120); 12m = célula do gradiente
+- Justificativa 6 meses (Schuff / Mubeen / Hua LMCI) — ver `0_notes.md`; 3 visitas ≈ 12 meses de trajectória
+- T1 vs D21 vs Q4; late; clinic; leaky; heatmaps/ROC; CN×AD
+- Soft=False = sensibilidade (não muda o claim)
+- Seletor / denylist / dims **antes** L1; late only; early fora
+- Cruzar AUCs com CSV fresco — tex actual = números 12m
+
+Compila PDF.
 
 ---
 
-## 3. Ficheiros-chave
+## Fora (não construir)
 
-- Denylist / keep: `modules/ablation_prep.py`, `modules/ablation_deltas.py`
-- Seletor: `modules/ablation_stable.py`, `corr_keep_mask` em `ablation_runner.py`
-- Run: `run_ablation_full.sh` + `5_ablation.py` + `5_ablation_late_fusion.py`
+- Early / `--modality all` / grade 72 late
+- 4 modelos nas outras 3 coortes
+- Relançar gradiente SVM ou soft=False uniclasse
+- `|Δ21|` vs `|Δ31|` e noise floor retest (`0_notes`) — TMI nice-to-have
+- HM em `48m_6m` — não bloqueia
+- `4_run_post_extract` de novo (IBSI já no long)
+
+---
+
+**Ordem:** A bash → B planilha → C patches + notebooks → D tex.
+
+---
+
+## Armadilhas
+
+- `WIPE=1` apaga t1_only / d21 / d21d32 / late — **não** os long
+- `COHORTS` default = 4 coortes: **não** usar; só `"48m_6m"` (12m `disp` T1 está podre: só `cn_ad`)
+- SENS `SKIP_EXTRA=0` reescreve SVM nocombat na claim — esperado para heatmaps 4 modelos
+- `--tasks` duplicado no argparse: último ganha (bash já separa Q4 `cn_ad,smci_pmci`)
+- `param_soft_pmci_of` lê `adnimerged_longitudinal.csv`; em `48m_6m` o ficheiro é `*_True.csv` / `*_False.csv` — só log, long de feats está em `ablation/`
+
+---
+
+## Ficheiros-chave
+
+- Denylist / keep / D21: `modules/ablation_prep.py`, `ablation_deltas.py`, `ablation_representation.py`
+- Run: `run_ablation_full.sh` + `5_ablation.py` + `5_ablation_late_fusion.py` + `5_clinic_img.py` + `5_ablation_leaky.py`
 - Resultados: `csvs/cohort_comparison/{cohort_results,cohort_features_long}.csv`
 - Stats / figs: `7_stats.ipynb`, `6_results.ipynb`
-- Artigo: `artigo/artigo.tex` (desactualizado até E)
+- Artigo: `Artigo 1 pgirardi/artigo.tex`
 
-## 4. Dimensões (antes L1; L+R)
+## Dimensões (antes L1; L+R)
 
-| Família | Sufixos | t1_only | Q4 |
-|---------|---------|---------|-----|
-| vol | 4 | 8 | 24 |
-| shape | 12 | 24 | 72 |
-| texture | 24 GLCM | 48 | 144 |
-| firstorder | 16 | 32 | 96 |
-| disp | 15 (long) | 30 | 90 |
+| Família | Sufixos | t1_only | t1_d21 | Q4 |
+|---------|---------|---------|--------|----|
+| vol | 4 | 8 | 16 | 24 |
+| shape | 12 | 24 | 48 | 72 |
+| texture | 24 GLCM | 48 | 96 | 144 |
+| firstorder | 16 | 32 | 64 | 96 |
+| disp | 15 | 30 | 60 | 90 |

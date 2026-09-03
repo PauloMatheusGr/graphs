@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from itertools import combinations, product
 from pathlib import Path
 from typing import Literal
 
@@ -9,7 +10,7 @@ from ablation_prep import ROI_FILTER_DEFAULT, modality_wide_columns
 
 Representation = Literal[
     "wide", "t1_only", "t1_deltas", "deltas_only", "t1_deltas_rel",
-    "t1_d21_d32", "t1_ma",
+    "t1_d21", "t1_d21_d32", "t1_ma",
 ]
 REPRESENTATIONS: tuple[str, ...] = (
     "wide",
@@ -17,14 +18,15 @@ REPRESENTATIONS: tuple[str, ...] = (
     "t1_deltas",
     "deltas_only",
     "t1_deltas_rel",
+    "t1_d21",
     "t1_d21_d32",
     "t1_ma",
 )
 DELTA_REPRESENTATIONS = frozenset({
-    "t1_deltas", "deltas_only", "t1_deltas_rel", "t1_d21_d32", "t1_ma",
+    "t1_deltas", "deltas_only", "t1_deltas_rel", "t1_d21", "t1_d21_d32", "t1_ma",
 })
 ABS_DELTA_REPRESENTATIONS = frozenset({
-    "t1_deltas", "deltas_only", "t1_d21_d32", "t1_ma",
+    "t1_deltas", "deltas_only", "t1_d21", "t1_d21_d32", "t1_ma",
 })
 
 FUSION_MODALITIES: tuple[str, ...] = ("vol", "shape", "texture", "disp", "firstorder")
@@ -42,6 +44,7 @@ _REP_SHORT: dict[str, str] = {
     "deltas_only": "deltas",
     "t1_deltas": "t1_deltas",
     "t1_deltas_rel": "t1_deltas_rel",
+    "t1_d21": "t1_d21",
     "t1_d21_d32": "t1_d21d32",
     "t1_ma": "t1_ma",
     "wide": "wide",
@@ -54,6 +57,7 @@ RESULTS_ROOT_BY_PROTOCOL: dict[str, dict[str, str]] = {
         "t1_deltas": "ablation_results_deltas",
         "deltas_only": "ablation_results_deltas_only",
         "t1_deltas_rel": "ablation_results_deltas_rel",
+        "t1_d21": "ablation_results_d21",
         "t1_d21_d32": "ablation_results_d21d32",
         "t1_ma": "ablation_results_ma",
     },
@@ -63,6 +67,7 @@ RESULTS_ROOT_BY_PROTOCOL: dict[str, dict[str, str]] = {
         "t1_deltas": "ablation_results_leaky_deltas",
         "deltas_only": "ablation_results_leaky_deltas_only",
         "t1_deltas_rel": "ablation_results_leaky_deltas_rel",
+        "t1_d21": "ablation_results_leaky_d21",
         "t1_d21_d32": "ablation_results_leaky_d21d32",
         "t1_ma": "ablation_results_leaky_ma",
     },
@@ -72,6 +77,7 @@ RESULTS_ROOT_BY_PROTOCOL: dict[str, dict[str, str]] = {
         "t1_deltas": "ablation_results_clinic_img_deltas",
         "deltas_only": "ablation_results_clinic_img_deltas_only",
         "t1_deltas_rel": "ablation_results_clinic_img_deltas_rel",
+        "t1_d21": "ablation_results_clinic_img_d21",
         "t1_d21_d32": "ablation_results_clinic_img_d21d32",
         "t1_ma": "ablation_results_clinic_img_ma",
     },
@@ -124,6 +130,27 @@ def parse_fusion_spec(value: str) -> tuple[FusionSlot, ...]:
     if abs_delta and rel_delta:
         raise ValueError("fusion não mistura deltas abs com t1_deltas_rel")
     return tuple(slots)
+
+
+def iter_late_fusion_grid(
+    *,
+    mods: tuple[str, ...] = FUSION_MODALITIES,
+    baseline: str = "t1_only",
+    longitudinal: str = "t1_d21_d32",
+    min_k: int = 2,
+) -> list[str]:
+    """Uniões k≥2: cada família ∈ {baseline, longitudinal}. Ordem = `mods` (não permutações).
+
+    5 fam. → 232 specs (2⁵−1−5 unimodais T1 − 5 unimodais Q4).
+    """
+    if min_k < 2:
+        raise ValueError("late exige min_k≥2")
+    specs: list[str] = []
+    for k in range(min_k, len(mods) + 1):
+        for subset in combinations(mods, k):
+            for encs in product((baseline, longitudinal), repeat=k):
+                specs.append(",".join(f"{m}:{r}" for m, r in zip(subset, encs)))
+    return specs
 
 
 def fusion_fingerprint(slots: tuple[FusionSlot, ...] | list[FusionSlot]) -> str:
@@ -351,6 +378,27 @@ if __name__ == "__main__":
     )
     assert f"{roi}_L_D31_gm_norm" not in q4_cols
     assert f"{roi}_L_D21_gm_norm" in q4_cols
+    d21_wide = apply_representation_wide(wide, "t1_d21", roi=roi)
+    d21_cols = feature_columns_for_representation(
+        d21_wide.columns, "vol", roi=roi, representation="t1_d21",
+    )
+    assert f"{roi}_L_T1_gm_norm" in d21_cols
+    assert f"{roi}_L_D21_gm_norm" in d21_cols
+    assert f"{roi}_L_D32_gm_norm" not in d21_cols
+    assert f"{roi}_L_D31_gm_norm" not in d21_cols
+    assert parse_representation("t1_d21") == "t1_d21"
+    vol_feats = ("gm_norm", "wm_norm", "csf_norm", "original_shape_MeshVolume")
+    row16: dict = {"ID_PT": ["p1"], "GROUP": ["sMCI"], "SEX": [0]}
+    for side in "LR":
+        for t in ("T1", "T2", "T3"):
+            for feat in vol_feats:
+                row16[f"{roi}_{side}_{t}_{feat}"] = [1.0]
+    wide16 = pd.DataFrame(row16)
+    d21_16 = feature_columns_for_representation(
+        apply_representation_wide(wide16, "t1_d21", roi=roi).columns,
+        "vol", roi=roi, representation="t1_d21",
+    )
+    assert len(d21_16) == 16, len(d21_16)
     ma_wide = apply_representation_wide(wide, "t1_ma", roi=roi)
     ma_cols = feature_columns_for_representation(
         ma_wide.columns, "vol", roi=roi, representation="t1_ma",
@@ -369,6 +417,14 @@ if __name__ == "__main__":
     assert [m for m, _ in ancora] == ["shape", "vol", "texture", "disp", "firstorder"]
     assert ancora[0] == ("shape", "t1_only")
     assert all(r == "t1_d21_d32" for m, r in ancora if m != "shape")
+    grid = iter_late_fusion_grid()
+    assert len(grid) == 232, len(grid)
+    assert "vol:t1_d21_d32,shape:t1_only" in grid
+    assert "vol:t1_only,shape:t1_only,texture:t1_only,disp:t1_only,firstorder:t1_only" in grid
+    assert (
+        "vol:t1_d21_d32,shape:t1_only,texture:t1_d21_d32,"
+        "disp:t1_d21_d32,firstorder:t1_d21_d32"
+    ) in grid
     fw = apply_fusion_wide(wide, slots, roi=roi)
     fcols = feature_columns_for_fusion(fw.columns, slots, roi=roi)
     assert f"{roi}_L_T1_original_shape_Sphericity" in fcols
