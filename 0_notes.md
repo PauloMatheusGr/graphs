@@ -4,6 +4,25 @@ Outro experimento importante a ser feito é considerar apenas as imagens i1 e i2
 
 # Incorporar ou corrigir no artigo:
 
+## ICV: homotetia, não divisão crua (shape)
+
+Bug antigo: `4_run_post_extract` fazia `x / ICV` para eixos (mm) e `SurfaceArea` (mm²). Unidades arbitrárias (mm⁻², mm⁻¹). Correção:
+
+- comprimento `/ ICV^{1/3}`
+- área `/ ICV^{2/3}`
+- volume `/ ICV` (`MeshVolume`, mm³; já estava certo)
+- `SurfaceVolumeRatio` `× ICV^{1/3}` (já A/V; fica = A′/V′)
+- Sphericity / Elongation / Flatness: intocados (adimensionais)
+- `gm_norm` etc.: sem ICV
+
+Texto: scaling **geométrico** (invariância de calote), não z-score. `StandardScaler` continua a jusante no SVM.
+
+Pipeline: `4_` escreve em `csvs/cohorts/{COHORT}/` (o que `5_ablation --cohort` lê). Também grava `adnimerged_longitudinal.csv` nessa pasta.
+
+`3_feat_rad.py` **não** reroda. Só 4_ + ablação **shape**.
+
+# Incorporar ou corrigir no artigo (resto):
+
 ## Quantidade de dados após o split dentro do treino/teste externo e interno.
 
 Dados presentes:
@@ -336,7 +355,7 @@ Mapa do repo `graphs/` por etapa. Ordem = fluxo do paper (Patch A / late).
 
 | Script | Etapa |
 |---|---|
-| `4_run_post_extract.py` | Junta vol+rad+disp_v2 → tabelas long por coorte (`ablation/...`); scanner batch |
+| `4_run_post_extract.py` | Junta vol+rad+disp_v3 → longs em `csvs/cohorts/{COHORT}/ablation/` (homotetia ICV); scanner batch |
 
 Módulos usados aqui: `ablation_prep` (export long, batch).
 

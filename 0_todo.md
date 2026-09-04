@@ -126,7 +126,7 @@ Compila PDF.
 - Relançar gradiente SVM ou soft=False uniclasse
 - `|Δ21|` vs `|Δ31|` e noise floor retest (`0_notes`) — TMI nice-to-have
 - HM em `48m_6m` — não bloqueia
-- `4_run_post_extract` de novo (IBSI já no long)
+- ~~`4_run_post_extract` de novo (IBSI já no long)~~ **ICV homotetia** (2026-09-04): 4_ regrava longs; rerun **só shape** (mono + late reuse). Vol/texture/firstorder/disp longs geometricamente iguais (vol já era /ICV).
 
 ---
 
@@ -140,7 +140,7 @@ Compila PDF.
 - `COHORTS` default = 4 coortes: **não** usar; só `"48m_6m"` (12m `disp` T1 está podre: só `cn_ad`)
 - SENS `SKIP_EXTRA=0` reescreve SVM nocombat na claim — esperado para heatmaps 4 modelos
 - `--tasks` duplicado no argparse: último ganha (bash já separa Q4 `cn_ad,smci_pmci`)
-- `param_soft_pmci_of` lê `adnimerged_longitudinal.csv`; em `48m_6m` o ficheiro é `*_True.csv` / `*_False.csv` — só log, long de feats está em `ablation/`
+- `param_soft_pmci_of` lê `adnimerged_longitudinal.csv`; `4_` agora grava esse ficheiro na pasta da coorte (além dos `*_True.csv` / `*_False.csv`)
 
 ---
 

@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Notebook 1 pós-extração: merge in-memory → export ablation long only."""
+"""Notebook 1 pós-extração: merge in-memory → export ablation long only.
+
+ICV: homotetia de volume, não divisão crua.
+  comprimento / ICV^{1/3} | área / ICV^{2/3} | volume / ICV
+  SurfaceVolumeRatio * ICV^{1/3}  (já A/V; fica = A'/V')
+  gm/wm/csf_norm: sem ICV
+5_ablation --cohort X lê csvs/cohorts/X/ablation/ — 4_ escreve aí.
+"""
 
 from __future__ import annotations
 
@@ -13,31 +20,41 @@ if str(_MOD) not in sys.path:
 import pandas as pd
 from ablation_prep import assign_scanner_batch, export_ablation_long_only
 
-# Features: store união. Ablation longs: pasta nova {COHORT}_soft_{SOFT_PMCI} (não pisa paper).
 FEATURES_DIR = Path("csvs/cohorts/all_population")
-SOFT_PMCI = False  # True | False — escolhe adnimerged_longitudinal_{SOFT_PMCI}.csv
-COHORT = "48m_6m"  # pasta paper (sem sufixo)
-SRC = Path("csvs/cohorts") / COHORT
-BASE = Path("csvs/cohorts") / f"{COHORT}_soft_{SOFT_PMCI}"
-LONGITUDINAL = SRC / f"adnimerged_longitudinal_{SOFT_PMCI}.csv"
+# (pasta 5_ablation --cohort, PARAM_SOFT_PMCI)
+POST_JOBS: tuple[tuple[str, bool], ...] = (
+    ("36m_6m", True),
+    ("36m_12m", True),
+    ("48m_12m", True),
+    ("48m_6m", True),
+    ("48m_6m_soft_False", False),
+)
 MERGE_KEYS = ["ID_IMG", "roi", "side", "label"]
-
-# DVF store: visita → template CN (3_feat_gen_dvf.py + 3_feat_dvf.py)
 DISP_FEATURES = "features_displacement_v3.csv"
 
 VOL_FEAT_COLS = [
     "mask_mm3", "gm_mm3", "gm_norm", "wm_mm3", "wm_norm",
     "csf_mm3", "csf_norm", "tissues_mm3", "tissues_norm",
-   
-]
-RAD_SIZE_COLS = [
-    "original_firstorder_Energy", "original_firstorder_TotalEnergy", "original_shape_VoxelVolume", "original_shape_MeshVolume",
-    "original_shape_SurfaceArea", "original_shape_LeastAxisLength",
-    "original_shape_MajorAxisLength", "original_shape_MinorAxisLength",
-    "original_shape_Maximum2DDiameterColumn", "original_shape_Maximum2DDiameterRow",
-    "original_shape_Maximum2DDiameterSlice", "original_shape_Maximum3DDiameter",
 ]
 VOL_SIZE_COLS = ["mask_mm3", "gm_mm3", "wm_mm3", "csf_mm3", "tissues_mm3"]
+ICV_LEN_COLS = (
+    "original_shape_LeastAxisLength",
+    "original_shape_MajorAxisLength",
+    "original_shape_MinorAxisLength",
+    "original_shape_Maximum2DDiameterColumn",
+    "original_shape_Maximum2DDiameterRow",
+    "original_shape_Maximum2DDiameterSlice",
+    "original_shape_Maximum3DDiameter",
+)
+ICV_AREA_COLS = ("original_shape_SurfaceArea",)
+ICV_VOL_COLS = (
+    "original_firstorder_Energy",
+    "original_firstorder_TotalEnergy",
+    "original_shape_VoxelVolume",
+    "original_shape_MeshVolume",
+    *VOL_SIZE_COLS,
+)
+ICV_SVR_COLS = ("original_shape_SurfaceVolumeRatio",)
 
 
 def normalize_merge_keys(df: pd.DataFrame) -> pd.DataFrame:
@@ -47,6 +64,52 @@ def normalize_merge_keys(df: pd.DataFrame) -> pd.DataFrame:
     out["side"] = out["side"].astype(str).str.strip()
     label_num = pd.to_numeric(out["label"], errors="coerce")
     out["label"] = label_num.map(lambda x: str(int(x)) if pd.notna(x) else "")
+    return out
+
+
+def resolve_longitudinal(cohort_out: str, soft_pmci: bool) -> Path:
+    """adnimerged_longitudinal_{soft} na pasta de saída, ou no stem sem _soft_*."""
+    out = Path("csvs/cohorts") / cohort_out
+    tagged = out / f"adnimerged_longitudinal_{soft_pmci}.csv"
+    if tagged.is_file():
+        return tagged
+    stem = cohort_out
+    for suf in ("_soft_False", "_soft_True"):
+        if stem.endswith(suf):
+            stem = stem[: -len(suf)]
+            break
+    parent = Path("csvs/cohorts") / stem / f"adnimerged_longitudinal_{soft_pmci}.csv"
+    if parent.is_file():
+        return parent
+    plain = out / "adnimerged_longitudinal.csv"
+    if plain.is_file():
+        return plain
+    raise FileNotFoundError(
+        f"longitudinal ausente para cohort={cohort_out} soft={soft_pmci}"
+    )
+
+
+def apply_icv_homothety(df: pd.DataFrame) -> pd.DataFrame:
+    """L/ICV^{1/3}, A/ICV^{2/3}, V/ICV; SVR * ICV^{1/3}. Mutates copy."""
+    out = df
+    icv = pd.to_numeric(out["ICV_mask_mm3"], errors="coerce")
+    bad = icv.isna() | (icv <= 0)
+    if bad.any():
+        raise ValueError(f"ICV inválido em {int(bad.sum())} linhas (NaN ou ≤0)")
+    len_div = icv.pow(1.0 / 3.0)
+    area_div = icv.pow(2.0 / 3.0)
+    for c in ICV_LEN_COLS:
+        if c in out.columns:
+            out[c] = pd.to_numeric(out[c], errors="coerce").div(len_div)
+    for c in ICV_AREA_COLS:
+        if c in out.columns:
+            out[c] = pd.to_numeric(out[c], errors="coerce").div(area_div)
+    for c in ICV_VOL_COLS:
+        if c in out.columns:
+            out[c] = pd.to_numeric(out[c], errors="coerce").div(icv)
+    for c in ICV_SVR_COLS:
+        if c in out.columns:
+            out[c] = pd.to_numeric(out[c], errors="coerce").mul(len_div)
     return out
 
 
@@ -88,18 +151,12 @@ def merge_rad_vol_icv() -> pd.DataFrame:
             "Verifique se todos os ID_IMG do radiomico existem no volumetrico (linha __global__)."
         )
 
-    cols_to_norm = [c for c in RAD_SIZE_COLS + VOL_SIZE_COLS if c in merged.columns]
-    for c in cols_to_norm:
-        merged[c] = pd.to_numeric(merged[c], errors="coerce")
-    merged[cols_to_norm] = merged[cols_to_norm].div(merged["ICV_mask_mm3"], axis=0)
-
-    # intermediário (legado): BASE / "feat_rad_all.csv"
-    # merged.to_csv(BASE / "feat_rad_all.csv", index=False)
+    merged = apply_icv_homothety(merged)
     print(f"[rad+vol] shape={merged.shape}")
     return merged
 
 
-def add_cohort_meta(radiomics_merge: pd.DataFrame) -> pd.DataFrame:
+def add_cohort_meta(radiomics_merge: pd.DataFrame, longitudinal: pd.DataFrame) -> pd.DataFrame:
     out = radiomics_merge.copy()
     out["ID_IMG"] = out["ID_IMG"].astype(str).str.strip()
 
@@ -111,12 +168,12 @@ def add_cohort_meta(radiomics_merge: pd.DataFrame) -> pd.DataFrame:
         "ID_IMG", "FIELD_STRENGTH", "MANUFACTURER", "MFG_MODEL",
         "MMSE_SCORE", "CDR_GLOBAL", "ADAS_SCORE", "FAQ_SCORE",
     ]
-    longitudinal = pd.read_csv(LONGITUDINAL)
+    longitudinal = longitudinal.copy()
     longitudinal["ID_IMG"] = longitudinal["ID_IMG"].astype(str).str.strip()
     cohort_ids = set(longitudinal["ID_IMG"])
     out = out.loc[out["ID_IMG"].isin(cohort_ids)].copy()
 
-    meta_cols = list(dict.fromkeys(cohort_cols + tech_cols))
+    meta_cols = [c for c in dict.fromkeys(cohort_cols + tech_cols) if c in longitudinal.columns]
     meta_sub = (
         longitudinal[meta_cols]
         .drop_duplicates(subset=["ID_IMG"], keep="last")
@@ -138,32 +195,32 @@ def add_cohort_meta(radiomics_merge: pd.DataFrame) -> pd.DataFrame:
     known = set(prefix) | set(radiomic_cols) | set(vol_cols) | set(icv_cols)
     extra = [c for c in merge.columns if c not in known]
     merge = merge[prefix + radiomic_cols + vol_cols + icv_cols + extra]
-    # intermediário (legado): merge.to_csv(BASE / "feat_rad_all.csv", index=False)
     print(f"[meta rad] shape={merge.shape}")
     return merge
 
 
-def build_feat_disp_all() -> pd.DataFrame:
-    def norm_keys(df: pd.DataFrame) -> pd.DataFrame:
-        out = df.copy()
-        out["ID_IMG"] = out["ID_IMG"].astype(str).str.strip()
-        out["roi"] = out["roi"].astype(str).str.strip()
-        out["side"] = out["side"].astype(str).str.strip()
-        out["label"] = out["label"].astype(str).str.strip()
-        return out
+def load_disp_store() -> pd.DataFrame:
+    out = pd.read_csv(FEATURES_DIR / DISP_FEATURES)
+    out["ID_IMG"] = out["ID_IMG"].astype(str).str.strip()
+    out["roi"] = out["roi"].astype(str).str.strip()
+    out["side"] = out["side"].astype(str).str.strip()
+    out["label"] = out["label"].astype(str).str.strip()
+    return out
 
-    df_disp = norm_keys(pd.read_csv(FEATURES_DIR / DISP_FEATURES))
+
+def build_feat_disp_all(df_disp: pd.DataFrame, longitudinal: pd.DataFrame) -> pd.DataFrame:
     meta_extra = [
         "ID_IMG", "slot", "soft_pmci", "PARAM_SOFT_PMCI",
         "FIELD_STRENGTH", "MANUFACTURER", "MFG_MODEL",
         "MMSE_SCORE", "CDR_GLOBAL", "ADAS_SCORE", "FAQ_SCORE",
     ]
-    longitudinal = pd.read_csv(LONGITUDINAL)
+    longitudinal = longitudinal.copy()
     longitudinal["ID_IMG"] = longitudinal["ID_IMG"].astype(str).str.strip()
     cohort_ids = set(longitudinal["ID_IMG"])
     df_disp = df_disp.loc[df_disp["ID_IMG"].isin(cohort_ids)].copy()
+    meta_cols = [c for c in meta_extra if c in longitudinal.columns]
     meta_sub = (
-        longitudinal[meta_extra]
+        longitudinal[meta_cols]
         .drop_duplicates(subset=["ID_IMG"], keep="last")
     )
     overlap = [c for c in meta_sub.columns if c in df_disp.columns and c != "ID_IMG"]
@@ -180,7 +237,6 @@ def build_feat_disp_all() -> pd.DataFrame:
     prefix = [c for c in meta_order if c in df_all.columns]
     feat_cols = [c for c in df_all.columns if c not in prefix]
     df_all = df_all[prefix + feat_cols]
-    # intermediário (legado): df_all.to_csv(BASE / "feat_disp_all.csv", index=False)
     print(f"[disp] shape={df_all.shape}")
     return df_all
 
@@ -200,54 +256,81 @@ def build_feat_merge_all(rad: pd.DataFrame, disp: pd.DataFrame) -> pd.DataFrame:
         all_unit["MRI_DATE"] = (
             pd.to_datetime(all_unit["MRI_DATE"], errors="coerce").dt.strftime("%Y-%m-%d")
         )
-    # intermediário (legado): all_unit.to_csv(BASE / "feat_merge_all.csv", index=False)
     print(f"[merge] shape={all_unit.shape}")
     return all_unit
 
 
-# legado: export long/wide + feat_*_hipp na raiz — ablação usa ablation/{roi}/*_long.csv
-# def export_long_wide(roi: str = ROI_FILTER_DEFAULT) -> None:
-#     for name in ("merge", "rad", "disp"):
-#         src = pd.read_csv(BASE / f"feat_{name}_all.csv")
-#         long_df = filter_rois(src, roi)
-#         long_df.to_csv(BASE / f"feat_{name}_all_{roi}_long.csv", index=False)
-#         long_df.to_csv(BASE / f"feat_{name}_all_hipp.csv", index=False)
+def _check_soft_flag(long: pd.DataFrame, path: Path, expected: bool) -> None:
+    if "PARAM_SOFT_PMCI" not in long.columns:
+        raise ValueError(f"sem PARAM_SOFT_PMCI em {path}")
+    flags = long["PARAM_SOFT_PMCI"].dropna().unique()
+    if len(flags) != 1:
+        raise ValueError(f"PARAM_SOFT_PMCI não único: {flags} em {path}")
+    # ponytail: CSV pode vir bool ou "False"; str("False") != bool path
+    flag = str(flags[0]).strip().lower() in {"true", "1"}
+    if flag != expected:
+        raise ValueError(
+            f"PARAM_SOFT_PMCI={flags[0]!r} ≠ SOFT_PMCI={expected} em {path}"
+        )
+
+
+def _selfcheck_icv_homothety() -> None:
+    icv = 8.0  # 2³ → L=2, A=4
+    df = pd.DataFrame({
+        "ICV_mask_mm3": [icv],
+        "original_shape_MajorAxisLength": [2.0],
+        "original_shape_SurfaceArea": [4.0],
+        "original_shape_MeshVolume": [8.0],
+        "original_shape_SurfaceVolumeRatio": [0.5],
+        "gm_norm": [0.3],
+    })
+    out = apply_icv_homothety(df)
+    assert abs(out["original_shape_MajorAxisLength"].iloc[0] - 1.0) < 1e-12
+    assert abs(out["original_shape_SurfaceArea"].iloc[0] - 1.0) < 1e-12
+    assert abs(out["original_shape_MeshVolume"].iloc[0] - 1.0) < 1e-12
+    assert abs(out["original_shape_SurfaceVolumeRatio"].iloc[0] - 1.0) < 1e-12
+    assert abs(out["gm_norm"].iloc[0] - 0.3) < 1e-12
+    print("ok: icv homothety")
+
+
+def export_one(
+    merged_all: pd.DataFrame,
+    disp_all: pd.DataFrame,
+    cohort: str,
+    soft_pmci: bool,
+) -> None:
+    long_path = resolve_longitudinal(cohort, soft_pmci)
+    long = pd.read_csv(long_path)
+    _check_soft_flag(long, long_path, soft_pmci)
+    out_dir = Path("csvs/cohorts") / cohort
+    out_dir.mkdir(parents=True, exist_ok=True)
+    long.to_csv(out_dir / "adnimerged_longitudinal.csv", index=False)
+
+    print(f"=== {cohort} soft={soft_pmci} ← {long_path} → {out_dir} ===")
+    rad = add_cohort_meta(merged_all, long)
+    disp = build_feat_disp_all(disp_all, long)
+    merge = build_feat_merge_all(rad, disp)
+    paths = export_ablation_long_only(rad, disp, merge, out_dir)
+    print(f"ablation export OK: {len(paths)} → {out_dir / 'ablation'}")
 
 
 def main() -> None:
+    _selfcheck_icv_homothety()
     for p in (
         FEATURES_DIR / "features_volumetric.csv",
         FEATURES_DIR / "features_radiomic.csv",
         FEATURES_DIR / DISP_FEATURES,
-        LONGITUDINAL,
     ):
         if not p.is_file():
             raise FileNotFoundError(f"Extração incompleta: {p}")
+    for cohort, soft in POST_JOBS:
+        resolve_longitudinal(cohort, soft)
 
-    long = pd.read_csv(LONGITUDINAL)
-    if "PARAM_SOFT_PMCI" not in long.columns:
-        raise ValueError(f"sem PARAM_SOFT_PMCI em {LONGITUDINAL}")
-    flags = long["PARAM_SOFT_PMCI"].dropna().unique()
-    if len(flags) != 1:
-        raise ValueError(f"PARAM_SOFT_PMCI não único: {flags} em {LONGITUDINAL}")
-    # ponytail: CSV pode vir bool ou "False"; str("False") != bool path
-    flag = str(flags[0]).strip().lower() in {"true", "1"}
-    if flag != SOFT_PMCI:
-        raise ValueError(
-            f"PARAM_SOFT_PMCI={flags[0]!r} ≠ SOFT_PMCI={SOFT_PMCI} em {LONGITUDINAL}"
-        )
-    BASE.mkdir(parents=True, exist_ok=True)
-    long.to_csv(BASE / "adnimerged_longitudinal.csv", index=False)
-
-    rad = add_cohort_meta(merge_rad_vol_icv())
-    disp = build_feat_disp_all()
-    merge = build_feat_merge_all(rad, disp)
-    paths = export_ablation_long_only(rad, disp, merge, BASE)
-    print(f"ablation export OK: {len(paths)} ficheiros → {list(paths.values())}")
-    print(
-        f"features←{FEATURES_DIR} | disp←{DISP_FEATURES} | "
-        f"soft={SOFT_PMCI} | src←{COHORT} | out←{BASE}"
-    )
+    merged_all = merge_rad_vol_icv()
+    disp_all = load_disp_store()
+    for cohort, soft in POST_JOBS:
+        export_one(merged_all, disp_all, cohort, soft)
+    print(f"features←{FEATURES_DIR} | disp←{DISP_FEATURES} | n_jobs={len(POST_JOBS)}")
 
 
 if __name__ == "__main__":
