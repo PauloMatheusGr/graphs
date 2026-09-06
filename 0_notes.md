@@ -1,3 +1,9 @@
+# Novas Analises
+
+* mci mci mci vs mci mci ad na coorte principal (soft_pmci=True|False)
+* analise baseline vs 3 imagens vs duas imagens
+* correção normalização shape (comprimento,area,volume)
+
 mudança do target do artigo, agora a coorte principal é 48m_6m, pois surgiram novos estudos que viabilizam o tempo entre as imagens de 6 meses, bem como permite a ablação com soft_pmci=False com a distribuição de pacientes 74 pmci vs 73 smci.
 
 Outro experimento importante a ser feito é considerar apenas as imagens i1 e i2 dos conjuntos i={i1,i2,i3} para termos as comparações longitudinal com 3 imagens, baseline e com duas imagens.
