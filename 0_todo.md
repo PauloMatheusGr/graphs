@@ -4,6 +4,25 @@ Outro chat: ler isto + `0_notes.md`. **Não** relançar pastas OK. `5_ablation.p
 
 ---
 
+## Amanhã (ordem)
+
+0. **Combat** — `tmux ls` / log `logs/v1_combat_true_*.log`. Esperar `=== DONE`. 10 CSVs em:
+   `csvs/cohorts/48m_6m/ablation_results_combat_{t1_only,d21d32}/{vol,shape,texture,disp,firstorder}/ablation_summary.csv`
+   Se job morreu: **não** relançar o loop inteiro — só mods em falta, mesmo `--results-dir` (pasta vazia/incompleta). Nunca apontar a `ablation_results_t1_only|d21d32`.
+1. Confirmar compare: `ls -l csvs/cohort_comparison/cohort_results.csv` (mtime ≥ 16:18). Se velho: bloco CHECK+compare abaixo.
+2. **`7_stats.ipynb`**
+   - `CLINIC_MODALITY = "vol"` (obrigatório; fusion no disco é vol).
+   - Run §§ 1–7 (claim já `48m_6m`). Header markdown ainda diz `48m_12m` — corrigir.
+   - **Célula nova** combat vs nocombat (paths `ablation_results_combat_*`; **não** concat nos CSV False).
+3. **`6_results.ipynb`** top→bottom (`COHORT=48m_6m`). Fig 1 leaky já no disco. Depois: `PROTOCOL_ROOTS` + figura combat.
+4. Tex `Artigo 1 pgirardi/artigo.tex`: claim `48m_6m`, AUCs, ICV homotetia, ComBat, clinic=vol.
+
+**Não** amanhã (já no disco / aceite): T1/D21/Q4 nocombat, late, leaky, clinic+img vol, 4 coortes, `4_`, late. D21 shape 4 modelos = skip. Soft=False = só se quiseres figura extra.
+
+Detalhe código: **Falta implementar**. Jobs opcionais: **Falta — jobs**.
+
+---
+
 ## Lock
 
 | | |
