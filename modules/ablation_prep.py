@@ -92,8 +92,11 @@ FIRSTORDER_DENY = frozenset({
     "original_firstorder_Energy",
     "original_firstorder_TotalEnergy",
 })
-_DISP_KEEP_PREFIX = ("mag_", "logjac_", "strain_fro_")
-_DISP_STAT_DROP_SUFFIX = ("_n", "_p05", "_p50", "_p95")
+# DVF paper-aligned (MBEC §§3.5–3.6): D=mag, V=jac_det, S=strain_fro;
+# 4 momentos (mean/variance/skewness/kurtosis). logjac/std/percentis ficam no
+# CSV longo mas não entram no classificador.
+_DISP_KEEP_PREFIX = ("mag_", "jac_det_", "strain_fro_")
+_DISP_STAT_DROP_SUFFIX = ("_n", "_p05", "_p50", "_p95", "_std")
 
 SHAPE_RE = re.compile(r"^original_shape_")
 TEXTURE_RE = re.compile(r"original_(glcm|gldm|glrlm|glszm|ngtdm)_")
@@ -435,7 +438,12 @@ if __name__ == "__main__":
         "hippocampus_L_T1_gm_norm",
         "hippocampus_L_T1_mask_mm3",
         "hippocampus_L_T1_mag_mean",
+        "hippocampus_L_T1_mag_std",
         "hippocampus_L_T1_mag_p05",
+        "hippocampus_L_T1_jac_det_mean",
+        "hippocampus_L_T1_jac_det_variance",
+        "hippocampus_L_T1_logjac_mean",
+        "hippocampus_L_T1_strain_fro_kurtosis",
         "hippocampus_L_T1_ux_mean",
     ]
     tex = modality_wide_columns(dummy, "texture")
@@ -449,7 +457,14 @@ if __name__ == "__main__":
     assert "hippocampus_L_T1_original_shape_MeshVolume" in vol
     assert "hippocampus_L_T1_gm_norm" in vol
     assert "hippocampus_L_T1_mask_mm3" not in vol
-    assert disp == ["hippocampus_L_T1_mag_mean"], disp
+    assert disp == [
+        "hippocampus_L_T1_mag_mean",
+        "hippocampus_L_T1_jac_det_mean",
+        "hippocampus_L_T1_jac_det_variance",
+        "hippocampus_L_T1_strain_fro_kurtosis",
+    ], disp
+    assert "hippocampus_L_T1_mag_std" not in disp
+    assert "hippocampus_L_T1_logjac_mean" not in disp
     print("ok: denylist dummy T1")
 
     base = Path("csvs/cohorts/36m_6m")

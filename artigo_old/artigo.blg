@@ -11,6 +11,10 @@ ptr=1, stack=
 while executing---line 1648 of file cas-model2-names-short.bst
 ptr=1, stack=
 
+---the literal stack isn't empty for entry akiba-2019
+while executing---line 1648 of file cas-model2-names-short.bst
+ptr=1, stack=
+
 ---the literal stack isn't empty for entry avants-2011a
 while executing---line 1648 of file cas-model2-names-short.bst
 ptr=1, stack=
@@ -31,15 +35,11 @@ ptr=1, stack=
 while executing---line 1648 of file cas-model2-names-short.bst
 ptr=1, stack=
 
----the literal stack isn't empty for entry fonov-2009
+---the literal stack isn't empty for entry ellis-2009
 while executing---line 1648 of file cas-model2-names-short.bst
 ptr=1, stack=
 
 ---the literal stack isn't empty for entry fonov-2011
-while executing---line 1648 of file cas-model2-names-short.bst
-ptr=1, stack=
-
----the literal stack isn't empty for entry fortin-2018
 while executing---line 1648 of file cas-model2-names-short.bst
 ptr=1, stack=
 
@@ -63,11 +63,19 @@ ptr=1, stack=
 while executing---line 1648 of file cas-model2-names-short.bst
 ptr=1, stack=
 
+---the literal stack isn't empty for entry lamontagne-2019
+while executing---line 1648 of file cas-model2-names-short.bst
+ptr=1, stack=
+
 ---the literal stack isn't empty for entry lin-2020
 while executing---line 1648 of file cas-model2-names-short.bst
 ptr=1, stack=
 
 ---the literal stack isn't empty for entry manjon-2010
+while executing---line 1648 of file cas-model2-names-short.bst
+ptr=1, stack=
+
+---the literal stack isn't empty for entry molina-2016
 while executing---line 1648 of file cas-model2-names-short.bst
 ptr=1, stack=
 
@@ -117,45 +125,45 @@ ptr=1, stack=
 
 ---the literal stack isn't empty for entry zwanenburg-2020
 while executing---line 1648 of file cas-model2-names-short.bst
-You've used 40 entries,
+You've used 45 entries,
             3018 wiz_defined-function locations,
-            1020 strings with 28565 characters,
-and the built_in function-call counts, 46940 in all, are:
-= -- 3515
-> -- 4155
-< -- 12
-+ -- 1650
-- -- 1610
-* -- 5561
-:= -- 7767
-add.period$ -- 156
-call.type$ -- 40
-change.case$ -- 996
-chr.to.int$ -- 40
-cite$ -- 40
-duplicate$ -- 1927
-empty$ -- 1985
-format.name$ -- 1754
-if$ -- 8271
+            1051 strings with 30122 characters,
+and the built_in function-call counts, 50529 in all, are:
+= -- 3802
+> -- 4340
+< -- 16
++ -- 1722
+- -- 1677
+* -- 5932
+:= -- 8311
+add.period$ -- 174
+call.type$ -- 45
+change.case$ -- 1050
+chr.to.int$ -- 45
+cite$ -- 45
+duplicate$ -- 2156
+empty$ -- 2223
+format.name$ -- 1840
+if$ -- 8951
 int.to.chr$ -- 1
 int.to.str$ -- 1
-missing$ -- 360
-newline$ -- 251
-num.names$ -- 160
-pop$ -- 1297
+missing$ -- 399
+newline$ -- 279
+num.names$ -- 180
+pop$ -- 1404
 preamble$ -- 1
-purify$ -- 955
+purify$ -- 1006
 quote$ -- 0
-skip$ -- 588
+skip$ -- 678
 stack$ -- 0
-substring$ -- 1332
-swap$ -- 1343
-text.length$ -- 2
+substring$ -- 1459
+swap$ -- 1487
+text.length$ -- 3
 text.prefix$ -- 0
 top$ -- 0
-type$ -- 354
+type$ -- 393
 warning$ -- 0
-while$ -- 167
+while$ -- 186
 width$ -- 0
-write$ -- 649
-(There were 28 error messages)
+write$ -- 723
+(There were 30 error messages)

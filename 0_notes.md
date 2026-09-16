@@ -1,12 +1,4 @@
-# Novas Analises
-
-* mci mci mci vs mci mci ad na coorte principal (soft_pmci=True|False)
-* analise baseline vs 3 imagens vs duas imagens
-* correção normalização shape (comprimento,area,volume)
-
-mudança do target do artigo, agora a coorte principal é 48m_6m, pois surgiram novos estudos que viabilizam o tempo entre as imagens de 6 meses, bem como permite a ablação com soft_pmci=False com a distribuição de pacientes 74 pmci vs 73 smci.
-
-Outro experimento importante a ser feito é considerar apenas as imagens i1 e i2 dos conjuntos i={i1,i2,i3} para termos as comparações longitudinal com 3 imagens, baseline e com duas imagens.
+https://chatgpt.com/share/6a96cae5-5d58-83e9-8773-481ad3fbb052
 
 # Incorporar ou corrigir no artigo:
 
@@ -33,10 +25,12 @@ Pipeline: `4_` escreve em `csvs/cohorts/{COHORT}/` (o que `5_ablation --cohort` 
 
 Dados presentes:
 
-Tamanho total por coorte (ex: coorte principal 48m_12m n=120, 72 sMCI / 48 pMCI)
+Tamanho total por coorte (ex: coorte principal 48m_6m n total, n sMCI / n pMCI)
 Razão aproximada: "80% treino, 20% teste" no fold externo
 Tabela tab:nfeat mostra cardinalidade média de features, mas não n por fold
-Faltam: contagens exatas tipo "fold 1: treino=96, teste=24" ou distribuição classe por fold no split externo, e idem para interno. Esse detalhe não está no artigo atual. Seria informação útil para reprodutibilidade — vale adicionar como tabela ou no texto descritivo da seção de validação cruzada.
+Faltam: contagens exatas tipo "fold 1: treino, teste" ou distribuição classe por fold no split externo, e idem para interno. Esse detalhe não está no artigo atual. Seria informação útil para reprodutibilidade — vale adicionar como tabela ou no texto descritivo da seção de validação cruzada.
+
+
 
 refazer todas as demais analises com a nova coorte principal (48m_6m) feitas a priori com a coorte 48m_12m e reescrever o artigo com base na nova coorte principal. 
 
