@@ -149,7 +149,7 @@ def block_key_regex(roi: str = ROI_FILTER_DEFAULT) -> re.Pattern[str]:
     return re.compile(rf"^{re.escape(roi)}_([LR])_(T[123])_")
 
 
-def pivot_long_to_wide(df: pd.DataFrame) -> pd.DataFrame:
+def pivot_long_to_wide(df: pd.DataFrame, *, expected_visits: int = 3) -> pd.DataFrame:
     feature_cols = [c for c in df.columns if c not in META_COLS_WIDE]
     out = df.copy()
     out["ROI_FULL"] = out["roi"].astype(str) + "_" + out["side"].astype(str)
@@ -164,9 +164,12 @@ def pivot_long_to_wide(df: pd.DataFrame) -> pd.DataFrame:
     out = out.sort_values(sort_cols)
     out["TIME"] = out.groupby(["ID_PT", "ROI_FULL"]).cumcount() + 1
     n_time = out.groupby(["ID_PT", "ROI_FULL"])["TIME"].max()
-    bad = int((n_time != 3).sum())
+    bad = int((n_time != expected_visits).sum())
     if bad:
-        print(f"  aviso: {bad} grupos (ID_PT, ROI) sem exatamente 3 visitas")
+        print(
+            f"  aviso: {bad} grupos (ID_PT, ROI) sem exatamente "
+            f"{expected_visits} visitas"
+        )
     out["TIME"] = "T" + out["TIME"].astype(str)
 
     wide = out.pivot(

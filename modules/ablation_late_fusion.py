@@ -173,6 +173,11 @@ def combine_branch_frames(
                 "representation": "late_fusion",
                 "task": meta0["task"],
                 "with_combat": bool(meta0["with_combat"]),
+                "harmonization_method": (
+                    meta0["harmonization_method"]
+                    if "harmonization_method" in meta0.index
+                    else ("longitudinal_combat_reml" if meta0["with_combat"] else "none")
+                ),
                 "selection_mode": meta0["selection_mode"],
                 "modality": f"late__{fingerprint}",
                 "modality_label": modality_label,
@@ -226,7 +231,9 @@ def _load_or_run_branch(
     verbose: bool,
 ) -> pd.DataFrame:
     mod, rep = slot
-    out_dir = mono_results_dir_for_slot(base_dir, slot, protocol="abs")
+    out_dir = mono_results_dir_for_slot(
+        base_dir, slot, protocol="abs", with_combat=with_combat
+    )
     csv_path = out_dir / "ablation_results_all.csv"
     if reuse_disk and csv_path.is_file():
         raw = pd.read_csv(csv_path)
@@ -360,7 +367,13 @@ def run_late_fusion_ablation_suite(
 ) -> pd.DataFrame:
     """Late fusion → ablation_results_late_fusion/{fingerprint}/; modality=late__{fp}."""
     base = Path(base_dir)
-    out_dir = default_late_fusion_results_dir(base, fusion_slots, results_dir=results_dir)
+    output_longcombat = with_combat_flags == (True,)
+    out_dir = default_late_fusion_results_dir(
+        base,
+        fusion_slots,
+        results_dir=results_dir,
+        with_combat=output_longcombat,
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
     fp = fusion_fingerprint(fusion_slots)
     label = fusion_label(fusion_slots)

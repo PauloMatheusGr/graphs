@@ -30,7 +30,7 @@ POST_JOBS: tuple[tuple[str, bool], ...] = (
     ("48m_6m_soft_False", False),
 )
 MERGE_KEYS = ["ID_IMG", "roi", "side", "label"]
-DISP_FEATURES = "features_displacement_v3.csv"
+DISP_FEATURES = "features_displacement_v4.csv"
 
 VOL_FEAT_COLS = [
     "mask_mm3", "gm_mm3", "gm_norm", "wm_mm3", "wm_norm",

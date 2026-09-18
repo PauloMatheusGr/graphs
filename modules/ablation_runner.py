@@ -11,7 +11,11 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from ablation_harmonize import harmonize_long_fold, image_ids_for_patients
+from ablation_harmonize import (
+    harmonize_long_fold,
+    image_ids_for_patients,
+    select_longitudinal_visits,
+)
 from ablation_analysis import anatomical_key, summary_with_pooled
 from ablation_stable import (
     STABLE_POOL_BOOTSTRAP,
@@ -495,7 +499,20 @@ def wide_for_fold(
 ) -> pd.DataFrame:
     pts = train_pts | test_pts
     sub = df_long[df_long["ID_PT"].astype(str).isin(pts)].copy()
+    expected_visits = 3
     if with_combat:
+        if fusion_slots is None:
+            combat_representation = representation
+        else:
+            fusion_representations = {rep for _, rep in fusion_slots}
+            if len(fusion_representations) != 1:
+                raise ValueError(
+                    "Longitudinal ComBat não mistura representações temporais "
+                    "na mesma fusão."
+                )
+            combat_representation = next(iter(fusion_representations))
+        sub = select_longitudinal_visits(sub, combat_representation)
+        expected_visits = 2 if combat_representation == "t1_d21" else 3
         train_imgs = image_ids_for_patients(sub, train_pts)
         transform_imgs = image_ids_for_patients(sub, pts)
         sub = harmonize_long_fold(
@@ -505,7 +522,7 @@ def wide_for_fold(
             fold_id=fold_id,
             quiet=combat_quiet,
         )
-    wide = pivot_long_to_wide(sub)
+    wide = pivot_long_to_wide(sub, expected_visits=expected_visits)
     if fusion_slots is not None:
         return apply_fusion_wide(wide, fusion_slots, roi=roi)
     return apply_representation_wide(wide, representation, roi=roi)
@@ -677,6 +694,9 @@ def nested_cv_ablation(
             ),
             "task": task.task_id,
             "with_combat": with_combat,
+            "harmonization_method": (
+                "longitudinal_combat_reml" if with_combat else "none"
+            ),
             "selection_mode": selection_mode,
             "modality": modality,
             "modality_label": modality_label,
@@ -721,9 +741,10 @@ def _results_dir_for_modality(
     modality: str,
     results_dir: Path | str | None,
     representation: str = "wide",
+    protocol: str = "abs",
 ) -> Path:
     return default_results_dir(
-        base, modality, representation, protocol="abs", results_dir=results_dir,
+        base, modality, representation, protocol=protocol, results_dir=results_dir,
     )
 
 
@@ -755,6 +776,9 @@ def run_full_ablation_suite(
     )
 
     base = Path(base_dir)
+    output_protocol = (
+        "longcombat" if with_combat_flags == (True,) else "abs"
+    )
     all_results: list[pd.DataFrame] = []
     n_reps = len(repeat_ids(r_repeats))
     total_jobs = (
@@ -770,7 +794,11 @@ def run_full_ablation_suite(
 
     for modality in modalities:
         out_dir = _results_dir_for_modality(
-            base, modality, results_dir, representation=representation,
+            base,
+            modality,
+            results_dir,
+            representation=representation,
+            protocol=output_protocol,
         )
         out_dir.mkdir(parents=True, exist_ok=True)
         modality_results: list[pd.DataFrame] = []

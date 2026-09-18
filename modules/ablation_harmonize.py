@@ -1,22 +1,24 @@
-"""NeuroComBat por fold para ablation (formato long, unidade ID_IMG).
+"""Longitudinal ComBat por fold (Beer et al., NeuroImage 2020).
 
-Fit no treino do fold; transform em treino ∪ teste.
-Covariáveis: batch, AGE, SEX (sem GROUP).
+Fit REML/EB somente no treino. Transformação usa efeitos de scanner congelados;
+covariáveis biológicas: idade basal, tempo desde T1 e sexo (sem GROUP).
 """
 
 from __future__ import annotations
 
-import contextlib
-import io
 import warnings
-from typing import Any, Iterator
+from typing import Any
 
 import numpy as np
 import pandas as pd
-from neuroCombat import neuroCombat
-from neuroCombat.neuroCombat import neuroCombatFromTraining
+
+from longitudinal_combat import fit_longitudinal_combat
 
 MIN_BATCH_SAMPLES = 5
+LONGITUDINAL_COMBAT_VISITS = {
+    "t1_d21": 2,
+    "t1_d21_d32": 3,
+}
 
 
 def pool_small_batches(
@@ -45,15 +47,6 @@ def pool_small_batches(
     return out, merged
 
 
-@contextlib.contextmanager
-def _quiet_combat(quiet: bool) -> Iterator[None]:
-    if not quiet:
-        yield
-        return
-    with contextlib.redirect_stdout(io.StringIO()), warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        yield
-
 META_COLS = frozenset(
     {
         "ID_IMG",
@@ -64,6 +57,8 @@ META_COLS = frozenset(
         "MRI_DATE",
         "DIAG",
         "slot",
+        "soft_pmci",
+        "PARAM_SOFT_PMCI",
         "roi",
         "side",
         "label",
@@ -136,7 +131,9 @@ def _build_wide_table(
 
         batch = g["batch"].iloc[0]
         age = pd.to_numeric(g["AGE"].iloc[0], errors="coerce")
-        if pd.isna(batch) or not np.isfinite(float(age)):
+        date = pd.to_datetime(g["MRI_DATE"].iloc[0], errors="coerce")
+        patient = str(g["ID_PT"].iloc[0]).strip()
+        if pd.isna(batch) or not np.isfinite(float(age)) or pd.isna(date):
             continue
         try:
             sex_val = float(_encode_sex(g["SEX"])[0])
@@ -148,6 +145,8 @@ def _build_wide_table(
             "batch": str(batch),
             "AGE": float(age),
             "SEX": sex_val,
+            "ID_PT": patient,
+            "MRI_DATE": date,
         }
 
     if not feat_by_img:
@@ -171,6 +170,17 @@ def _build_wide_table(
 
     wide = pd.DataFrame(rows, index=img_ids_out).sort_index()
     covars = pd.DataFrame(cov_rows, index=img_ids_out).sort_index()
+    first_date = covars.groupby("ID_PT")["MRI_DATE"].transform("min")
+    covars["time_years"] = (
+        (covars["MRI_DATE"] - first_date).dt.total_seconds() / (365.25 * 86400.0)
+    )
+    first_age = (
+        covars.assign(_first=first_date)
+        .sort_values(["ID_PT", "MRI_DATE"])
+        .groupby("ID_PT")["AGE"]
+        .first()
+    )
+    covars["baseline_age"] = covars["ID_PT"].map(first_age).astype(float)
     return wide, covars, img_ids_out
 
 
@@ -198,53 +208,6 @@ def _write_wide_back(
                 df_out.at[idx, feat] = val
 
 
-def _run_neurocombat_train(
-    wide_train: pd.DataFrame,
-    cov_train: pd.DataFrame,
-    train_ids: list[str],
-    *,
-    quiet: bool = True,
-) -> tuple[pd.DataFrame, dict]:
-    dat = wide_train.loc[train_ids].to_numpy(dtype=np.float64).T
-    covars = cov_train.loc[train_ids].copy()
-    with _quiet_combat(quiet):
-        res = neuroCombat(
-            dat=dat,
-            covars=covars,
-            batch_col="batch",
-            categorical_cols=["SEX"],
-            continuous_cols=["AGE"],
-            eb=True,
-            parametric=True,
-            mean_only=False,
-        )
-    wide_h = pd.DataFrame(
-        np.asarray(res["data"], dtype=np.float64).T,
-        index=train_ids,
-        columns=wide_train.columns,
-    )
-    return wide_h, res["estimates"]
-
-
-def _run_neurocombat_apply(
-    wide: pd.DataFrame,
-    cov: pd.DataFrame,
-    image_ids: list[str],
-    estimates: dict,
-    *,
-    quiet: bool = True,
-) -> pd.DataFrame:
-    dat = wide.loc[image_ids].to_numpy(dtype=np.float64).T
-    batch = cov.loc[image_ids, "batch"].to_numpy(dtype=str)
-    with _quiet_combat(quiet):
-        res = neuroCombatFromTraining(dat=dat, batch=batch, estimates=estimates)
-    return pd.DataFrame(
-        np.asarray(res["data"], dtype=np.float64).T,
-        index=image_ids,
-        columns=wide.columns,
-    )
-
-
 def harmonize_long_fold(
     df_long: pd.DataFrame,
     *,
@@ -254,13 +217,15 @@ def harmonize_long_fold(
     fold_id: int = 0,
     quiet: bool = True,
 ) -> pd.DataFrame:
-    """Fit ComBat nas imagens de treino; harmoniza imagens de transform (treino ∪ teste)."""
+    """Fit Longitudinal ComBat no treino; transforma treino e sujeitos de teste."""
     if not train_id_imgs:
         raise ValueError("train_id_imgs vazio — impossível ajustar ComBat.")
     if not transform_id_imgs:
         return df_long.copy()
 
-    for col in ("ID_IMG", "batch", "AGE", "SEX", "roi", "side", "label"):
+    for col in (
+        "ID_IMG", "ID_PT", "MRI_DATE", "batch", "AGE", "SEX", "roi", "side", "label"
+    ):
         if col not in df_long.columns:
             raise ValueError(f"Coluna {col!r} ausente no CSV long (necessária para ComBat).")
 
@@ -284,53 +249,6 @@ def harmonize_long_fold(
             f"[fold {fold_id}] batches fundidos (n<{MIN_BATCH_SAMPLES} no treino): {pooled}"
         )
 
-    # train_batches = cov_all.loc[train_ids]["batch"].value_counts()
-    # if len(train_batches) < 2:
-    #     warnings.warn(
-    #         f"[fold {fold_id}] ComBat precisa de >=2 batches no treino; "
-    #         f"encontrados {len(train_batches)}. Retornando original."
-    #     )
-    #     return df_out
-
-    # small = train_batches[train_batches < MIN_BATCH_SAMPLES]
-    # if not small.empty:
-    #     warnings.warn(
-    #         f"[fold {fold_id}] ComBat ignorado — batch no treino ainda com "
-    #         f"<{MIN_BATCH_SAMPLES} amostras após merge: {small.to_dict()}"
-    #     )
-    #     return df_out
-
-    # transform_ids = sorted(
-    #     img for img in wide_all.index if str(img) in {str(r).strip() for r in transform_id_imgs}
-    # )
-    # test_only_batches = set(cov_all.loc[transform_ids, "batch"]) - set(
-    #     cov_all.loc[train_ids, "batch"]
-    # )
-    # if test_only_batches:
-    #     warnings.warn(
-    #         f"[fold {fold_id}] batches só no teste (não harmonizados): {sorted(test_only_batches)}"
-    #     )
-
-    # wide_train = wide_all.loc[train_ids]
-    # cov_train = cov_all.loc[train_ids]
-    # wide_h_train, estimates = _run_neurocombat_train(
-    #     wide_train, cov_train, train_ids, quiet=quiet
-    # )
-
-    # harmonized_parts: list[pd.DataFrame] = [wide_h_train]
-    # apply_ids = [i for i in transform_ids if i not in train_ids]
-    # if apply_ids:
-    #     apply_ok = [i for i in apply_ids if cov_all.loc[i, "batch"] in train_batches.index]
-    #     if apply_ok:
-    #         wide_h_apply = _run_neurocombat_apply(
-    #             wide_all, cov_all, apply_ok, estimates, quiet=quiet
-    #         )
-    #         harmonized_parts.append(wide_h_apply)
-
-    # wide_harmonized = pd.concat(harmonized_parts)
-    # harmonized_ids = set(wide_harmonized.index.astype(str))
-    # _write_wide_back(df_out, wide_harmonized, combat_feats, harmonized_ids)
-    # return df_out
     train_batches = cov_all.loc[train_ids]["batch"].value_counts()
 
     # Batches com amostras suficientes no treino para fit estável
@@ -344,7 +262,7 @@ def harmonize_long_fold(
 
     if len(good_batches) < 2:
         warnings.warn(
-            f"[fold {fold_id}] ComBat precisa de >=2 batches 'grandes' no treino; "
+            f"[fold {fold_id}] Longitudinal ComBat precisa de >=2 batches no treino; "
             f"encontrados {len(good_batches)} (de {len(train_batches)} no total). "
             f"Retornando original."
         )
@@ -371,39 +289,61 @@ def harmonize_long_fold(
 
     if len(known_ids) < 2:
         warnings.warn(
-            f"[fold {fold_id}] ComBat ignorado (<2 imagens harmonizáveis). "
+            f"[fold {fold_id}] Longitudinal ComBat ignorado (<2 imagens harmonizáveis). "
             f"Retornando original."
         )
         return df_out
 
     if len(train_known) < 2:
         warnings.warn(
-            f"[fold {fold_id}] ComBat ignorado (<2 imagens no treino harmonizável). "
+            f"[fold {fold_id}] Longitudinal ComBat ignorado (<2 imagens no treino). "
             f"Retornando original."
         )
         return df_out
 
-    wide_train = wide_all.loc[train_known]
-    cov_train = cov_all.loc[train_known]
-    wide_h_train, estimates = _run_neurocombat_train(
-        wide_train, cov_train, train_known, quiet=quiet
+    train_frame = pd.concat(
+        [cov_all.loc[train_known], wide_all.loc[train_known]], axis=1
     )
-
-    test_only = [img for img in known_ids if img not in set(train_known)]
-    harmonized_parts: list[pd.DataFrame] = [wide_h_train]
-    if test_only:
-        wide_h_apply = _run_neurocombat_apply(
-            wide_all, cov_all, test_only, estimates, quiet=quiet
-        )
-        harmonized_parts.append(wide_h_apply)
-
-    wide_harmonized = pd.concat(harmonized_parts)
+    model = fit_longitudinal_combat(
+        train_frame,
+        list(wide_all.columns),
+    )
+    transform_frame = pd.concat(
+        [cov_all.loc[known_ids], wide_all.loc[known_ids]], axis=1
+    )
+    transformed = model.transform(transform_frame)
+    wide_harmonized = transformed.loc[:, wide_all.columns]
     _write_wide_back(df_out, wide_harmonized, combat_feats, set(known_ids))
     return df_out
 
 def image_ids_for_patients(df_long: pd.DataFrame, patient_ids: set[str]) -> set[str]:
     mask = df_long["ID_PT"].astype(str).str.strip().isin({str(p).strip() for p in patient_ids})
     return set(df_long.loc[mask, "ID_IMG"].astype(str).str.strip().tolist())
+
+
+def select_longitudinal_visits(df_long: pd.DataFrame, representation: str) -> pd.DataFrame:
+    """Seleciona T1..Tn antes do LME; impede T3 de informar uma análise D21."""
+    if representation not in LONGITUDINAL_COMBAT_VISITS:
+        raise ValueError(
+            "Longitudinal ComBat aplica-se apenas a t1_d21 ou t1_d21_d32; "
+            f"recebido {representation!r}."
+        )
+    n_visits = LONGITUDINAL_COMBAT_VISITS[representation]
+    visits = (
+        df_long[["ID_PT", "ID_IMG", "MRI_DATE"]]
+        .drop_duplicates(["ID_PT", "ID_IMG"])
+        .assign(MRI_DATE=lambda x: pd.to_datetime(x["MRI_DATE"], errors="coerce"))
+        .sort_values(["ID_PT", "MRI_DATE", "ID_IMG"])
+    )
+    visits["_visit"] = visits.groupby("ID_PT").cumcount() + 1
+    counts = visits.groupby("ID_PT")["_visit"].max()
+    bad = counts[counts < n_visits]
+    if not bad.empty:
+        raise ValueError(
+            f"{len(bad)} paciente(s) sem {n_visits} visitas para {representation}."
+        )
+    keep = set(visits.loc[visits["_visit"] <= n_visits, "ID_IMG"].astype(str))
+    return df_long[df_long["ID_IMG"].astype(str).isin(keep)].copy()
 
 
 if __name__ == "__main__":
@@ -427,6 +367,7 @@ if __name__ == "__main__":
                 "GROUP": "CN",
                 "batch": "only_batch",
                 "AGE": 70.0,
+                "MRI_DATE": "2020-01-01",
                 "SEX": "M",
                 "roi": "hippocampus",
                 "side": "L",

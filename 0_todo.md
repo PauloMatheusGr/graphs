@@ -1,6 +1,6 @@
-# Todo — DVF v4 (MBEC maps, CN-only)
+# Todo — fecho artigo v1
 
-Atualizado: 2026-09-16. Limpa handoff antigo (combat/notebooks/tex). Foco: extrair → export → ablação isolada → decidir promoção.
+Atualizado: 2026-09-17. CSVs experimentais quase fechados; falta remate disp-v4 + rebuild + figuras + stats + tex.
 
 ---
 
@@ -8,175 +8,60 @@ Atualizado: 2026-09-16. Limpa handoff antigo (combat/notebooks/tex). Foco: extra
 
 | | |
 |---|---|
-| Claim | **`48m_6m`**, `PARAM_SOFT_PMCI=True` (sMCI 73 / pMCI 120) |
-| Encodings | `t1_only` · Q4 `t1_d21_d32` |
-| Knobs | `l1_stable` · combat false · seed 42 · SVM (smoke `-r 1`; full `-r 10`) |
-| ROI classificador | hipocampo L+R (`--roi hippocampus`) |
-| Extração ROIs | 10×2 DKT em `3.2_feat_dvf_v4.py` (filtro hipocampo no ablation) |
-| Keep disp | `mag_`, `jac_det_`, `strain_fro_` × mean/variance/skewness/kurtosis (sem `std`/`logjac`/percentis) |
-| Baseline antigo (afim+logjac) | T1 disp ≈ **0.595** · Q4 ≈ **0.577** |
-
-Backup pré-v4: `backups/dvf_pre_nl_*/` (code, features v3, disp/merge long, results disp, compare).
-
-**Não** apontar `--results-dir` a `ablation_results_t1_only|d21|d21d32` até promover.
+| Claim | **`48m_6m`**, `PARAM_SOFT_PMCI=True` (73 sMCI / 120 pMCI) |
+| Encodings | `t1_only` · `t1_d21` · Q4 `t1_d21_d32` |
+| Knobs | `l1_stable` · **combat false** (primário) · seed 42 · SVM |
+| ROI | hipocampo L+R |
+| Famílias | vol · shape · texture · disp (v4) · firstorder |
+| Métrica | `auc_patient_mean` |
+| Coortes gradiente | `36m_6m`, `36m_12m`, `48m_6m`, `48m_12m` (partilham pacientes — dizer no paper) |
 
 ---
 
-## Feito
+## Estado experimental
 
-- [x] Backup `backups/dvf_pre_nl_*`
-- [x] `3.2_feat_dvf_v4.py`: warp só `*_1Warp`; mapas D=`mag`, V=`jac_det`, S=`strain_fro` infinitesimal; ROI_TABLE completa
-- [x] `ablation_prep.keep_disp_feat` → `jac_det_` + drop `_std`
+| Bloco | Estado |
+|---|---|
+| Extract + `4_` disp v4 (`jac_det` no long) | OK |
+| `run_dvf_v4.sh` (mono disp + late c/ disp, 4 coortes + soft_False) | **em curso** → esperar `DONE` |
+| Unimodal vol/shape/texture/FO (claim + gradiente) | OK (não re-rodar) |
+| Soft falso T1+Q4 (5 fam.) | OK; disp actualiza neste run |
+| Late paper (all-T1, all-Q4, âncora) | OK; specs c/ disp actualizam neste run |
+| LongCombat Q4 vol/shape/texture/FO | OK (`*_longcombat`) |
+| LongCombat **disp** + late all-Q4 | **após DONE** (disp ainda v3 na pasta longcombat) |
+| `cohort_results.csv` | **stale** → rebuild após DONE |
+| `6_results` / `7_stats` / `artigo.tex` | **falta** |
 
 ---
 
 ## Próximos passos (ordem)
 
-### 1. Extrair features v4
+### 0. Esperar `DONE` do `run_dvf_v4.sh`
+
+Log: `logs/ablation_disp_v4_*.log`. Não lançar segundo job nas mesmas pastas `…/disp/`.
+
+### 1. LongCombat remate (claim, só disp + late all-Q4)
 
 ```bash
 cd /mnt/study-data/pgirardi/graphs && source .venv/bin/activate
-python 3.2_feat_dvf_v4.py --self-check
-python 3.2_feat_dvf_v4.py
+
+python 5_ablation.py \
+  --cohort 48m_6m --representation t1_d21_d32 --modality disp \
+  --tasks smci_pmci --selection l1_stable --models svm \
+  --combat true --repeats 10 --seed 42 \
+  --tuner optuna --optuna-trials 10 && \
+python 5_ablation_late_fusion.py \
+  --cohort 48m_6m \
+  --fusion vol:t1_d21_d32,shape:t1_d21_d32,texture:t1_d21_d32,disp:t1_d21_d32,firstorder:t1_d21_d32 \
+  --tasks smci_pmci --selection l1_stable --models svm \
+  --combat true --repeats 10 --seed 42 \
+  --tuner optuna --optuna-trials 10 \
+  --combine mean --reuse-disk
 ```
 
-Saída: `csvs/cohorts/all_population/features_displacement_v4.csv`  
-Resume: `images/displacement_field_v3/features_v4/all_population/`
+Actualiza Tabela D (linha ComBat). Vol/shape/texture/FO longCombat **não** re-rodes.
 
-Sanity (afim fora — `mag` v4 ≪ v3):
-
-```bash
-python - <<'PY'
-import pandas as pd
-old = pd.read_csv("csvs/cohorts/all_population/features_displacement_v3.csv")
-new = pd.read_csv("csvs/cohorts/all_population/features_displacement_v4.csv")
-o = old.query("roi=='hippocampus' and side=='L'")[["ID_IMG","mag_mean"]].rename(columns={"mag_mean":"mag_v3"})
-n = new.query("roi=='hippocampus' and side=='L'")[["ID_IMG","mag_mean","jac_det_mean"]]
-m = o.merge(n, on="ID_IMG")
-print(m[["mag_v3","mag_mean","jac_det_mean"]].describe())
-assert "jac_det_mean" in new.columns
-print("ok overlap", len(m))
-PY
-```
-
-Se `mag_mean` ≈ `mag_v3` → parar; A1 falhou.
-
----
-
-### 2. Reexport long (`4_`)
-
-Em `4_run_post_extract.py`:
-
-```python
-DISP_FEATURES = "features_displacement_v4.csv"
-```
-
-```bash
-python 4_run_post_extract.py
-```
-
-Reescreve `disp_long.csv` + `merge_long.csv` nas coortes de `POST_JOBS`. Vol/shape/texture não devem mudar.
-
-```bash
-python - <<'PY'
-import pandas as pd
-d = pd.read_csv("csvs/cohorts/48m_6m/ablation/hippocampus/disp_long.csv", nrows=1)
-assert any(c.startswith("jac_det_") for c in d.columns), list(d.columns)[:20]
-print("ok jac_det in disp_long")
-PY
-```
-
----
-
-### 3. Ablação isolada (claim)
-
-```bash
-MAG=mag_n,mag_mean,mag_std,mag_p05,mag_p50,mag_p95,mag_variance,mag_skewness,mag_kurtosis
-JAC=jac_det_n,jac_det_mean,jac_det_std,jac_det_p05,jac_det_p50,jac_det_p95,jac_det_variance,jac_det_skewness,jac_det_kurtosis
-STR=strain_fro_n,strain_fro_mean,strain_fro_std,strain_fro_p05,strain_fro_p50,strain_fro_p95,strain_fro_variance,strain_fro_skewness,strain_fro_kurtosis
-ROOT=csvs/cohorts/48m_6m/ablation_results_dvf_v4
-COMMON='--cohort 48m_6m --modality disp --tasks smci_pmci --selection l1_stable --combat false --seed 42 --models svm'
-```
-
-#### 3a. Smoke `-r 1`
-
-```bash
-python 5_ablation.py $COMMON --representation t1_only -r 1 \
-  --results-dir $ROOT/t1/all
-
-python 5_ablation.py $COMMON --representation t1_only -r 1 \
-  --results-dir $ROOT/t1/jac --exclude-features $MAG,$STR
-
-python 5_ablation.py $COMMON --representation t1_only -r 1 \
-  --results-dir $ROOT/t1/mag --exclude-features $JAC,$STR
-
-python 5_ablation.py $COMMON --representation t1_only -r 1 \
-  --results-dir $ROOT/t1/strain --exclude-features $MAG,$JAC
-
-python 5_ablation.py $COMMON --representation t1_only -r 1 \
-  --results-dir $ROOT/t1/jacstrain --exclude-features $MAG
-```
-
-Ler:
-
-```bash
-python - <<'PY'
-from pathlib import Path
-import pandas as pd
-root = Path("csvs/cohorts/48m_6m/ablation_results_dvf_v4/t1")
-for p in sorted(root.glob("*/ablation_summary.csv")):
-    s = pd.read_csv(p)
-    row = s.query("task=='smci_pmci' and model_key=='svm'").iloc[0]
-    print(f"{p.parent.name:12s} auc_patient_mean={row.get('auc_patient_mean')} auc_mean={row.get('auc_mean')}")
-PY
-```
-
-#### 3b. Se smoke mexer → `-r 10` + Q4 no vencedor
-
-```bash
-# exemplo: jac ganhou
-python 5_ablation.py $COMMON --representation t1_only -r 10 \
-  --results-dir $ROOT/t1/jac --exclude-features $MAG,$STR
-python 5_ablation.py $COMMON --representation t1_d21_d32 -r 10 \
-  --results-dir $ROOT/q4/jac --exclude-features $MAG,$STR
-```
-
-Opcional: `--models svm,rf,elasticnet,xgb`.
-
----
-
-### 4. Critério de leitura
-
-| Resultado | Decisão |
-|---|---|
-| jac ≈ vol (~0.75); mag ~0.55 | affine era ruído; V≈volume |
-| all < jac | mag prejudica; keep jac (± strain) |
-| tudo ~0.55 | CN-only hipocampo saturado; **não** promove |
-| Q4 jac > T1 jac | ritmo em det J; senão baseline basta |
-
-Tabela (preencher):
-
-```text
-config       | auc_patient_mean | vs old 0.595
-t1/all       |                  |
-t1/jac       |                  |
-t1/mag       |                  |
-t1/strain    |                  |
-t1/jacstrain |                  |
-q4/<win>     |                  |
-```
-
-`6_results` / `cohort_results.csv` **não** leem `ablation_results_dvf_v4/`.
-
----
-
-### 5. Promover (só se critério passar)
-
-1. Congelar keep / `--exclude-features` definitivo.
-2. `5_ablation` **sem** `--results-dir` custom → `ablation_results_t1_only/disp` e `ablation_results_d21d32/disp` (pisa antigo; backup já tem cópia).
-3. Gradiente 4 coortes T1+Q4 SVM se necessário.
-4. Late fusion com ramo `disp` fica stale — relançar ou declarar no tex.
-5. Rebuild compare:
+### 2. Rebuild compare
 
 ```bash
 cd /mnt/study-data/pgirardi/graphs && source .venv/bin/activate
@@ -193,27 +78,126 @@ print(save_cohort_comparison(cohorts, Path('csvs/cohort_comparison'),
 "
 ```
 
-Ou `6_results.ipynb`: `REBUILD_COMPARE = True`.
+Ou `6_results.ipynb` com `REBUILD_COMPARE = True`.
+
+### 3. Figuras / tabelas — `6_results.ipynb`
+
+- [ ] Fig A: 4 painéis × 5 famílias × 3 barras (T1 / D21 / Q4)
+- [ ] Tabela A: AUCs + Δ vs T1 (4 coortes × 5 fam.)
+- [ ] Tabela B: claim × 4 algoritmos (T1 | Q4)
+- [ ] Fig B: ROC **volume** (teto unimodal baseline), 3 encodings, só claim
+- [ ] Fig / tabela **quatro tetos**: uni T1 · uni Q4 · melhor união baseline · melhor união long (+ âncora)
+- [ ] Fig C / Tabela E: soft True vs False (T1 + Q4, 5 fam.)
+- [ ] Exportar para `artigo/`
+
+### 4. Stats — `7_stats.ipynb`
+
+- [ ] Coorte principal = `48m_6m` (textos antigos `48m_12m`)
+- [ ] Contraste **quatro tetos** + âncora (`vol:t1` ∪ 2.º Q4) vs melhor união grelha
+- [ ] Clínica+img = **volume** T1
+- [ ] Tabela C: Q4 vs T1 **e** D21 vs T1 (FDR); claim + 4 coortes
+- [ ] Late: all-T1, all-Q4, âncora; grelha = ranking (winner’s curse no texto)
+- [ ] Clínica: (clinic+vol) − clinic + IC
+- [ ] Soft True vs False (descritivo; **não** bootstrap pareado — n diferente)
+- [ ] Tabela D: complementar (âncora, leaky, clinic, clinic+vol, **longCombat**, soft)
+- [ ] Gravar `artigo/tables/`
+
+### 5. Texto LaTeX
+
+- [ ] Colar números novos; enxugar (~18–22 pp)
+- [ ] Soft True = claim; soft False = sensibilidade pré-conversão
+- [ ] Coração = quatro tetos + âncora; grelha ≠ prova sem caveat
+- [ ] Discussão: checklist abaixo
+
+---
+
+## Checklist — análises a mencionar (Discussão / Conclusões)
+
+Usar como lista de “não esquecer”. **Coração** vs complementares.
+
+### ★ Coração dos experimentos (claim)
+
+Contraste de **quatro tetos** (mesmo pipeline SVM / `l1_stable` / nested CV; `combat=false`):
+
+| Teto | O quê |
+|---|---|
+| Melhor **unimodal baseline** (T1) | ranking 5 famílias em `t1_only` |
+| Melhor **unimodal longitudinal** (Q4) | ranking 5 famílias em `t1_d21_d32` |
+| Melhor **união / multiclasse baseline** | grelha late só-T1 (ou all-T1 como spec paper) |
+| Melhor **união / multiclasse longitudinal** | grelha late Q4 / mista (ou all-Q4 como spec paper) |
+
+**Âncora (pré-especificada, não o max da grelha):**  
+`melhor unimodal T1` ∪ `2.º unimodal Q4` (família **≠** a do 1.º Q4 quando o 1.º Q4 = mesma família do teto T1).
+
+Motivo: Q4 = baseline + Δ21 + Δ32 → unir `vol:t1` ∪ `vol:Q4` **repete** o baseline; o 2.º longitudinal traz família complementar.
+
+Ex. se T1 e Q4 ordenam ambos `vol > shape > FO > texture > disp` → âncora = **`vol:t1_only` ∪ `shape:t1_d21_d32`**.
+
+Grelha de uniões (k≥2) **necessária**: âncora fixada *antes* de saber qual união ganha de facto → comparar âncora vs melhor união empírica (com caveat winner’s curse no suplemento).
+
+Pós-correção ICV (protocolo do paper): **vol = melhor unimodal baseline**. (Bug antigo: eixos/`SurfaceArea` ÷ ICV → unidades erradas; **só** resultados pós-homotetia entram no artigo.)
+
+Encoding unimodal (T1 / D21 / Q4 × 5 fam.) + 4 coortes = camada que alimenta estes tetos. Soft / ComBat / clinic / idade / leaky / CN×AD / 4 algos = **complementares**.
+
+---
+
+### A. Camada principal (detalhe)
+
+1. **Unimodal × encoding** — 5 famílias × {T1, D21, Q4}; SVM; `combat=false`. Pergunta: 1 vs 2 vs 3 imagens agrega?
+2. **Quatro coortes** — janela 36/48 m × intervalo 6/12 m; **não** estudos independentes (pacientes partilhados).
+3. **Volume = teto unimodal baseline** — protocolo correcto (homotetia ICV). Hierarquia típica T1: vol ≻ shape ≻ … Discutir morfometria (vol/shape/disp) vs intensidade (texture/FO).
+4. **Âncora late** — regra acima; CLI/default ainda `--anchor-modality shape` → **re-correr** `vol:t1_only` ∪ 2.º Q4 (provável `shape:t1_d21_d32`) após rankings finais (incl. disp v4).
+5. **Três specs paper + grelha** — all-T1; all-Q4; âncora; grelha = achar melhores uniões baseline/long para o contraste dos quatro tetos (suplemento = exploratório).
+6. **Disp v4** — mag / jac_det / strain_fro (MBEC); vs baseline antigo afim+logjac.
+7. **Intervalo ~6 m** — detectável em **grupo** (Schuff, Mubeen, Hua, Leung); ≠ fiabilidade individual; 3 visitas ≈ 12 m de trajectória.
+
+### B. Complementares (só claim `48m_6m`)
+
+8. **Quatro algoritmos** — SVM, RF, elasticnet, XGB em T1 e Q4 (não em D21 no corpo).
+9. **Soft True vs Soft False** — 73/120 vs 73/74; T1+Q4; 5 fam. + late. Leakage MCI–MCI–AD?
+10. **Longitudinal ComBat (Beer 2020)** — sensibilidade Q4; batch fabricante×Tesla; **não** melhora teto (pré-v4: late 0.787→0.761; vol/FO caem). Actualizar após remate disp-v4.
+11. **Clínico só** vs **clínico + volume T1**.
+12. **Controlo demográfico (idade)** — só idade; faixas; idade+faixas. Imagem **supera** demografia.
+13. **Leaky** — volume Q4 (e D21 se existir); não misturar no abstract com leak-free.
+14. **CN × AD** — sanity nas 3 visitas (mesmo pipeline Q4).
+
+### C. Métodos / limitações a verbalizar
+
+15. Split **por paciente**; nested 5×5 × 10 repeats; Optuna inner.
+16. `l1_stable` só no outer-train.
+17. ICV shape = **homotetia** (eixos × ICV⁻¹/³, área × ICV⁻²/³); bug antigo ÷ICV **fora** do paper.
+18. Batch scanner = MANUFACTURER_FIELD (sem modelo).
+19. Soft True **não** é prognóstico estritamente pré-desfecho para os 46 MCI–MCI–AD.
+20. Grelha late: melhor união empírica ≠ prova sem caveat (winner’s curse).
+21. Fora do corpo v1: early fusion; HM-off; 3 heatmaps; 4 algos em D21; calibração/DCA; n por fold; retest noise floor.
+
+### D. Conclusões — eixos esperados
+
+- **Quatro tetos:** unimodal T1 vs unimodal Q4 vs melhor união baseline vs melhor união long (+ âncora pré-especificada).
+- Encoding: onde Q4/D21 ganha vs T1 (e onde não).
+- Família dominante baseline: **volume** (protocolo ICV correcto).
+- Âncora: vol-T1 ∪ 2.º Q4 (não vol∪vol); grelha diz se outra união sobe mais.
+- Demografia: idade/faixas << imagem.
+- Soft / longCombat / leaky: sensibilidade; não mudam o protocolo primário se negativos.
+- Gradiente de coortes: consistência / poder vs intervalo 6 vs 12 m.
+- Limitações: n, IDs partilhados, T1-w não quantitativo, batch grosso, disp SNR, winner’s curse na grelha.
 
 ---
 
 ## Não fazer agora
 
-- Relançar vol/shape/texture/official disp sem promoção
-- Elastix / template DEM / 15 ROIs NAC (outro desenho)
-- `4_` com `DISP_FEATURES=v3` depois de apontar v4
-- `--results-dir` compartilhado entre várias mods
+- Relançar vol/shape/texture/FO mono
+- LongCombat nas 4 coortes ou em `t1_only`
+- Early fusion / `--modality all` no corpo
+- `4_` com `DISP_FEATURES=v3`
+- Segundo `run_dvf_v4.sh` enquanto o actual corre
 
 ---
 
-## Estado rápido
+## Refs úteis (Intro / Discussão 6 m)
 
-| Passo | Estado |
-|-------|--------|
-| Backup | OK |
-| Código v4 + keep | OK |
-| Extract `features_displacement_v4.csv` | **Falta** |
-| `DISP_FEATURES=v4` + `4_` | **Falta** |
-| Smoke A2 T1 | **Falta** |
-| Full `-r 10` / Q4 | após smoke |
-| Promover + compare | só se critério OK |
+- Mubeen et al. 2017 (J Neuroradiol) — baseline+6 m vs baseline  
+- Schuff et al. 2009 (Brain) — taxa atrofia hipocampal 0–6 m  
+- Hua / Leung — morfometria longitudinal ADNI  
+- Beer et al. 2020 (NeuroImage) — Longitudinal ComBat  
+- Fortin et al. 2018 — ComBat cortical thickness (contexto)

@@ -19,6 +19,116 @@ Pipeline: `4_` escreve em `csvs/cohorts/{COHORT}/` (o que `5_ablation --cohort` 
 
 `3_feat_rad.py` **não** reroda. Só 4_ + ablação **shape**.
 
+## Longitudinal ComBat — sensibilidade (Beer et al., 2020)
+
+**Papel no paper:** protocolo primário = **sem** harmonização (`--combat false`). Longitudinal ComBat = **sensibilidade** na coorte principal `48m_6m`, apenas representações com ≥2 visitas (`t1_d21`, `t1_d21_d32`). Não misturar com o contraste de encoding T1 vs 2 vs 3 imagens. Saídas em pastas `*_longcombat` (não pisa claim).
+
+**Citação:** Beer JC, Tustison NJ, Cook PA, Davatzikos C, Sheline YI, Shinohara RT, Linn KA. Longitudinal ComBat: A method for harmonizing longitudinal multi-scanner imaging data. *NeuroImage*. 2020;220:117129. DOI: [10.1016/j.neuroimage.2020.117129](https://doi.org/10.1016/j.neuroimage.2020.117129). Código: `modules/longitudinal_combat.py` + `modules/ablation_harmonize.py`.
+
+### Definição de lote (batch)
+
+Igual ao ComBat transversal antigo — **não** redefinido:
+
+- `batch = MANUFACTURER + "_" + FIELD_STRENGTH` (ex. `GE MEDICAL SYSTEMS_1.5`, `SIEMENS_3.0`)
+- **Fora:** site ADNI, `MFG_MODEL`, coil, software
+- Motivo: incluir modelo explode micro-lotes no ADNI (n amostral insuficiente no outer-train)
+
+### Tratamento de lotes raros (por fold, só treino)
+
+1. Batch com \(n < 5\) imagens no treino → funde em `OTHER_<Tesla>` (ex. `GE MEDICAL SYSTEMS_3.0` raro → `OTHER_3.0`; **não** mistura 1.5 com 3.0)
+2. Se após o pool ainda \(n < 5\) → imagem **excluída** da harmonização (fica raw)
+3. Precisa ≥2 batches “grandes” no treino; senão skip (devolve original)
+4. Batch só no teste / nunca visto no treino → **não** harmoniza
+5. Beer exige ≥2 obs/batch; aqui limiar mais conservador: **≥5** no treino
+
+### O que remove / o que preserva
+
+| Alvo | Remove? | Como |
+|---|---|---|
+| Fabricante (via batch) | Sim | efeito fixo de lote + EB location/scale |
+| Campo 1.5/3 T (via batch) | Sim | no mesmo rótulo `MANUFACTURER_FIELD` |
+| Modelo de scanner | Não | deliberadamente fora do batch |
+| Biologia entre pacientes | **Não** | intercepto aleatório \((1\mid\mathrm{ID\_PT})\) **preserva** nível do sujeito |
+| Mesmo paciente, scanners/Tesla diferentes nas visitas | Corrige salto técnico | cada visita usa o efeito do **seu** batch; \(\eta_j\) partilha nível biológico |
+| Diagnóstico / sMCI×pMCI (`GROUP`) | Não | **fora** da fórmula (evita leakage de rótulo) |
+| Deltas \(\Delta_{21}/\Delta_{32}\) | Não directamente | harmoniza atributo **por visita**; \(\Delta\) calculado **depois** |
+
+### Passo a passo (nested CV, cada fold externo)
+
+1. Filtra pacientes do fold (treino ∪ teste); se `combat=true`, corta visitas antes do LME (`t1_d21` → T1+T2; `t1_d21_d32` → três). Impede T3 de informar BLUP numa análise D21.
+2. Monta tabela **por imagem** (`ID_IMG`): features da família (roi×side×atributo), `batch`, `SEX`, idade basal (AGE da 1ª visita), `time_years` (anos desde `MRI_DATE` da 1ª visita). Uma família por vez (vol com vol, …).
+3. Pool / exclusão de batches pequenos (acima).
+4. **Fit só no treino.** Para cada feature, MixedLM REML:
+
+\[
+y_{ij}(t)=\alpha+\beta_{\mathrm{age}}\,\mathrm{age}_0+\beta_t\,t+\beta_{\mathrm{sex}}\,\mathrm{sex}+\gamma_{\mathrm{batch}}+\eta_j+\varepsilon
+\]
+
+com \(\eta_j\sim N(0,\rho^2)\). Sem `GROUP`.
+
+5. Recupera efeitos de batch com \(\sum_i n_i\gamma_i=0\); padroniza resíduos; Empirical Bayes (30 iterações) → \(\gamma^\star\) (média) e \(\delta^{2\star}\) (variância) por batch×feature (Beer REML).
+6. **Transform** treino+teste com parâmetros congelados do treino:
+
+\[
+y^{\mathrm{ComBat}}=\frac{\sigma}{\delta^\star}(z-\gamma^\star)+\hat y-\gamma_{\mathrm{adj}}
+\]
+
+No teste: \(\eta_j\) = BLUP só com as visitas **desse** sujeito; batch desconhecido → linha intacta.
+
+7. Pivot T1/T2/(T3) → \(\Delta\) → SVM / late fusion. Classificador vê encoding já sobre atributos corrigidos.
+
+### Paciente com scanners diferentes ao longo do tempo
+
+Ex.: T1 em `GE_1.5`, T2 em `SIEMENS_3.0`. Remove efeito do lote de cada visita; \(\eta_j\) comum mantém nível biológico; salto técnico entre visitas deixa de entrar no \(\Delta\) (na medida em que o batch o captura). Mudança só de **modelo** GE mantendo `GE_1.5` → mesmo lote (trade-off n amostral).
+
+### Software / saídas
+
+- Python (`statsmodels.MixedLM`); port conceptual do R `longCombat` (Beer), com apply indutivo (pacote R é transductivo).
+- CLI: `--combat true` em `5_ablation.py` / `5_ablation_late_fusion.py`.
+- Roots: `ablation_results_d21_longcombat/`, `ablation_results_d21d32_longcombat/`, `ablation_results_late_fusion_longcombat/`.
+- Meta CSV: `harmonization_method = longitudinal_combat_reml` quando ligado.
+
+### Frase-âncora (Métodos)
+
+> O protocolo primário não aplica harmonização entre aparelhos. Como análise de sensibilidade na coorte principal, nas representações de duas e três visitas, ajustámos Longitudinal ComBat (Beer et al., 2020; REML) aos atributos de cada família ao nível da visita, com lote definido por fabricante × intensidade de campo (1,5/3 T), intercepto aleatório por indivíduo, covariáveis sexo, idade basal e tempo desde a primeira visita, sem o rótulo de classe, estimado apenas no treino de cada dobra externa. Lotes com menos de cinco imagens no treino foram fundidos em `OTHER_<Tesla>` ou excluídos. Os incrementos temporais foram calculados após a correção. A representação restrita à primeira visita não entra neste braço: o modelo misto exige medidas repetidas.
+
+### Limitações (Discussão / Tabela D)
+
+- Sensibilidade ≠ ablação de encoding (não reportar ΔAUC T1 vs Q4 *com* longCombat como prova de 2/3 imagens).
+- EB com poucas features (hipocampo L+R × momentos da família) vs 62 espessuras do Beer — prior mais fraco.
+- \(\eta=0\) aproximação no teste é BLUP local do sujeito; Beer original é transductivo.
+- Sem `GROUP`: se scanner e diagnóstico se associam, parte do sinal de classe pode ir para o lote (trade-off leakage vs preservação).
+- Batch grosso (sem modelo): residual de scanner possível.
+- Reportar uma linha na Tabela D (ligado vs desligado), não figura grande.
+
+### Resultado empírico (2026-09-17) — `48m_6m` Q4 vs longCombat
+
+**Setup:** coorte `48m_6m` (`soft_pmci=True`), encoding `t1_d21_d32`, SVM, `l1_stable`, Optuna 10 trials, 10×5 folds (50), seed 42. Primário = `ablation_results_d21d32/` (`combat=false`). Sensibilidade = `ablation_results_d21d32_longcombat/` + late `ablation_results_late_fusion_longcombat/` (`harmonization_method=longitudinal_combat_reml`). Métrica: `auc_patient_mean`.
+
+**Veredito:** Longitudinal ComBat **não** melhora o conjunto. Piora famílias fortes e o late fusion; ganhos só em texture/disp (já fracos). Manter primário sem ComBat; Tabela D = sensibilidade negativa.
+
+#### Unimodal Q4
+
+| Família | sem ComBat | longCombat | Δ |
+|---|---:|---:|---:|
+| vol | 0.763 | 0.726 | **−0.037** |
+| shape | 0.721 | 0.724 | +0.003 |
+| texture | 0.674 | 0.704 | +0.030 |
+| disp | 0.577 | 0.609 | +0.032 |
+| firstorder | 0.686 | 0.637 | **−0.049** |
+
+#### Late fusion (5 famílias Q4)
+
+| | `auc_patient_mean` | `auc_mean` | `auc_pooled` |
+|---|---:|---:|---:|
+| sem ComBat | **0.787** | 0.777 | 0.771 |
+| longCombat | 0.761 | 0.749 | 0.741 |
+| Δ | **−0.026** | −0.028 | −0.030 |
+
+**Nota:** ramo `disp` neste run ainda = features **v3** (`disp_long` pré-v4). Se promover DVF v4, re-correr só `disp` + late fusion longCombat; vol/shape/texture/firstorder deste run mantêm-se.
+
+**Frase Tabela D (rascunho):** *Na coorte principal, representação de três visitas, Longitudinal ComBat (Beer, REML) não elevou a AUC patient-level face ao protocolo sem harmonização (late fusion 0,787 → 0,761; volume −0,037; first-order −0,049); ganhos pontuais em textura/deslocamento não alteram a conclusão primária.*
+
 # Incorporar ou corrigir no artigo (resto):
 
 ## Quantidade de dados após o split dentro do treino/teste externo e interno.
@@ -381,7 +491,8 @@ Módulos usados aqui: `ablation_prep` (export long, batch).
 | `ablation_deltas.py` | Deltas T1/D21/D32; colunas por família | prep / runner / Q4 |
 | `ablation_representation.py` | `t1_only`, `t1_d21_d32`, fusion specs, paths | `5_*` |
 | `ablation_stable.py` | Seletor `l1_stable` (corr → L1 → π) | runner |
-| `ablation_harmonize.py` | ComBat (se ligado) | runner |
+| `ablation_harmonize.py` | Longitudinal ComBat Beer REML (se `--combat true`) | runner |
+| `longitudinal_combat.py` | Fit/transform LME+EB (Beer 2020) | `ablation_harmonize` |
 | `ablation_optuna.py` | Tune SVM/etc. | runner, clinic |
 | `ablation_runner.py` | Nested CV unimodal + early fusion suite | `5_ablation`, early, clinic |
 | `ablation_late_fusion.py` | Inner-join por `ID_PT`, mean/weighted scores | `5_ablation_late_fusion` |

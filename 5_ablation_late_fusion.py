@@ -164,7 +164,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--tasks", default="smci_pmci", type=_parse_tasks)
     p.add_argument("--selection", default="l1_stable", type=_parse_selection)
     p.add_argument("--models", default="svm")
-    p.add_argument("--combat", default="false", type=_parse_combat)
+    p.add_argument(
+        "--combat",
+        default="false",
+        type=_parse_combat,
+        help="false | true | both (true = Longitudinal ComBat REML)",
+    )
     p.add_argument("--repeats", "-r", type=int, default=10)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--roi", default=ROI_FILTER_DEFAULT)
@@ -203,7 +208,10 @@ def main(argv: list[str] | None = None) -> int:
     models = _split_csv(args.models)
     base_dir = Path(f"csvs/cohorts/{args.cohort}/ablation/{args.roi}")
     results_dir = default_late_fusion_results_dir(
-        base_dir, slots, results_dir=args.results_dir,
+        base_dir,
+        slots,
+        results_dir=args.results_dir,
+        with_combat=args.combat == (True,),
     )
     log_path = None
     if not args.no_log_file:

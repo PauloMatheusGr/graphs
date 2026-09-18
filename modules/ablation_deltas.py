@@ -79,6 +79,7 @@ def add_delta_columns(
     delta_kind: DeltaKind = "abs",
     include_slope: bool = False,
     include_ma: bool = False,
+    include_t3_deltas: bool = True,
 ) -> pd.DataFrame:
     """D21=T2−T1, D31=T3−T1, D32=T3−T2 (abs default). Opcional T1, SLOPE legado (rel), M/A."""
     pat = absolute_col_pat(roi)
@@ -93,22 +94,28 @@ def add_delta_columns(
 
     delta_cols: dict[str, pd.Series] = {}
     for (side, feat), times in groups.items():
-        if not all(t in times for t in ("T1", "T2", "T3")):
+        required = ("T1", "T2", "T3") if include_t3_deltas else ("T1", "T2")
+        if not all(t in times for t in required):
             continue
         t1 = wide[times["T1"]]
         t2 = wide[times["T2"]]
-        t3 = wide[times["T3"]]
         prefix = f"{roi}_{side}"
         d21 = _pair_delta(t1, t2, delta_kind=delta_kind)
-        d31 = _pair_delta(t1, t3, delta_kind=delta_kind)
-        d32 = _pair_delta(t2, t3, delta_kind=delta_kind)
         delta_cols[f"{prefix}_D21_{feat}"] = d21
-        delta_cols[f"{prefix}_D31_{feat}"] = d31
-        delta_cols[f"{prefix}_D32_{feat}"] = d32
+        if include_t3_deltas:
+            t3 = wide[times["T3"]]
+            d31 = _pair_delta(t1, t3, delta_kind=delta_kind)
+            d32 = _pair_delta(t2, t3, delta_kind=delta_kind)
+            delta_cols[f"{prefix}_D31_{feat}"] = d31
+            delta_cols[f"{prefix}_D32_{feat}"] = d32
         if include_ma:
+            if not include_t3_deltas:
+                raise ValueError("M/A exige T3.")
             delta_cols[f"{prefix}_M_{feat}"] = (d21 + d32) / 2.0
             delta_cols[f"{prefix}_A_{feat}"] = d32 - d21
         if include_slope and delta_kind == "rel":
+            if not include_t3_deltas:
+                raise ValueError("SLOPE exige T3.")
             delta_cols[f"{prefix}_SLOPE_{feat}"] = d31 / 2.0
 
     keep = [c for c in wide.columns if c in META_WIDE]
@@ -116,7 +123,8 @@ def add_delta_columns(
         keep.extend(c for c in wide.columns if pat.match(c))
     elif include_t1:
         for times in groups.values():
-            if all(t in times for t in ("T1", "T2", "T3")):
+            required = ("T1", "T2", "T3") if include_t3_deltas else ("T1", "T2")
+            if all(t in times for t in required):
                 keep.append(times["T1"])
 
     out = wide[keep].copy()
@@ -146,8 +154,15 @@ def delta_kwargs_for_representation(representation: str) -> dict:
         return {"include_t1": False, "delta_kind": "abs", "include_slope": False}
     if representation == "t1_deltas_rel":
         return {"include_t1": True, "delta_kind": "rel", "include_slope": True}
-    if representation in ("t1_deltas", "t1_deltas_abs", "t1_d21_d32", "t1_d21"):
+    if representation in ("t1_deltas", "t1_deltas_abs", "t1_d21_d32"):
         return {"include_t1": True, "delta_kind": "abs", "include_slope": False}
+    if representation == "t1_d21":
+        return {
+            "include_t1": True,
+            "delta_kind": "abs",
+            "include_slope": False,
+            "include_t3_deltas": False,
+        }
     if representation == "t1_ma":
         return {
             "include_t1": True, "delta_kind": "abs", "include_slope": False,

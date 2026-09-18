@@ -98,6 +98,33 @@ Gera `ablation/hippocampus/{vol,rad,shape,disp,merge}_long.csv`.
 
 ---
 
+## Sensibilidade Longitudinal ComBat (Beer et al., 2020)
+
+`--combat true` usa Longitudinal ComBat REML, ajustado somente no treino de
+cada fold, com `(1|ID_PT)`, idade basal, tempo desde T1 e sexo; `GROUP` não
+entra na harmonização. Suporta `t1_d21` e `t1_d21_d32`; os deltas são
+calculados depois da harmonização. Resultados ficam em roots separados
+`*_longcombat`, sem sobrescrever o protocolo principal (`--combat false`).
+
+Coorte principal, cinco famílias, três visitas:
+
+```bash
+python 5_ablation.py --cohort 48m_6m --representation t1_d21_d32 \
+  --modality vol,shape,texture,disp,firstorder --tasks smci_pmci \
+  --selection l1_stable --models svm --combat true --repeats 10 \
+  --seed 42 --tuner optuna --optuna-trials 10
+
+python 5_ablation_late_fusion.py --cohort 48m_6m \
+  --fusion vol:t1_d21_d32,shape:t1_d21_d32,texture:t1_d21_d32,disp:t1_d21_d32,firstorder:t1_d21_d32 \
+  --tasks smci_pmci --selection l1_stable --models svm --combat true \
+  --repeats 10 --seed 42 --combine mean --reuse-disk
+```
+
+Referência: Beer JC et al. *NeuroImage* 2020;220:117129.
+DOI: 10.1016/j.neuroimage.2020.117129.
+
+---
+
 ## CLIs (ordem sugerida)
 
 ### 0. Completar wide — shape, texture, disp, all  

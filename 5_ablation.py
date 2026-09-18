@@ -134,7 +134,12 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"Modos: {','.join(SELECTION_MODES)}",
     )
     p.add_argument("--models", default="svm,rf,mlp", help="Modelos separados por vírgula")
-    p.add_argument("--combat", default="false", type=_parse_combat, help="false | true | both")
+    p.add_argument(
+        "--combat",
+        default="false",
+        type=_parse_combat,
+        help="false | true | both (true = Longitudinal ComBat REML; requer >=2 visitas)",
+    )
     p.add_argument("--repeats", "-r", type=int, default=10, help="Repetições (0 = 1× nested 5×5)")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--roi", default=ROI_FILTER_DEFAULT)
@@ -210,10 +215,11 @@ def main(argv: list[str] | None = None) -> int:
 
     base_dir = args.base_dir or Path(f"csvs/cohorts/{args.cohort}/ablation/{args.roi}")
     representation = args.representation
+    output_protocol = "longcombat" if args.combat == (True,) else "abs"
 
     if args.results_dir is None and len(modalities) == 1:
         results_dir = default_results_dir(
-            base_dir, modalities[0], representation, protocol="abs",
+            base_dir, modalities[0], representation, protocol=output_protocol,
         )
     else:
         results_dir = args.results_dir
@@ -291,7 +297,7 @@ def main(argv: list[str] | None = None) -> int:
     summary = summary_with_pooled(df)
 
     out_dirs = {results_dir} if results_dir else {
-        default_results_dir(base_dir, m, representation, protocol="abs")
+        default_results_dir(base_dir, m, representation, protocol=output_protocol)
         for m in modalities
     }
     for d in sorted(out_dirs, key=str):

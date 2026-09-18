@@ -26,7 +26,7 @@
 | Máquina de vetores de suporte | Classificador principal do protocolo. Nome no código: `svm`. |
 | Quatro algoritmos | Máquina de vetores de suporte, floresta aleatória, rede elástica e XGBoost — só na coorte principal. |
 | Sem harmonização ComBat | Protocolo padrão do artigo: não aplicar o método ComBat entre aparelhos de ressonância. |
-| Com ComBat | Análise de sensibilidade: harmonizar atributos entre aparelhos ou lotes. Resultados em pastas separadas cujo nome contém `combat`. |
+| Com ComBat | Análise de sensibilidade com **Longitudinal ComBat** (Beer et al., 2020; REML), somente nas representações com duas ou três visitas. Resultados em pastas `*_longcombat`. |
 | Experimento com vazamento | Normalização ou seleção de atributos usa o conjunto inteiro antes da validação (resultado otimista; só para comparar com a literatura). |
 | Área sob a curva ROC | Medida principal de discriminação (quanto mais perto de 1, melhor). |
 | Correção de Benjamini–Hochberg | Ajuste quando se fazem vários testes estatísticos ao mesmo tempo, para controlar falsos positivos. |
@@ -208,9 +208,9 @@ Depois, se quiser: também o valor-p bilateral; renomear arquivos de tabela que 
 - [x] Figura A = quatro painéis com três barras; Tabela B = quatro algoritmos (não três mapas de calor).  
 - [x] Fusão clínico mais imagem usa **volume**, não forma.  
 - [x] Duas visitas nas quatro coortes = pré-requisito da Figura A → **cumprido** (três coortes novas mais a principal que já existia).  
-- [x] **ComBat:** o padrão do artigo continua **sem** ComBat. Harmonização entre aparelhos entra como **sensibilidade obrigatória na coorte principal** (ligado versus desligado), não como novo protocolo padrão de todo o estudo. Duas visitas no soft falso continuam opcionais.
+- [x] **ComBat:** o padrão do artigo continua **sem** ComBat. Longitudinal ComBat (Beer et al., 2020; REML) entra como **sensibilidade obrigatória na coorte principal**, somente nas representações de duas/três visitas, não como novo protocolo padrão.
 
-**Motivo do ComBat:** o disco e os cadernos estão calibrados sem ComBat; o ComBat clássico pode enfraquecer o sinal longitudinal; estudo multi-centro exige discussão e uma comparação na coorte principal, não relançar as quatro coortes × três representações só para mudar o padrão.
+**Motivo do Longitudinal ComBat:** medidas repetidas do mesmo sujeito não são independentes; o método de Beer modela essa correlação por intercepto aleatório. O fit ocorre apenas no treino de cada fold, sem `GROUP`; os deltas são calculados depois. Não relançar as quatro coortes.
 
 ---
 

@@ -81,6 +81,10 @@ RESULTS_ROOT_BY_PROTOCOL: dict[str, dict[str, str]] = {
         "t1_d21_d32": "ablation_results_clinic_img_d21d32",
         "t1_ma": "ablation_results_clinic_img_ma",
     },
+    "longcombat": {
+        "t1_d21": "ablation_results_d21_longcombat",
+        "t1_d21_d32": "ablation_results_d21d32_longcombat",
+    },
 }
 
 
@@ -292,6 +296,11 @@ def default_results_dir(
     if results_dir is not None:
         return Path(results_dir)
     base = Path(base_dir)
+    if protocol == "longcombat" and representation not in RESULTS_ROOT_BY_PROTOCOL[protocol]:
+        raise ValueError(
+            "Longitudinal ComBat só possui saída para t1_d21 ou t1_d21_d32; "
+            f"recebido {representation!r}."
+        )
     root_name = RESULTS_ROOT_BY_PROTOCOL[protocol].get(representation, "ablation_results")
     return base.parent.parent / root_name / modality
 
@@ -330,12 +339,18 @@ def default_late_fusion_results_dir(
     slots: tuple[FusionSlot, ...] | list[FusionSlot],
     *,
     results_dir: Path | str | None = None,
+    with_combat: bool = False,
 ) -> Path:
     """csvs/cohorts/{cohort}/ablation_results_late_fusion/{fingerprint}/."""
     if results_dir is not None:
         return Path(results_dir)
     base = Path(base_dir)
-    return base.parent.parent / LATE_FUSION_RESULTS_ROOT / fusion_fingerprint(slots)
+    root = (
+        f"{LATE_FUSION_RESULTS_ROOT}_longcombat"
+        if with_combat
+        else LATE_FUSION_RESULTS_ROOT
+    )
+    return base.parent.parent / root / fusion_fingerprint(slots)
 
 
 def mono_results_dir_for_slot(
@@ -343,10 +358,12 @@ def mono_results_dir_for_slot(
     slot: FusionSlot,
     *,
     protocol: str = "abs",
+    with_combat: bool = False,
 ) -> Path:
     """Pasta mono-mod do slot (ex. …/ablation_results_t1_only/shape)."""
     mod, rep = slot
-    return default_results_dir(base_dir, mod, rep, protocol=protocol)
+    selected_protocol = "longcombat" if with_combat else protocol
+    return default_results_dir(base_dir, mod, rep, protocol=selected_protocol)
 
 
 if __name__ == "__main__":
