@@ -30,7 +30,7 @@ except Exception:
     tqdm = lambda x, **kwargs: x  # noqa: E731
 
 ROOT = Path(__file__).resolve().parent
-GROUPWISE_ADNI = ROOT.parent / "groupwise" / "adni"
+GROUPWISE_ADNI = ROOT.parent / "groupwise_old" / "adni"
 IMAGES_DIR = ROOT / "images" / "groupwise" / "resample_1.0mm"
 OUT_DIR = ROOT / "images" / "groupwise" / "references"
 SUFFIX = "_stripped_nlm_denoised_biascorrected_mni_template.nii.gz"
@@ -220,6 +220,9 @@ def _set_tmp_env(tmp_dir: Path) -> None:
 
 
 def run_one(csv_path: Path) -> None:
+    if not csv_path.is_file():
+        print(f"[SKIP] selected CSV sumiu/ausente: {csv_path}", flush=True)
+        return
     tag = stratum_tag(csv_path)
     out_template = OUT_DIR / f"groupwise_{tag}_template.nii.gz"
     if out_template.is_file():

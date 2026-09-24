@@ -25,6 +25,10 @@ def image_ablation_path(base: Path, protocol: str, modality: str) -> Path:
         "t1_d21": base / "ablation_results_d21",
         "t1_d21_d32": base / "ablation_results_d21d32",
         "t1_ma": base / "ablation_results_ma",
+        "t1_r10": base / "ablation_results_r10",
+        "t1_r10_r21": base / "ablation_results_r10r21",
+        "t1_rate02": base / "ablation_results_rate02",
+        "t1_ols": base / "ablation_results_ols",
         "global": base / "ablation_results_leaky",
         "t1_d21_d32_global": base / "ablation_results_leaky_d21d32",
     }

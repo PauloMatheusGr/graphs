@@ -36,10 +36,11 @@ REPRESENTATION_TOKENS_Q4 = ("T1", "D21", "D32")
 REPRESENTATION_TOKENS_D21 = ("T1", "D21")
 REPRESENTATION_TOKENS_Q5 = ("T1", "M", "A")
 REPRESENTATION_TOKENS_R10_R21 = ("T1", "R10", "R21")
+REPRESENTATION_TOKENS_R10 = ("T1", "R10")
 REPRESENTATION_TOKENS_RATE02 = ("T1", "RATE02")
 REPRESENTATION_TOKENS_OLS = ("T1", "BETA1")
 RATE_TIME_TOKENS = ("R10", "R21", "RATE02", "BETA1")
-RATE_REPRESENTATIONS = frozenset({"t1_r10_r21", "t1_rate02", "t1_ols"})
+RATE_REPRESENTATIONS = frozenset({"t1_r10", "t1_r10_r21", "t1_rate02", "t1_ols"})
 PROTOCOL_T1_DELTAS = "t1_deltas_abs"
 _TOKEN_ALT = "T1|D21|D31|D32|SLOPE|M|A|R10|R21|RATE02|BETA1"
 
@@ -226,13 +227,14 @@ def add_rate_columns(
     roi: str = ROI_FILTER_DEFAULT,
     *,
     include_t1: bool = True,
+    include_r10: bool = False,
     include_r10_r21: bool = False,
     include_rate02: bool = False,
     include_beta1: bool = False,
 ) -> pd.DataFrame:
     """R10/R21/RATE02/BETA1 com tempos reais (meses). Exige T1/T2/T3 no wide."""
-    if not (include_r10_r21 or include_rate02 or include_beta1):
-        raise ValueError("add_rate_columns: active pelo menos um de r10_r21/rate02/beta1")
+    if not (include_r10 or include_r10_r21 or include_rate02 or include_beta1):
+        raise ValueError("add_rate_columns: active pelo menos um de r10/r10_r21/rate02/beta1")
     pat = absolute_col_pat(roi)
     groups: dict[tuple[str, str], dict[str, str]] = {}
     for col in wide.columns:
@@ -261,10 +263,11 @@ def add_rate_columns(
         v1 = pd.to_numeric(wide[times["T2"]], errors="coerce").to_numpy(dtype=float)
         v2 = pd.to_numeric(wide[times["T3"]], errors="coerce").to_numpy(dtype=float)
         prefix = f"{roi}_{side}"
-        if include_r10_r21:
+        if include_r10 or include_r10_r21:
             r10 = np.where(ok10, (v1 - v0) / dt10, np.nan)
-            r21 = np.where(ok21, (v2 - v1) / dt21, np.nan)
             rate_cols[f"{prefix}_R10_{feat}"] = pd.Series(r10, index=wide.index)
+        if include_r10_r21:
+            r21 = np.where(ok21, (v2 - v1) / dt21, np.nan)
             rate_cols[f"{prefix}_R21_{feat}"] = pd.Series(r21, index=wide.index)
         if include_rate02:
             r02 = np.where(ok20, (v2 - v0) / dt20, np.nan)
@@ -288,6 +291,8 @@ def add_rate_columns(
 
 
 def rate_kwargs_for_representation(representation: str) -> dict:
+    if representation == "t1_r10":
+        return {"include_t1": True, "include_r10": True}
     if representation == "t1_r10_r21":
         return {"include_t1": True, "include_r10_r21": True}
     if representation == "t1_rate02":
@@ -310,6 +315,8 @@ def feature_tokens_for_delta_representation(representation: str) -> tuple[str, .
         return REPRESENTATION_TOKENS_D21
     if representation == "t1_ma":
         return REPRESENTATION_TOKENS_Q5
+    if representation == "t1_r10":
+        return REPRESENTATION_TOKENS_R10
     if representation == "t1_r10_r21":
         return REPRESENTATION_TOKENS_R10_R21
     if representation == "t1_rate02":
@@ -603,7 +610,13 @@ if __name__ == "__main__":
     assert abs(float(r_all[f"{roi}_L_R21_gm_norm"].iloc[0]) - (-70.0 / 6.0)) < 1e-9
     assert abs(float(r_all[f"{roi}_L_RATE02_gm_norm"].iloc[0]) - (-60.0 / 12.6)) < 1e-9
     assert abs(float(r_all[f"{roi}_L_BETA1_gm_norm"].iloc[0]) - beta_ref) < 1e-9
+    assert feature_tokens_for_delta_representation("t1_r10") == REPRESENTATION_TOKENS_R10
     assert feature_tokens_for_delta_representation("t1_r10_r21") == REPRESENTATION_TOKENS_R10_R21
+    r10_only = add_rate_columns(
+        wide_demo, times_demo, roi, include_r10=True,
+    )
+    assert f"{roi}_L_R10_gm_norm" in r10_only.columns
+    assert f"{roi}_L_R21_gm_norm" not in r10_only.columns
     assert feature_tokens_for_delta_representation("t1_rate02") == REPRESENTATION_TOKENS_RATE02
     assert feature_tokens_for_delta_representation("t1_ols") == REPRESENTATION_TOKENS_OLS
     r10_cols = modality_wide_columns(

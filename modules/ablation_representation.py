@@ -11,7 +11,7 @@ from ablation_prep import ROI_FILTER_DEFAULT, modality_wide_columns
 Representation = Literal[
     "wide", "t1_only", "t1_deltas", "deltas_only", "t1_deltas_rel",
     "t1_d21", "t1_d21_d32", "t1_ma",
-    "t1_r10_r21", "t1_rate02", "t1_ols",
+    "t1_r10", "t1_r10_r21", "t1_rate02", "t1_ols",
 ]
 REPRESENTATIONS: tuple[str, ...] = (
     "wide",
@@ -22,23 +22,24 @@ REPRESENTATIONS: tuple[str, ...] = (
     "t1_d21",
     "t1_d21_d32",
     "t1_ma",
+    "t1_r10",
     "t1_r10_r21",
     "t1_rate02",
     "t1_ols",
 )
 DELTA_REPRESENTATIONS = frozenset({
     "t1_deltas", "deltas_only", "t1_deltas_rel", "t1_d21", "t1_d21_d32", "t1_ma",
-    "t1_r10_r21", "t1_rate02", "t1_ols",
+    "t1_r10", "t1_r10_r21", "t1_rate02", "t1_ols",
 })
 ABS_DELTA_REPRESENTATIONS = frozenset({
     "t1_deltas", "deltas_only", "t1_d21", "t1_d21_d32", "t1_ma",
 })
-RATE_REPRESENTATIONS = frozenset({"t1_r10_r21", "t1_rate02", "t1_ols"})
+RATE_REPRESENTATIONS = frozenset({"t1_r10", "t1_r10_r21", "t1_rate02", "t1_ols"})
 
 FUSION_MODALITIES: tuple[str, ...] = ("vol", "shape", "texture", "disp", "firstorder")
 DEFAULT_FUSION_SPEC = "shape:t1_only,vol:deltas_only"
 DEFAULT_LATE_FUSION_SPEC = (
-    "shape:t1_only,vol:t1_d21_d32,texture:t1_d21_d32,disp:t1_d21_d32,firstorder:t1_d21_d32"
+    "vol:t1_only,shape:t1_ols,texture:t1_ols,disp:t1_ols,firstorder:t1_ols"
 )
 FUSION_RESULTS_ROOT = "ablation_results_fusion"
 LATE_FUSION_RESULTS_ROOT = "ablation_results_late_fusion"
@@ -53,6 +54,7 @@ _REP_SHORT: dict[str, str] = {
     "t1_d21": "t1_d21",
     "t1_d21_d32": "t1_d21d32",
     "t1_ma": "t1_ma",
+    "t1_r10": "t1_r10",
     "t1_r10_r21": "t1_r10r21",
     "t1_rate02": "t1_rate02",
     "t1_ols": "t1_ols",
@@ -69,6 +71,7 @@ RESULTS_ROOT_BY_PROTOCOL: dict[str, dict[str, str]] = {
         "t1_d21": "ablation_results_d21",
         "t1_d21_d32": "ablation_results_d21d32",
         "t1_ma": "ablation_results_ma",
+        "t1_r10": "ablation_results_r10",
         "t1_r10_r21": "ablation_results_r10r21",
         "t1_rate02": "ablation_results_rate02",
         "t1_ols": "ablation_results_ols",
@@ -82,6 +85,7 @@ RESULTS_ROOT_BY_PROTOCOL: dict[str, dict[str, str]] = {
         "t1_d21": "ablation_results_leaky_d21",
         "t1_d21_d32": "ablation_results_leaky_d21d32",
         "t1_ma": "ablation_results_leaky_ma",
+        "t1_r10": "ablation_results_leaky_r10",
         "t1_r10_r21": "ablation_results_leaky_r10r21",
         "t1_rate02": "ablation_results_leaky_rate02",
         "t1_ols": "ablation_results_leaky_ols",
@@ -95,6 +99,7 @@ RESULTS_ROOT_BY_PROTOCOL: dict[str, dict[str, str]] = {
         "t1_d21": "ablation_results_clinic_img_d21",
         "t1_d21_d32": "ablation_results_clinic_img_d21d32",
         "t1_ma": "ablation_results_clinic_img_ma",
+        "t1_r10": "ablation_results_clinic_img_r10",
         "t1_r10_r21": "ablation_results_clinic_img_r10r21",
         "t1_rate02": "ablation_results_clinic_img_rate02",
         "t1_ols": "ablation_results_clinic_img_ols",
@@ -162,7 +167,7 @@ def iter_late_fusion_grid(
     *,
     mods: tuple[str, ...] = FUSION_MODALITIES,
     baseline: str = "t1_only",
-    longitudinal: str = "t1_d21_d32",
+    longitudinal: str = "t1_ols",
     min_k: int = 2,
 ) -> list[str]:
     """Uniões k≥2: cada família ∈ {baseline, longitudinal}. Ordem = `mods` (não permutações).
@@ -480,20 +485,29 @@ if __name__ == "__main__":
     )
     assert parse_representation("t1_rate02") == "t1_rate02"
 
+    r10_wide = apply_representation_wide(
+        wide, "t1_r10", roi=roi, times_months=times_p1,
+    )
+    r10_cols = feature_columns_for_representation(
+        r10_wide.columns, "vol", roi=roi, representation="t1_r10",
+    )
+    assert f"{roi}_L_R10_gm_norm" in r10_cols
+    assert f"{roi}_L_R21_gm_norm" not in r10_cols
+
     slots = parse_fusion_spec(DEFAULT_FUSION_SPEC)
     assert fusion_fingerprint(slots) == "t1_shape__deltas_vol"
     assert fusion_fingerprint(parse_fusion_spec("shape:t1_only,vol:t1_deltas")) == "t1_shape__t1_deltas_vol"
     ancora = parse_fusion_spec(DEFAULT_LATE_FUSION_SPEC)
-    assert [m for m, _ in ancora] == ["shape", "vol", "texture", "disp", "firstorder"]
-    assert ancora[0] == ("shape", "t1_only")
-    assert all(r == "t1_d21_d32" for m, r in ancora if m != "shape")
+    assert [m for m, _ in ancora] == ["vol", "shape", "texture", "disp", "firstorder"]
+    assert ancora[0] == ("vol", "t1_only")
+    assert all(r == "t1_ols" for m, r in ancora if m != "vol")
     grid = iter_late_fusion_grid()
     assert len(grid) == 232, len(grid)
-    assert "vol:t1_d21_d32,shape:t1_only" in grid
+    assert "vol:t1_ols,shape:t1_only" in grid
     assert "vol:t1_only,shape:t1_only,texture:t1_only,disp:t1_only,firstorder:t1_only" in grid
     assert (
-        "vol:t1_d21_d32,shape:t1_only,texture:t1_d21_d32,"
-        "disp:t1_d21_d32,firstorder:t1_d21_d32"
+        "vol:t1_ols,shape:t1_only,texture:t1_ols,"
+        "disp:t1_ols,firstorder:t1_ols"
     ) in grid
     fw = apply_fusion_wide(wide, slots, roi=roi)
     fcols = feature_columns_for_fusion(fw.columns, slots, roi=roi)

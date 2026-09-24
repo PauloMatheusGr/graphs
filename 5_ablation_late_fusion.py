@@ -38,7 +38,9 @@ from ablation_representation import (
     default_late_fusion_results_dir,
     fusion_fingerprint,
     fusion_label,
+    iter_late_fusion_grid,
     parse_fusion_spec,
+    parse_representation,
 )
 from ablation_runner import (
     SELECTION_MODES,
@@ -102,6 +104,25 @@ def _parse_weights(value: str | None) -> list[float] | None:
         raise argparse.ArgumentTypeError(f"weights inválidos: {value!r}") from e
 
 
+def _resolve_fusion_specs(args: argparse.Namespace) -> list[str]:
+    """Uma spec (--fusion / âncora / default) ou grelha baseline×longitudinal."""
+    if args.grid:
+        baseline = parse_representation(args.baseline_rep)
+        longitudinal = parse_representation(args.longitudinal_rep)
+        specs = iter_late_fusion_grid(baseline=baseline, longitudinal=longitudinal)
+        # paper specs sempre incluídos
+        all_t1 = ",".join(f"{m}:t1_only" for m in FUSION_MODALITIES)
+        all_long = ",".join(f"{m}:{longitudinal}" for m in FUSION_MODALITIES)
+        out: list[str] = []
+        seen: set[str] = set()
+        for s in (all_t1, all_long, *specs):
+            if s not in seen:
+                seen.add(s)
+                out.append(s)
+        return out
+    return [_resolve_fusion_spec(args)]
+
+
 def _resolve_fusion_spec(args: argparse.Namespace) -> str:
     if args.fusion:
         return args.fusion.strip()
@@ -140,9 +161,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--fusion", default=None, help=f"default: {DEFAULT_LATE_FUSION_SPEC}")
     p.add_argument("--partner-modality", default=None)
-    p.add_argument("--anchor-modality", default="shape")
+    p.add_argument("--anchor-modality", default="vol")
     p.add_argument("--anchor-rep", default="t1_only")
-    p.add_argument("--partner-rep", default="t1_d21_d32")
+    p.add_argument("--partner-rep", default="t1_ols")
+    p.add_argument(
+        "--grid",
+        action="store_true",
+        help="grelha k≥2: cada fam. ∈ {--baseline-rep, --longitudinal-rep} + all-T1 + all-long",
+    )
+    p.add_argument("--baseline-rep", default="t1_only", help="encoding baseline na grelha")
+    p.add_argument(
+        "--longitudinal-rep", default="t1_ols",
+        help="encoding longitudinal na grelha (método D)",
+    )
     p.add_argument("--combine", choices=COMBINE_MODES, default="mean")
     p.add_argument(
         "--weights",
@@ -190,29 +221,13 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        slots = parse_fusion_spec(_resolve_fusion_spec(args))
+        fusion_specs = _resolve_fusion_specs(args)
     except ValueError as e:
         print(f"erro fusion: {e}", file=sys.stderr)
         return 2
 
-    if args.weights is not None and len(args.weights) != len(slots):
-        print(
-            f"erro: --weights tem {len(args.weights)} valores, fusion tem {len(slots)} slots",
-            file=sys.stderr,
-        )
-        return 2
-    if args.combine == "weighted" and args.weights is None:
-        print("erro: --combine weighted exige --weights", file=sys.stderr)
-        return 2
-
     models = _split_csv(args.models)
     base_dir = Path(f"csvs/cohorts/{args.cohort}/ablation/{args.roi}")
-    results_dir = default_late_fusion_results_dir(
-        base_dir,
-        slots,
-        results_dir=args.results_dir,
-        with_combat=args.combat == (True,),
-    )
     log_path = None
     if not args.no_log_file:
         log_path = args.log_file or Path(
@@ -220,59 +235,90 @@ def main(argv: list[str] | None = None) -> int:
         )
     setup_logging(log_file=log_path, verbose=args.verbose)
 
-    fp = fusion_fingerprint(slots)
-    log.info("=== ablação late fusion ===")
-    log.info(
-        "cohort: %s | fusion: %s | protocol: late__%s | combine=%s",
-        args.cohort, fusion_label(slots), fp, args.combine,
-    )
     _long, _soft = param_soft_pmci_of(args.cohort)
+    log.info("=== ablação late fusion ===")
+    log.info("cohort: %s | n_specs=%d | grid=%s", args.cohort, len(fusion_specs), args.grid)
     log.info("PARAM_SOFT_PMCI=%s | csv=%s", _soft, _long)
-    log.info("reuse_disk=%s run_missing=%s | out: %s", args.reuse_disk, args.run_missing, results_dir)
+    log.info("reuse_disk=%s run_missing=%s", args.reuse_disk, args.run_missing)
 
     t0 = time.monotonic()
-    try:
-        df = run_late_fusion_ablation_suite(
-            fusion_slots=slots,
-            base_dir=base_dir,
-            roi=args.roi,
-            tasks=args.tasks,
-            models=models,
-            selection_modes=args.selection,
-            with_combat_flags=args.combat,
-            results_dir=results_dir,
-            seed=args.seed,
-            r_repeats=args.repeats,
-            verbose=args.verbose,
-            combat_quiet=True,
-            stable_pool_min_pct=args.stable_pool_min_pct,
-            stable_pool_min_timepoints=args.stable_pool_min_timepoints,
-            stable_pool_bootstrap=args.stable_bootstrap,
-            stable_pool_l1_c=args.stable_l1_c,
-            tuner=args.tuner,
-            optuna_trials=args.optuna_trials,
-            reuse_disk=args.reuse_disk,
-            run_missing=args.run_missing,
-            combine=args.combine,
-            weights=args.weights,
-        )
-    except Exception:
-        log.exception("late fusion falhou apos %s", fmt_duration(time.monotonic() - t0))
-        return 1
+    n_ok = 0
+    for i, spec in enumerate(fusion_specs, 1):
+        try:
+            slots = parse_fusion_spec(spec)
+        except ValueError as e:
+            log.error("spec inválida %s: %s", spec, e)
+            return 2
+        if args.weights is not None and len(args.weights) != len(slots):
+            log.error(
+                "--weights tem %d valores, fusion tem %d slots",
+                len(args.weights), len(slots),
+            )
+            return 2
+        if args.combine == "weighted" and args.weights is None:
+            log.error("--combine weighted exige --weights")
+            return 2
 
-    if df.empty:
-        log.error("sem resultados")
-        return 1
-    df = prepare_ablation_df(df)
-    summary = summary_with_pooled(df)
-    log.info(
-        "csv: %s | %s",
-        results_dir / "ablation_results_all.csv",
-        results_dir / "ablation_summary.csv",
-    )
-    cols = [c for c in ("modality", "auc_patient_mean", "auc_pooled", "n_features_mean") if c in summary.columns]
-    log.info("\n%s", summary[cols].to_string(index=False))
-    return 0
+        results_dir = default_late_fusion_results_dir(
+            base_dir,
+            slots,
+            results_dir=args.results_dir if len(fusion_specs) == 1 else None,
+            with_combat=args.combat == (True,),
+        )
+        summary_path = results_dir / "ablation_summary.csv"
+        if summary_path.is_file() and args.reuse_disk and len(fusion_specs) > 1:
+            log.info("[%d/%d] SKIP %s (summary existe)", i, len(fusion_specs), fusion_fingerprint(slots))
+            n_ok += 1
+            continue
+
+        fp = fusion_fingerprint(slots)
+        log.info(
+            "[%d/%d] fusion: %s | protocol: late__%s | combine=%s | out=%s",
+            i, len(fusion_specs), fusion_label(slots), fp, args.combine, results_dir,
+        )
+        try:
+            df = run_late_fusion_ablation_suite(
+                fusion_slots=slots,
+                base_dir=base_dir,
+                roi=args.roi,
+                tasks=args.tasks,
+                models=models,
+                selection_modes=args.selection,
+                with_combat_flags=args.combat,
+                results_dir=results_dir,
+                seed=args.seed,
+                r_repeats=args.repeats,
+                verbose=args.verbose,
+                combat_quiet=True,
+                stable_pool_min_pct=args.stable_pool_min_pct,
+                stable_pool_min_timepoints=args.stable_pool_min_timepoints,
+                stable_pool_bootstrap=args.stable_bootstrap,
+                stable_pool_l1_c=args.stable_l1_c,
+                tuner=args.tuner,
+                optuna_trials=args.optuna_trials,
+                reuse_disk=args.reuse_disk,
+                run_missing=args.run_missing,
+                combine=args.combine,
+                weights=args.weights,
+            )
+        except Exception:
+            log.exception("late fusion falhou em %s apos %s", fp, fmt_duration(time.monotonic() - t0))
+            return 1
+
+        if df.empty:
+            log.error("sem resultados para %s", fp)
+            return 1
+        df = prepare_ablation_df(df)
+        summary = summary_with_pooled(df)
+        cols = [
+            c for c in ("modality", "auc_patient_mean", "auc_pooled", "n_features_mean")
+            if c in summary.columns
+        ]
+        log.info("ok late__%s\n%s", fp, summary[cols].to_string(index=False))
+        n_ok += 1
+
+    log.info("DONE late fusion | %d/%d specs | %s", n_ok, len(fusion_specs), fmt_duration(time.monotonic() - t0))
+    return 0 if n_ok == len(fusion_specs) else 1
 
 
 if __name__ == "__main__":

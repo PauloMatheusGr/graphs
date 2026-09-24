@@ -21,7 +21,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-GROUPWISE_ADNI = ROOT.parent / "groupwise" / "adni"
+GROUPWISE_ADNI = ROOT.parent / "groupwise_old" / "adni"
 INPUT_DIR = "/mnt/databases/mri/adni/preproc/4-mni-hist-matching"
 OUTPUT_DIR = ROOT / "images" / "groupwise" / "resample_1.0mm"
 REF_MNI = "/mnt/study-data/pgirardi/preproc/atlases/templates/mni152_2009c_template.nii.gz"

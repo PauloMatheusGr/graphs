@@ -40,6 +40,23 @@ done
 
 A posteriori: mesmo loop com `--modality shape|texture|firstorder|disp`.
 
+## Rebuild compare (após todos os runs, incl. soft_False)
+
+**Não** corrige Q4 abs — só **adiciona** `t1_r10_r21` / `t1_rate02` / `t1_ols` a `cohort_results.csv` e escreve `ablation_ABCD_grid.csv`.
+
+```bash
+cd /mnt/study-data/pgirardi/graphs && source .venv/bin/activate
+# esperar soft_False terminar
+PYTHONPATH=modules python modules/cohort_compare.py --include-soft --n-boot 2000
+```
+
+Saídas em `csvs/cohort_comparison/`:
+- `cohort_results.csv` — todos os protocolos (claim + ABCD + late/…)
+- `cohort_features_long.csv`
+- `ablation_ABCD_grid.csv` — A/B0/B/C/D + deltas
+
+Sanidade sem escrever: `PYTHONPATH=modules python modules/cohort_compare.py --self-check`
+
 ## Resultados (48m_6m, vol, SVM, l1_stable, seed 42, R=10)
 
 Fonte: `csvs/cohorts/48m_6m/ablation_vol_ABCD_table.csv` (corrida 2026-09-24).

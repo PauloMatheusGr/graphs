@@ -538,7 +538,7 @@ def wide_for_fold(
 
         if any(r in RATE_REPRESENTATIONS for _, r in fusion_slots):
             raise ValueError(
-                "Fusão com t1_r10_r21/t1_rate02/t1_ols ainda não suportada "
+                "Fusão com t1_r10/t1_r10_r21/t1_rate02/t1_ols ainda não suportada "
                 "(passar times_months por slot)."
             )
         return apply_fusion_wide(wide, fusion_slots, roi=roi)

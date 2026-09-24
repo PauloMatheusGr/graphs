@@ -1,5 +1,91 @@
 https://chatgpt.com/share/6a96cae5-5d58-83e9-8773-481ad3fbb052
 
+# Artigo v1 → v2 (checklist de migração)
+
+Fonte manuscrito: `Artigo 1 pgirardi/artigo_v1.tex`.  
+Plano encoding: `plan_ablation_vol_ABCD.md`. Todo runs: `0_todo.md`.  
+Figs/stats: `6_results.ipynb` (V1) · `7_stats.ipynb` (§§3–5).
+
+## O que o v1 afirma (encoding temporal)
+
+| Papel no v1 | Representation | Vetor |
+|---|---|---|
+| Baseline | `t1_only` | `[feat₀]` |
+| 2 visitas | `t1_d21` | `[feat₀, Δ₁₀]` **absoluto** |
+| 3 visitas (claim long) | `t1_d21_d32` (= B₀ / “Q4”) | `[feat₀, Δ₁₀, Δ₂₁]` **absoluto** |
+
+Justificativa v1 (§ `subsubsec:longitudinal`, ~L354–364): intervalos ~6 m com baixa dispersão → **rejeita** `D/Δt`; usa Δ absolutos; **não** entram níveis crus de i₁/i₂, Δ₂₀, nem taxas.
+
+Números claim v1 (`48m_6m`, vol SVM): baseline **0.756±0.037** · 3v abs **0.763±0.036** · late all-Q4 **0.786±0.034** · max grelha Q4 **0.825±0.032** (viés seleção). Abstract / Related / Results / Discussion repetem estes.
+
+## O que mudou (resposta revisor 2)
+
+Crítica: (1) normalizar pelo tempo real; (2) encoding estável (taxa global / OLS) vs dois Δ consecutivos.
+
+| ID | Representation | Vetor | Tempo | Papel no **v2** |
+|----|----------------|-------|-------|-----------------|
+| A | `t1_only` | `[V0]` | — | baseline (igual) |
+| B₀ | `t1_d21_d32` | `[V0, Δ10, Δ21]` abs | não | **sensibilidade / legado v1** |
+| 2v | `t1_r10` | `[V0, r10]` · r10=(V1−V0)/(t1−t0) | sim | 2 visitas **primário** |
+| B | `t1_r10_r21` | `[V0, r10, r21]` | sim | 3v taxas consecutivas |
+| C | `t1_rate02` | `[V0, (V2−V0)/(t2−t0)]` | sim | sensibilidade (≈ D) |
+| **D** | **`t1_ols`** | **`[V0, β̂₁]`** OLS 3 pts | **sim** | **3 visitas primário** |
+
+Tempo: meses desde baseline (`t0=0`); `dias / 30.436875` (`MRI_DATE`). Código: `modules/ablation_deltas.py`, `ablation_representation.py`.
+
+Pastas disco: `ablation_results_t1_only/` · `_r10/` · `_r10r21/` · `_ols/` · `_d21d32/` (legado) · late `ablation_results_late_fusion/` fingerprints com `t1_ols`.
+
+## Números já no disco (SVM, `48m_6m`, soft True — rebuild pré–4-algo)
+
+Fonte: `csvs/cohort_comparison/ablation_ABCD_grid.csv` (2026-09-24). AUC patient-level.
+
+| Família | A (T1) | B₀ (abs) | B (rates) | C (rate02) | **D (OLS)** | Δ(D−A) |
+|---|---:|---:|---:|---:|---:|---:|
+| **vol** | 0.756 | 0.763 | 0.776 | 0.783 | **0.784** | **+0.028** |
+| shape | 0.712 | 0.721 | 0.718 | 0.726 | 0.728 | +0.017 |
+| texture | 0.628 | 0.674 | 0.670 | 0.607 | 0.608 | **−0.020** |
+| firstorder | 0.687 | 0.686 | 0.689 | 0.692 | 0.692 | +0.005 |
+| disp | 0.540 | 0.582 | 0.559 | 0.568 | 0.573 | +0.033 |
+
+Vol: B−B₀ ≈ **+0.013** (÷Δt ajuda); C≈D ≫ B₀; message = “longitudinal não ajuda” no vol era em parte **artefacto de Δ absolutos**. Texture: C/D **pioram** vs T1 — reportar, não esconder. Gradient 4 coortes: ver mesma CSV (36m/48m × 6m/12m).
+
+**Ainda pendente** (tmux `claim4` + `late_ols`; ver `0_todo.md`): 4 modelos (svm/rf/elasticnet/xgb) × 4 encodings; late grelha `t1_only`×`t1_ols` (~234 specs). Depois: rebuild `cohort_compare.py --include-soft --n-boot 2000` → regenerar figs/stats → **só então** fechar números do abstract v2 (late all-D, best_late, ROC 4-algo).
+
+## Secções do `artigo_v1.tex` a reescrever no v2
+
+1. **Abstract (~L75)** — trocar “3 visitas” abs por OLS; atualizar AUCs vol / late / max grelha **após** rebuild.
+2. **Related / contributions (~L98–125)** — hierarquia: baseline / 2v rates / 3v rates / **3v OLS**; Q4 abs = controlo do encoding publicado, não claim.
+3. **`subsubsec:longitudinal` (~L354–364)** — **inverter** o argumento anti-`D/Δt`. Novo texto: intervalos nominais ~6 m **não** eliminam heterogeneidade residual de calendário; normalização temporal + colapso a uma velocidade (OLS) são o protocolo primário; Δ abs ficam sensibilidade. Definir fórmulas r10, r21, β̂₁ OLS.
+4. **Protocolo classificação** — representations CLI; pastas; late `--grid --baseline-rep t1_only --longitudinal-rep t1_ols`.
+5. **Results** — Fig A = 4 encodings (não 3); ROC vol 4 curvas; unimodal claim T1 vs D; four_ceilings = uni T1/D/R10 + best late T1/D + all-T1/all-D; nova fig ROC × 4 algos (após claim4).
+6. **Inferência** — primário: D vs T1 e R10 vs T1 (5 fam, FDR); complementar: R10R21 vs T1; tetos `stats_four_ceilings_48m6m` (incl. best_late). Tabelas: `stats_ols_vs_t1_48m6m`, `stats_r10_vs_t1_48m6m`, `stats_r10r21_vs_t1_48m6m`, gradients.
+7. **Discussão (~L837+)** — “ganhos 3v−baseline pequenos / nulos sob FDR” aplica-se a **B₀ abs**. Reescrever: com D, vol sobe ~+0.03; não generalizar a todas as famílias (texture pode cair); soft False = sensibilidade pré-conversão.
+8. **Tabela D / ComBat** — manter sensibilidade longCombat em **Q4 abs** (já medido); não misturar com claim D. Nota: re-correr ComBat em OLS só se Discussion exigir (não bloqueia v2).
+9. **Figuras PDF** (`Artigo 1 pgirardi/figures/`):
+   - `fig_a_encoding_4cohorts.pdf` — Baseline / 2v R10 / 3v rates / 3v OLS
+   - `unimodal_t1_vs_ols_48m6m.pdf` (ex `…_vs_q4…`)
+   - `roc_vol_encodings_48m6m.pdf` — 4 curvas
+   - `roc_vol_models_ols_48m6m.pdf` — novo (pós claim4)
+   - `four_ceilings_48m6m.pdf` — 7 barras (uni×3 + best late×2 + all×2)
+   - `soft_true_vs_false_48m6m.pdf` — painéis T1 vs OLS
+
+## Mensagens-chave v2 (rascunho)
+
+- Claim confirmatório: sob mesmo n (trio), **OLS 3 visitas** vs baseline em 5 famílias; métrica AUC paciente; FDR dentro do contraste.
+- Achado vol: normalização temporal + slope > Δ abs consecutivos; C≈D com 3 pts quase equiespaçados (como o revisor previa).
+- Achado heterogeneidade: ganho long **não** uniforme (vol↑, texture OLS↓).
+- Late: teto = best da grelha / all-OLS; max da grelha continua exploratório (viés seleção) — manter disclaimer v1.
+- B₀/Q4 permanece no suplemento para rastrear o encoding do v1.
+
+## Contrastes oficiais v2 (substitui bloco antigo no fim deste ficheiro)
+
+- Unimodal claim: 5 fam × `{t1_only, t1_r10, t1_r10_r21, t1_ols}` × 4 coortes (SVM); 4-algo só claim `48m_6m`.
+- Late claim: all-T1, all-OLS, grelha baseline×OLS; best_late = argmax AUC na grelha (T1-only vs com-OLS).
+- Sensibilidade: B₀ abs, C rate02, soft False, longCombat (Q4), leaky, clínica.
+- Não crownear `wide`/`abs`/`t1_deltas`/`t1_ma` como claim.
+
+---
+
 # Incorporar ou corrigir no artigo:
 
 ## ICV: homotetia, não divisão crua (shape)
@@ -636,13 +722,12 @@ Fora: `ux_*`, `uy_*`, `uz_*`, `curlmag_*`, `*_n`, `*_p05`, `*_p50`, `*_p95`.
 
 Entre colineares: representante, não “melhor Haralick”. Reportar frequência across folds.
 
-## Contrastes oficiais
+## Contrastes oficiais (legado v1 — **substituído**)
 
-- Uniclasse: 5 famílias × `{t1_only, t1_d21_d32}` × 4 coortes
-- Late, 3 specs: tudo t1 · tudo Q4 · âncora `shape:t1_only ∪ resto Q4`
-- Não crownear `wide`/`abs`/`t1_deltas`/`t1_deltas_rel`/`t1_ma` como claim longitudinal
-- Extra (clínica, leaky, cn_ad, RF/EN): suplemento, não pergunta 1–3
+> Ver bloco **Artigo v1 → v2** no topo deste ficheiro.  
+> Antigo: 5 fam × `{t1_only, t1_d21_d32}` + late all-T1 / all-Q4 / âncora shape.  
+> Novo claim: `{t1_only, t1_r10, t1_r10_r21, t1_ols}` + late all-T1 / all-OLS / grelha; Q4 abs = sensibilidade.
 
 ## Paper (quando CSVs novos existirem)
 
-Unimodal = Δ(Q4−t1) por família. Late = teto por juntar papéis, não “onde o tempo mais ganha”. Nomes = tabela de frequência, não assinatura única.
+Unimodal claim = Δ(**OLS**−T1) e Δ(R10−T1) por família (FDR). Late = teto all-OLS / best_late na grelha, não “onde o tempo mais ganha”. Nomes = frequência across folds, não assinatura única.

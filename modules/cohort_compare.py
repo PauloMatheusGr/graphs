@@ -28,6 +28,11 @@ PROTOCOL_DIR = {
     "t1_d21": "ablation_results_d21",
     "t1_d21_d32": "ablation_results_d21d32",
     "t1_ma": "ablation_results_ma",
+    # revisor 2 / encoding temporal
+    "t1_r10": "ablation_results_r10",
+    "t1_r10_r21": "ablation_results_r10r21",
+    "t1_rate02": "ablation_results_rate02",
+    "t1_ols": "ablation_results_ols",
     "global": "ablation_results_leaky",
     "t1_only_global": "ablation_results_leaky_t1_only",
     "t1_deltas_global": "ablation_results_leaky_deltas",
@@ -37,6 +42,26 @@ PROTOCOL_DIR = {
     "clinica+img": "ablation_results_clinic_img",
     "clinica+img_t1": "ablation_results_clinic_img_t1_only",
 }
+
+# Braços ablação temporal (A/B0/B/C/D). Q4 do paper = B0.
+ABCD_ARMS: dict[str, str] = {
+    "A": "t1_only",
+    "B0": "t1_d21_d32",
+    "B": "t1_r10_r21",
+    "C": "t1_rate02",
+    "D": "t1_ols",
+}
+ABCD_PROTOCOLS: tuple[str, ...] = tuple(ABCD_ARMS.values())
+
+# Claim paper Figs: baseline / 2v rate / 3v B / 3v D
+CLAIM_ENCODING_PROTOCOLS: tuple[str, ...] = (
+    "t1_only", "t1_r10", "t1_r10_r21", "t1_ols",
+)
+
+DEFAULT_COMPARE_COHORTS: tuple[str, ...] = (
+    "36m_6m", "36m_12m", "48m_6m", "48m_12m",
+)
+SOFT_COMPARE_COHORTS: tuple[str, ...] = ("48m_6m_soft_False",)
 
 # Cross-mod unions: cada subpasta fingerprint = protocol próprio (ex. t1_shape__deltas_vol)
 FUSION_RESULTS_ROOT = "ablation_results_fusion"
@@ -461,46 +486,193 @@ def read_cohort_results(path: Path | str) -> pd.DataFrame:
     return pd.read_csv(path)
 
 
+def build_abcd_contrast_table(
+    results: pd.DataFrame,
+    *,
+    task: str = "smci_pmci",
+    model_key: str = "svm",
+    with_combat: bool = False,
+) -> pd.DataFrame:
+    """Wide A/B0/B/C/D por cohort×modality + Δ vs A e B−B0 / C−B0 / D−B0 / C−D."""
+    if results.empty:
+        return pd.DataFrame()
+    df = results.copy()
+    if "with_combat" in df.columns:
+        df["with_combat"] = df["with_combat"].map(
+            lambda x: str(x).strip().lower() in ("1", "true", "yes")
+        )
+    arms = ABCD_ARMS
+    proto_set = set(arms.values())
+    sub = df.loc[
+        (df["task"].astype(str) == task)
+        & (df["model_key"].astype(str) == model_key)
+        & (df["with_combat"] == with_combat)
+        & (df["protocol"].astype(str).isin(proto_set))
+        & df["modality"].notna()
+    ].copy()
+    if sub.empty:
+        return pd.DataFrame()
+    key = ["cohort", "modality", "protocol"]
+    sub = sub.sort_values(key).drop_duplicates(subset=key, keep="last")
+    # pivot auc_patient_mean
+    wide = sub.pivot_table(
+        index=["cohort", "modality"],
+        columns="protocol",
+        values="auc_patient_mean",
+        aggfunc="last",
+    )
+    out = wide.reset_index()
+    rename = {proto: f"auc_{arm}" for arm, proto in arms.items()}
+    out = out.rename(columns=rename)
+    for arm in arms:
+        col = f"auc_{arm}"
+        if col not in out.columns:
+            out[col] = np.nan
+    out["delta_B_minus_B0"] = out["auc_B"] - out["auc_B0"]
+    out["delta_C_minus_B0"] = out["auc_C"] - out["auc_B0"]
+    out["delta_D_minus_B0"] = out["auc_D"] - out["auc_B0"]
+    out["delta_C_minus_D"] = out["auc_C"] - out["auc_D"]
+    out["delta_B_minus_A"] = out["auc_B"] - out["auc_A"]
+    out["delta_C_minus_A"] = out["auc_C"] - out["auc_A"]
+    out["delta_D_minus_A"] = out["auc_D"] - out["auc_A"]
+    out["delta_B0_minus_A"] = out["auc_B0"] - out["auc_A"]
+    front = [
+        "cohort", "modality",
+        "auc_A", "auc_B0", "auc_B", "auc_C", "auc_D",
+        "delta_B0_minus_A", "delta_B_minus_A", "delta_C_minus_A", "delta_D_minus_A",
+        "delta_B_minus_B0", "delta_C_minus_B0", "delta_D_minus_B0", "delta_C_minus_D",
+    ]
+    return out[front].sort_values(["cohort", "modality"]).reset_index(drop=True)
+
+
+def discover_compare_cohorts(
+    cohorts_root: Path = Path("csvs/cohorts"),
+    *,
+    include_soft: bool = False,
+) -> list[str]:
+    """Coortes com pelo menos ablation_results_t1_only/."""
+    out: list[str] = []
+    wanted = list(DEFAULT_COMPARE_COHORTS)
+    if include_soft:
+        wanted.extend(SOFT_COMPARE_COHORTS)
+    for name in wanted:
+        if (cohorts_root / name / "ablation_results_t1_only").is_dir():
+            out.append(name)
+    return out
+
+
 def save_cohort_comparison(
     cohorts: list[str],
     out_dir: Path,
     *,
     cohorts_root: Path = Path("csvs/cohorts"),
     n_boot: int = 2000,
+    protocols: dict[str, str] | None = None,
+    write_abcd: bool = True,
 ) -> tuple[Path, Path, pd.DataFrame, pd.DataFrame]:
+    """Escreve cohort_results.csv + cohort_features_long.csv (+ ablation_ABCD_grid.csv)."""
     out_dir.mkdir(parents=True, exist_ok=True)
+    protocols = protocols or PROTOCOL_DIR
     results = _round_results_floats(
-        build_cohort_results(cohorts, cohorts_root=cohorts_root, n_boot=n_boot)
+        build_cohort_results(
+            cohorts, cohorts_root=cohorts_root, n_boot=n_boot, protocols=protocols,
+        )
     )
-    features = build_cohort_features_long(cohorts, cohorts_root=cohorts_root)
+    features = build_cohort_features_long(
+        cohorts, cohorts_root=cohorts_root, protocols=protocols,
+    )
     p_res = out_dir / "cohort_results.csv"
     p_feat = out_dir / "cohort_features_long.csv"
     results.to_csv(p_res, index=False, float_format=f"%.{RESULTS_FLOAT_DECIMALS}f")
     features.to_csv(p_feat, index=False)
+    if write_abcd:
+        abcd = _round_results_floats(build_abcd_contrast_table(results))
+        p_abcd = out_dir / "ablation_ABCD_grid.csv"
+        abcd.to_csv(p_abcd, index=False, float_format=f"%.{RESULTS_FLOAT_DECIMALS}f")
+        print(f"ABCD grid: {p_abcd} ({len(abcd)} linhas)")
     return p_res, p_feat, results, features
 
 
 if __name__ == "__main__":
+    import argparse
     import sys
+
     _root = Path(__file__).resolve().parent
     if str(_root) not in sys.path:
         sys.path.insert(0, str(_root))
+    _repo = _root.parent
+    if str(_repo) not in sys.path:
+        sys.path.insert(0, str(_repo))
 
-    root = Path("csvs/cohorts")
-    cohorts = sorted(
-        p.name for p in root.iterdir()
-        if p.is_dir() and COHORT_RE.match(p.name) and (p / "ablation_results").is_dir()
+    p = argparse.ArgumentParser(
+        description=(
+            "Rebuild cohort_comparison: cohort_results.csv + features + "
+            "ablation_ABCD_grid.csv (A/B0/B/C/D aditivo ao Q4 abs)."
+        ),
     )
-    assert cohorts, "nenhum cohort com ablation_results"
-    res = _round_results_floats(build_cohort_results(cohorts[:1], n_boot=50))
-    assert not res.empty, "cohort_results vazio"
-    assert "auc_patient_mean" in res.columns and "auc_patient_std" in res.columns
-    assert "selection_mode" not in res.columns
-    assert "n_soft_pmci" not in res.columns
-    assert _truncate_float(0.87465262748343727453654723) == 0.8746
-    assert _truncate_float(-0.1249) == -0.1249
-    print(f"ok: results={len(res)} rows cohorts={cohorts[:1]} truncate={RESULTS_FLOAT_DECIMALS}dp")
-    feat = build_cohort_features_long(cohorts[:1])
-    print(f"ok: features={len(feat)} rows")
-    if not feat.empty:
-        assert "anatomical_key" in feat.columns and "pct" in feat.columns
+    p.add_argument(
+        "--cohorts-root", type=Path, default=Path("csvs/cohorts"),
+        help="Raiz das coortes",
+    )
+    p.add_argument(
+        "--out-dir", type=Path, default=Path("csvs/cohort_comparison"),
+        help="Pasta de saída",
+    )
+    p.add_argument(
+        "--cohorts", nargs="*", default=None,
+        help="Lista explícita (default: 36/48 × 6/12 com t1_only)",
+    )
+    p.add_argument(
+        "--include-soft", action="store_true",
+        help="Inclui 48m_6m_soft_False no rebuild",
+    )
+    p.add_argument("--n-boot", type=int, default=2000)
+    p.add_argument(
+        "--no-abcd", action="store_true",
+        help="Não escreve ablation_ABCD_grid.csv",
+    )
+    p.add_argument(
+        "--self-check", action="store_true",
+        help="Sanidade rápida (n_boot=50, 1 coorte) sem sobrescrever CSVs",
+    )
+    args = p.parse_args()
+
+    if args.self_check:
+        cohorts = discover_compare_cohorts(args.cohorts_root, include_soft=False)
+        assert cohorts, "nenhum cohort com ablation_results_t1_only"
+        res = _round_results_floats(
+            build_cohort_results(cohorts[:1], cohorts_root=args.cohorts_root, n_boot=50)
+        )
+        assert not res.empty, "cohort_results vazio"
+        assert "auc_patient_mean" in res.columns
+        for proto in ("t1_r10", "t1_r10_r21", "t1_rate02", "t1_ols"):
+            assert proto in PROTOCOL_DIR
+            assert PROTOCOL_DIR[proto].startswith("ablation_results_")
+        abcd = build_abcd_contrast_table(res)
+        print(
+            f"ok self-check: results={len(res)} abcd={len(abcd)} "
+            f"cohorts={cohorts[:1]} protocols_ABCD={ABCD_PROTOCOLS}"
+        )
+        sys.exit(0)
+
+    cohorts = args.cohorts or discover_compare_cohorts(
+        args.cohorts_root, include_soft=args.include_soft,
+    )
+    if not cohorts:
+        raise SystemExit("nenhum cohort elegível — rode 5_ablation antes")
+    print("Rebuild cohorts:", cohorts)
+    print("Protocols (sample):", list(PROTOCOL_DIR)[:8], "… + rate/ols")
+    p_res, p_feat, results, features = save_cohort_comparison(
+        cohorts,
+        args.out_dir,
+        cohorts_root=args.cohorts_root,
+        n_boot=args.n_boot,
+        write_abcd=not args.no_abcd,
+    )
+    n_abcd_proto = sum(
+        1 for pcol in ABCD_PROTOCOLS
+        if (results["protocol"].astype(str) == pcol).any()
+    ) if not results.empty else 0
+    print(f"wrote {p_res} ({len(results)} rows)")
+    print(f"wrote {p_feat} ({len(features)} rows)")
+    print(f"ABCD protocols present in results: {n_abcd_proto}/{len(ABCD_PROTOCOLS)}")
