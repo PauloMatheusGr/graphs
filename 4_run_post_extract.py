@@ -31,6 +31,18 @@ POST_JOBS: tuple[tuple[str, bool], ...] = (
 )
 MERGE_KEYS = ["ID_IMG", "roi", "side", "label"]
 DISP_FEATURES = "features_displacement_v4.csv"
+DISP_FEATURES_AD = "features_displacement_v4_ad.csv"
+
+# Meta kept once on CN side when building disp_cnad (feats get cn_/ad_ prefix).
+_DISP_CNAD_META = {
+    "ID_IMG", "roi", "side", "label",
+    "ID_PT", "GROUP", "SEX", "AGE", "MRI_DATE", "DIAG", "slot",
+    "soft_pmci", "PARAM_SOFT_PMCI",
+    "FIELD_STRENGTH", "MANUFACTURER", "MFG_MODEL",
+    "MMSE_SCORE", "CDR_GLOBAL", "ADAS_SCORE", "FAQ_SCORE", "batch",
+    "centroid_x", "centroid_y", "centroid_z",
+    "ref_tag",
+}
 
 VOL_FEAT_COLS = [
     "mask_mm3", "gm_mm3", "gm_norm", "wm_mm3", "wm_norm",
@@ -199,13 +211,36 @@ def add_cohort_meta(radiomics_merge: pd.DataFrame, longitudinal: pd.DataFrame) -
     return merge
 
 
-def load_disp_store() -> pd.DataFrame:
-    out = pd.read_csv(FEATURES_DIR / DISP_FEATURES)
+def load_disp_store(filename: str = DISP_FEATURES) -> pd.DataFrame:
+    out = pd.read_csv(FEATURES_DIR / filename)
     out["ID_IMG"] = out["ID_IMG"].astype(str).str.strip()
     out["roi"] = out["roi"].astype(str).str.strip()
     out["side"] = out["side"].astype(str).str.strip()
     out["label"] = out["label"].astype(str).str.strip()
     return out
+
+
+def _prefix_disp_feats(df: pd.DataFrame, prefix: str) -> pd.DataFrame:
+    """Prefix feature cols; keep merge keys + shared meta unprefixed."""
+    out = df.copy()
+    rename = {
+        c: f"{prefix}{c}"
+        for c in out.columns
+        if c not in _DISP_CNAD_META and c not in MERGE_KEYS
+    }
+    return out.rename(columns=rename)
+
+
+def build_feat_disp_cnad(disp_cn: pd.DataFrame, disp_ad: pd.DataFrame) -> pd.DataFrame:
+    """Horizontal concat CN‖AD feats (cn_* / ad_*); meta from CN."""
+    cn = normalize_merge_keys(_prefix_disp_feats(disp_cn, "cn_"))
+    ad = normalize_merge_keys(_prefix_disp_feats(disp_ad, "ad_"))
+    ad_feat_cols = [c for c in ad.columns if c.startswith("ad_")]
+    ad_slim = ad[MERGE_KEYS + ad_feat_cols]
+    # Drop CN ref_tag name collision handled: ref_tag stays on CN meta only.
+    merged = cn.merge(ad_slim, on=MERGE_KEYS, how="inner", validate="one_to_one")
+    print(f"[disp_cnad] shape={merged.shape} (inner on {MERGE_KEYS})")
+    return merged
 
 
 def build_feat_disp_all(df_disp: pd.DataFrame, longitudinal: pd.DataFrame) -> pd.DataFrame:
@@ -298,6 +333,8 @@ def export_one(
     disp_all: pd.DataFrame,
     cohort: str,
     soft_pmci: bool,
+    *,
+    disp_ad_all: pd.DataFrame | None = None,
 ) -> None:
     long_path = resolve_longitudinal(cohort, soft_pmci)
     long = pd.read_csv(long_path)
@@ -310,27 +347,45 @@ def export_one(
     rad = add_cohort_meta(merged_all, long)
     disp = build_feat_disp_all(disp_all, long)
     merge = build_feat_merge_all(rad, disp)
-    paths = export_ablation_long_only(rad, disp, merge, out_dir)
+
+    disp_ad = None
+    disp_cnad = None
+    if disp_ad_all is not None:
+        disp_ad = build_feat_disp_all(disp_ad_all, long)
+        disp_cnad = build_feat_disp_cnad(disp, disp_ad)
+
+    paths = export_ablation_long_only(
+        rad, disp, merge, out_dir, disp_ad=disp_ad, disp_cnad=disp_cnad
+    )
     print(f"ablation export OK: {len(paths)} → {out_dir / 'ablation'}")
 
 
 def main() -> None:
     _selfcheck_icv_homothety()
-    for p in (
+    required = [
         FEATURES_DIR / "features_volumetric.csv",
         FEATURES_DIR / "features_radiomic.csv",
         FEATURES_DIR / DISP_FEATURES,
-    ):
+    ]
+    for p in required:
         if not p.is_file():
             raise FileNotFoundError(f"Extração incompleta: {p}")
     for cohort, soft in POST_JOBS:
         resolve_longitudinal(cohort, soft)
 
     merged_all = merge_rad_vol_icv()
-    disp_all = load_disp_store()
+    disp_all = load_disp_store(DISP_FEATURES)
+    disp_ad_path = FEATURES_DIR / DISP_FEATURES_AD
+    disp_ad_all = load_disp_store(DISP_FEATURES_AD) if disp_ad_path.is_file() else None
+    if disp_ad_all is None:
+        print(f"[WARN] {disp_ad_path} ausente — só exporta disp_long (CN)")
     for cohort, soft in POST_JOBS:
-        export_one(merged_all, disp_all, cohort, soft)
-    print(f"features←{FEATURES_DIR} | disp←{DISP_FEATURES} | n_jobs={len(POST_JOBS)}")
+        export_one(merged_all, disp_all, cohort, soft, disp_ad_all=disp_ad_all)
+    print(
+        f"features←{FEATURES_DIR} | disp←{DISP_FEATURES} "
+        f"| disp_ad←{DISP_FEATURES_AD if disp_ad_all is not None else 'SKIP'} "
+        f"| n_jobs={len(POST_JOBS)}"
+    )
 
 
 if __name__ == "__main__":

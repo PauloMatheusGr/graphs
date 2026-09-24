@@ -119,7 +119,17 @@ MODALITIES: dict[str, dict[str, str]] = {
     "vol": {"long": "vol_long.csv", "wide": "vol_wide.csv", "label": "volumétrico"},
     "shape": {"long": "shape_long.csv", "wide": "shape_wide.csv", "label": "shape"},
     "texture": {"long": "rad_long.csv", "wide": "texture_wide.csv", "label": "textura"},
-    "disp": {"long": "disp_long.csv", "wide": "disp_wide.csv", "label": "deslocamento"},
+    "disp": {"long": "disp_long.csv", "wide": "disp_wide.csv", "label": "deslocamento CN"},
+    "disp_ad": {
+        "long": "disp_ad_long.csv",
+        "wide": "disp_ad_wide.csv",
+        "label": "deslocamento AD",
+    },
+    "disp_cnad": {
+        "long": "disp_cnad_long.csv",
+        "wide": "disp_cnad_wide.csv",
+        "label": "deslocamento CN+AD",
+    },
     "firstorder": {"long": "rad_long.csv", "wide": "firstorder_wide.csv", "label": "firstorder"},
     "all": {
         "long": "merge_long.csv",
@@ -524,8 +534,23 @@ def wide_for_fold(
         )
     wide = pivot_long_to_wide(sub, expected_visits=expected_visits)
     if fusion_slots is not None:
+        from ablation_representation import RATE_REPRESENTATIONS
+
+        if any(r in RATE_REPRESENTATIONS for _, r in fusion_slots):
+            raise ValueError(
+                "Fusão com t1_r10_r21/t1_rate02/t1_ols ainda não suportada "
+                "(passar times_months por slot)."
+            )
         return apply_fusion_wide(wide, fusion_slots, roi=roi)
-    return apply_representation_wide(wide, representation, roi=roi)
+    times_months = None
+    from ablation_representation import is_rate_representation
+    from ablation_deltas import visit_times_months
+
+    if is_rate_representation(representation):
+        times_months = visit_times_months(sub)
+    return apply_representation_wide(
+        wide, representation, roi=roi, times_months=times_months,
+    )
 
 
 def repeat_ids(r_repeats: int) -> range:

@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
-"""Groupwise SyN template por estrato CN (sexo × década).
+"""Groupwise SyN template por estrato (sexo × década), DIAG=CN|AD.
 
 Lê IDs congelados em selected_*.csv. Imagens já rigid-MNI em
-images/groupwise/resample_1.0mm (2_resample_groupwise.py). Sem HM,
+images/groupwise/resample_1.0mm (2.1_resample_groupwise.py). Sem HM,
 sem pad, sem reorient, sem rescale [0,1].
 
 Uso:
-    python 1_groupwise_ants.py
-    python 1_groupwise_ants.py 60 69 F
+    python 2.2_groupwise_ants.py
+    python 2.2_groupwise_ants.py --diag AD
+    python 2.2_groupwise_ants.py --diag AD 60 69 F
 """
 
 from __future__ import annotations
 
+import argparse
 import csv
 import os
 import shutil
@@ -28,56 +30,69 @@ except Exception:
     tqdm = lambda x, **kwargs: x  # noqa: E731
 
 ROOT = Path(__file__).resolve().parent
-SELECTED_DIR = ROOT.parent / "groupwise" / "adni" / "CN"
+GROUPWISE_ADNI = ROOT.parent / "groupwise" / "adni"
 IMAGES_DIR = ROOT / "images" / "groupwise" / "resample_1.0mm"
 OUT_DIR = ROOT / "images" / "groupwise" / "references"
 SUFFIX = "_stripped_nlm_denoised_biascorrected_mni_template.nii.gz"
 TYPE_OF_TRANSFORM = "SyN"
 N_ITER_TEMPLATE = 5
 KEEP_TMP_ANTS = False
+VALID_DIAG = ("CN", "AD")
+
+# Set by parse_cli / main.
+DIAG = "CN"
+SELECTED_DIR = GROUPWISE_ADNI / DIAG
 
 
 def usage_and_exit(code: int = 1) -> None:
     print(
         "Uso:\n"
-        "  python 1_groupwise_ants.py\n"
-        "  python 1_groupwise_ants.py <min_age> <max_age> <sex>\n\n"
+        "  python 2.2_groupwise_ants.py [--diag CN|AD]\n"
+        "  python 2.2_groupwise_ants.py [--diag CN|AD] <min_age> <max_age> <sex>\n\n"
         "Exemplo:\n"
-        "  python 1_groupwise_ants.py 60 69 F\n"
+        "  python 2.2_groupwise_ants.py --diag AD 60 69 F\n"
     )
     sys.exit(code)
 
 
-def parse_args(argv: list[str]):
-    if len(argv) == 1:
-        return None
-    if len(argv) != 4:
+def parse_cli(argv: list[str]):
+    """Return (diag, stratum_or_None). stratum = (age_min, age_max, sex)."""
+    p = argparse.ArgumentParser(add_help=False)
+    p.add_argument("--diag", default="CN", choices=VALID_DIAG)
+    p.add_argument("-h", "--help", action="store_true")
+    args, rest = p.parse_known_args(argv[1:])
+    if args.help:
+        usage_and_exit(0)
+    diag = str(args.diag).upper().strip()
+    if not rest:
+        return diag, None
+    if len(rest) != 3:
         usage_and_exit(1)
     try:
-        age_min = int(float(argv[1]))
-        age_max = int(float(argv[2]))
+        age_min = int(float(rest[0]))
+        age_max = int(float(rest[1]))
     except ValueError:
         print("Erro: idades numéricas.")
         usage_and_exit(1)
-    sex = str(argv[3]).strip().upper()
+    sex = str(rest[2]).strip().upper()
     if sex not in {"M", "F"}:
         print("Erro: sex = M ou F.")
         usage_and_exit(1)
     if age_min > age_max:
         usage_and_exit(1)
-    return age_min, age_max, sex
+    return diag, (age_min, age_max, sex)
 
 
 def selected_csvs(one=None) -> list[Path]:
     if one is not None:
         age_min, age_max, sex = one
-        p = SELECTED_DIR / f"selected_DIAG-CN_SEX-{sex}_AGE-{age_min}-{age_max}_N-20.csv"
+        p = SELECTED_DIR / f"selected_DIAG-{DIAG}_SEX-{sex}_AGE-{age_min}-{age_max}_N-20.csv"
         if not p.is_file():
             raise FileNotFoundError(f"selected CSV ausente: {p}")
         return [p]
-    csvs = sorted(SELECTED_DIR.glob("selected_DIAG-CN_*.csv"))
+    csvs = sorted(SELECTED_DIR.glob(f"selected_DIAG-{DIAG}_*.csv"))
     if not csvs:
-        raise FileNotFoundError(f"nenhum selected_DIAG-CN_*.csv em {SELECTED_DIR}")
+        raise FileNotFoundError(f"nenhum selected_DIAG-{DIAG}_*.csv em {SELECTED_DIR}")
     if not any("AGE-50-59" in p.name for p in csvs):
         print("[WARN] selected CSV 50-59 ausente — DVF nessa faixa sem template novo", flush=True)
     return csvs
@@ -226,15 +241,20 @@ def run_one(csv_path: Path) -> None:
 
 
 def main(argv: list[str]) -> None:
+    global DIAG, SELECTED_DIR
+    diag, stratum = parse_cli(argv)
+    DIAG = diag
+    SELECTED_DIR = GROUPWISE_ADNI / DIAG
+
     t_start = time.time()
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     tmp_base = OUT_DIR / "_tmp_ants"
     tmp_base.mkdir(parents=True, exist_ok=True)
     run_tmp = Path(tempfile.mkdtemp(prefix="ants_", dir=str(tmp_base)))
     _set_tmp_env(run_tmp)
-    print(f"[TMP] {run_tmp}", flush=True)
+    print(f"[TMP] {run_tmp} DIAG={DIAG} selected={SELECTED_DIR}", flush=True)
     try:
-        for csv_path in selected_csvs(parse_args(argv)):
+        for csv_path in selected_csvs(stratum):
             run_one(csv_path)
     finally:
         if not KEEP_TMP_ANTS:

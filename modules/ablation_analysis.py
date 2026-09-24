@@ -13,12 +13,17 @@ import pandas as pd
 from sklearn.metrics import roc_auc_score
 
 CONFIG_COLS = ("task", "modality", "model_key", "with_combat", "selection_mode")
-FEAT_RE = re.compile(r"^hippocampus_([LR])_(T[123]|D21|D31|D32|SLOPE|M|A)_(.+)$")
+FEAT_RE = re.compile(
+    r"^hippocampus_([LR])_(T[123]|D21|D31|D32|SLOPE|M|A|R10|R21|RATE02|BETA1)_(.+)$"
+)
 TIME_ORDER = ("T1", "T2", "T3")
 DELTA_TIME_ORDER = ("T1", "D21", "D31", "D32")
 DELTA_TIME_ORDER_LEGACY = ("T1", "D21", "D31", "SLOPE")
 MA_TIME_ORDER = ("T1", "M", "A")
 Q4_TIME_ORDER = ("T1", "D21", "D32")
+R10R21_TIME_ORDER = ("T1", "R10", "R21")
+RATE02_TIME_ORDER = ("T1", "RATE02")
+OLS_TIME_ORDER = ("T1", "BETA1")
 LINE_PALETTE = (
     "#4477AA",
     "#EE6677",
@@ -58,7 +63,7 @@ def parse_feature(name: str) -> tuple[str, str, str] | None:
 
 
 def anatomical_key(name: str) -> str:
-    """Colapsa T1/T2/T3/D21/D31/D32/SLOPE/M/A: hippocampus_L_T2_gm_norm → hippocampus_L_gm_norm."""
+    """Colapsa tokens temporais: hippocampus_L_T2_gm_norm → hippocampus_L_gm_norm."""
     parsed = parse_feature(name)
     if parsed is None:
         return name
@@ -410,6 +415,12 @@ def _time_order_for_names(names: list[str]) -> tuple[str, ...]:
     tokens = {parse_feature(n)[1] for n in names if parse_feature(n) is not None}
     if tokens & {"M", "A"}:
         return MA_TIME_ORDER
+    if tokens & {"R10", "R21"}:
+        return R10R21_TIME_ORDER
+    if "RATE02" in tokens:
+        return RATE02_TIME_ORDER
+    if "BETA1" in tokens:
+        return OLS_TIME_ORDER
     if tokens & {"D21", "D32"} and "D31" not in tokens:
         return Q4_TIME_ORDER
     if tokens & (set(DELTA_TIME_ORDER[1:]) | set(DELTA_TIME_ORDER_LEGACY[1:])):
@@ -448,6 +459,9 @@ def filter_temporally_stable(
     if time_order is None:
         time_order = (
             MA_TIME_ORDER if "pct_M" in grp.columns else
+            R10R21_TIME_ORDER if "pct_R10" in grp.columns else
+            RATE02_TIME_ORDER if "pct_RATE02" in grp.columns else
+            OLS_TIME_ORDER if "pct_BETA1" in grp.columns else
             Q4_TIME_ORDER if "pct_D21" in grp.columns and "pct_D31" not in grp.columns else
             DELTA_TIME_ORDER if "pct_D32" in grp.columns else
             DELTA_TIME_ORDER_LEGACY if "pct_SLOPE" in grp.columns else
@@ -646,6 +660,12 @@ def _time_order_from_freq(freq: pd.DataFrame) -> tuple[str, ...]:
     tok = set(tokens)
     if tok & {"M", "A"}:
         return MA_TIME_ORDER
+    if tok & {"R10", "R21"}:
+        return R10R21_TIME_ORDER
+    if "RATE02" in tok:
+        return RATE02_TIME_ORDER
+    if "BETA1" in tok:
+        return OLS_TIME_ORDER
     if tok & {"D21", "D32"} and "D31" not in tok:
         return Q4_TIME_ORDER
     if tok & (set(DELTA_TIME_ORDER[1:]) | set(DELTA_TIME_ORDER_LEGACY[1:])):

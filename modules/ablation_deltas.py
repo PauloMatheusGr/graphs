@@ -25,6 +25,9 @@ DeltaKind = Literal["abs", "rel"]
 
 META_WIDE = frozenset({"ID_PT", "GROUP", "SEX", "y"})
 DELTA_EPS = 1e-8
+# ponytail: mean Gregorian month; upgrade = calendar-exact months if needed
+DAYS_PER_MONTH = 30.436875
+TIME_EPS_MONTHS = 1e-6
 DELTA_TIME_TOKENS = ("D21", "D31", "D32")
 DELTA_TIME_TOKENS_LEGACY = ("D21", "D31", "SLOPE")
 REPRESENTATION_TOKENS = ("T1", "D21", "D31", "D32")
@@ -32,7 +35,13 @@ REPRESENTATION_TOKENS_LEGACY = ("T1", "D21", "D31", "SLOPE")
 REPRESENTATION_TOKENS_Q4 = ("T1", "D21", "D32")
 REPRESENTATION_TOKENS_D21 = ("T1", "D21")
 REPRESENTATION_TOKENS_Q5 = ("T1", "M", "A")
+REPRESENTATION_TOKENS_R10_R21 = ("T1", "R10", "R21")
+REPRESENTATION_TOKENS_RATE02 = ("T1", "RATE02")
+REPRESENTATION_TOKENS_OLS = ("T1", "BETA1")
+RATE_TIME_TOKENS = ("R10", "R21", "RATE02", "BETA1")
+RATE_REPRESENTATIONS = frozenset({"t1_r10_r21", "t1_rate02", "t1_ols"})
 PROTOCOL_T1_DELTAS = "t1_deltas_abs"
+_TOKEN_ALT = "T1|D21|D31|D32|SLOPE|M|A|R10|R21|RATE02|BETA1"
 
 
 def absolute_col_pat(roi: str = ROI_FILTER_DEFAULT) -> re.Pattern[str]:
@@ -40,7 +49,7 @@ def absolute_col_pat(roi: str = ROI_FILTER_DEFAULT) -> re.Pattern[str]:
 
 
 def representation_col_pat(roi: str = ROI_FILTER_DEFAULT) -> re.Pattern[str]:
-    return re.compile(rf"^{re.escape(roi)}_[LR]_(T1|D21|D31|D32|SLOPE|M|A)_(.+)$")
+    return re.compile(rf"^{re.escape(roi)}_[LR]_({_TOKEN_ALT})_(.+)$")
 
 
 def absolute_delta(v_from: pd.Series, v_to: pd.Series) -> pd.Series:
@@ -133,6 +142,161 @@ def add_delta_columns(
     return out
 
 
+def visit_times_months(df_long: pd.DataFrame) -> pd.DataFrame:
+    """Por ID_PT: t0=0, t1, t2 em meses desde baseline (mesma ordem slot/MRI_DATE do pivot)."""
+    from ablation_prep import SLOT_ORDER
+
+    if "ID_PT" not in df_long.columns or "MRI_DATE" not in df_long.columns:
+        raise ValueError("visit_times_months exige ID_PT e MRI_DATE no long.")
+    visits = df_long.copy()
+    visits["ID_PT"] = visits["ID_PT"].astype(str)
+    visits["MRI_DATE"] = pd.to_datetime(visits["MRI_DATE"], errors="coerce")
+    if "slot" in visits.columns:
+        visits["_slot_ord"] = visits["slot"].map(SLOT_ORDER).fillna(99)
+        sort_cols = ["ID_PT", "_slot_ord", "MRI_DATE"]
+        if "ID_IMG" in visits.columns:
+            sort_cols.append("ID_IMG")
+            visits = visits.drop_duplicates(["ID_PT", "ID_IMG"])
+        else:
+            visits = visits.drop_duplicates(["ID_PT", "slot"])
+    else:
+        sort_cols = ["ID_PT", "MRI_DATE"]
+        if "ID_IMG" in visits.columns:
+            sort_cols.append("ID_IMG")
+            visits = visits.drop_duplicates(["ID_PT", "ID_IMG"])
+        else:
+            visits = visits.drop_duplicates(["ID_PT", "MRI_DATE"])
+    visits = visits.sort_values(sort_cols)
+    visits["_visit"] = visits.groupby("ID_PT").cumcount()
+
+    rows: list[dict] = []
+    for pid, g in visits.groupby("ID_PT", sort=False):
+        g3 = g.nsmallest(3, "_visit") if "_visit" in g.columns else g.head(3)
+        g3 = g3.sort_values("_visit")
+        if len(g3) < 3 or g3["MRI_DATE"].isna().any():
+            rows.append({"ID_PT": pid, "t0": np.nan, "t1": np.nan, "t2": np.nan})
+            continue
+        base = g3["MRI_DATE"].iloc[0]
+        t1 = (g3["MRI_DATE"].iloc[1] - base).total_seconds() / (86400.0 * DAYS_PER_MONTH)
+        t2 = (g3["MRI_DATE"].iloc[2] - base).total_seconds() / (86400.0 * DAYS_PER_MONTH)
+        if not (np.isfinite(t1) and np.isfinite(t2) and t1 > TIME_EPS_MONTHS and t2 > t1 + TIME_EPS_MONTHS):
+            rows.append({"ID_PT": pid, "t0": np.nan, "t1": np.nan, "t2": np.nan})
+            continue
+        rows.append({"ID_PT": pid, "t0": 0.0, "t1": float(t1), "t2": float(t2)})
+    return pd.DataFrame(rows).set_index("ID_PT")
+
+
+def ols_slope_three(
+    t0: float, t1: float, t2: float,
+    x0: float, x1: float, x2: float,
+    *,
+    eps: float = TIME_EPS_MONTHS,
+) -> float:
+    """β̂1 OLS de x~t com 3 pontos; NaN se denom≈0 ou não-finito."""
+    t = np.asarray([t0, t1, t2], dtype=float)
+    x = np.asarray([x0, x1, x2], dtype=float)
+    if not (np.all(np.isfinite(t)) and np.all(np.isfinite(x))):
+        return float("nan")
+    t_bar = t.mean()
+    x_bar = x.mean()
+    denom = float(((t - t_bar) ** 2).sum())
+    if denom < eps:
+        return float("nan")
+    return float(((t - t_bar) * (x - x_bar)).sum() / denom)
+
+
+def _align_times_to_wide(wide: pd.DataFrame, times_months: pd.DataFrame) -> pd.DataFrame:
+    if "ID_PT" not in wide.columns:
+        raise ValueError("wide sem ID_PT para alinhar tempos.")
+    tm = times_months.copy()
+    if tm.index.name != "ID_PT" and "ID_PT" in tm.columns:
+        tm = tm.set_index("ID_PT")
+    tm.index = tm.index.astype(str)
+    for col in ("t0", "t1", "t2"):
+        if col not in tm.columns:
+            raise ValueError(f"times_months sem coluna {col!r}")
+    aligned = tm.reindex(wide["ID_PT"].astype(str).to_numpy())
+    aligned.index = wide.index
+    return aligned
+
+
+def add_rate_columns(
+    wide: pd.DataFrame,
+    times_months: pd.DataFrame,
+    roi: str = ROI_FILTER_DEFAULT,
+    *,
+    include_t1: bool = True,
+    include_r10_r21: bool = False,
+    include_rate02: bool = False,
+    include_beta1: bool = False,
+) -> pd.DataFrame:
+    """R10/R21/RATE02/BETA1 com tempos reais (meses). Exige T1/T2/T3 no wide."""
+    if not (include_r10_r21 or include_rate02 or include_beta1):
+        raise ValueError("add_rate_columns: active pelo menos um de r10_r21/rate02/beta1")
+    pat = absolute_col_pat(roi)
+    groups: dict[tuple[str, str], dict[str, str]] = {}
+    for col in wide.columns:
+        m = pat.match(col)
+        if not m:
+            continue
+        side, feat = m.group(1), m.group(3)
+        groups.setdefault((side, feat), {})[m.group(2)] = col
+
+    aligned = _align_times_to_wide(wide, times_months)
+    t0 = aligned["t0"].to_numpy(dtype=float)
+    t1 = aligned["t1"].to_numpy(dtype=float)
+    t2 = aligned["t2"].to_numpy(dtype=float)
+    dt10 = t1 - t0
+    dt21 = t2 - t1
+    dt20 = t2 - t0
+    ok10 = np.isfinite(dt10) & (dt10 > TIME_EPS_MONTHS)
+    ok21 = np.isfinite(dt21) & (dt21 > TIME_EPS_MONTHS)
+    ok20 = np.isfinite(dt20) & (dt20 > TIME_EPS_MONTHS)
+
+    rate_cols: dict[str, pd.Series] = {}
+    for (side, feat), times in groups.items():
+        if not all(k in times for k in ("T1", "T2", "T3")):
+            continue
+        v0 = pd.to_numeric(wide[times["T1"]], errors="coerce").to_numpy(dtype=float)
+        v1 = pd.to_numeric(wide[times["T2"]], errors="coerce").to_numpy(dtype=float)
+        v2 = pd.to_numeric(wide[times["T3"]], errors="coerce").to_numpy(dtype=float)
+        prefix = f"{roi}_{side}"
+        if include_r10_r21:
+            r10 = np.where(ok10, (v1 - v0) / dt10, np.nan)
+            r21 = np.where(ok21, (v2 - v1) / dt21, np.nan)
+            rate_cols[f"{prefix}_R10_{feat}"] = pd.Series(r10, index=wide.index)
+            rate_cols[f"{prefix}_R21_{feat}"] = pd.Series(r21, index=wide.index)
+        if include_rate02:
+            r02 = np.where(ok20, (v2 - v0) / dt20, np.nan)
+            rate_cols[f"{prefix}_RATE02_{feat}"] = pd.Series(r02, index=wide.index)
+        if include_beta1:
+            beta = np.array([
+                ols_slope_three(t0[i], t1[i], t2[i], v0[i], v1[i], v2[i])
+                for i in range(len(wide))
+            ], dtype=float)
+            rate_cols[f"{prefix}_BETA1_{feat}"] = pd.Series(beta, index=wide.index)
+
+    keep = [c for c in wide.columns if c in META_WIDE]
+    if include_t1:
+        for times in groups.values():
+            if all(k in times for k in ("T1", "T2", "T3")):
+                keep.append(times["T1"])
+    out = wide[keep].copy()
+    if rate_cols:
+        out = pd.concat([out, pd.DataFrame(rate_cols, index=wide.index)], axis=1)
+    return out
+
+
+def rate_kwargs_for_representation(representation: str) -> dict:
+    if representation == "t1_r10_r21":
+        return {"include_t1": True, "include_r10_r21": True}
+    if representation == "t1_rate02":
+        return {"include_t1": True, "include_rate02": True}
+    if representation == "t1_ols":
+        return {"include_t1": True, "include_beta1": True}
+    raise ValueError(f"representação rate desconhecida: {representation!r}")
+
+
 def feature_tokens_for_delta_representation(representation: str) -> tuple[str, ...]:
     if representation == "deltas_only":
         return DELTA_TIME_TOKENS
@@ -146,6 +310,12 @@ def feature_tokens_for_delta_representation(representation: str) -> tuple[str, .
         return REPRESENTATION_TOKENS_D21
     if representation == "t1_ma":
         return REPRESENTATION_TOKENS_Q5
+    if representation == "t1_r10_r21":
+        return REPRESENTATION_TOKENS_R10_R21
+    if representation == "t1_rate02":
+        return REPRESENTATION_TOKENS_RATE02
+    if representation == "t1_ols":
+        return REPRESENTATION_TOKENS_OLS
     raise ValueError(f"representação delta desconhecida: {representation!r}")
 
 
@@ -281,7 +451,7 @@ def modality_wide_columns(
         return _select_shape_delta(cols, roi, feature_tokens=tokens)
     if modality == "texture":
         return _select_texture_delta(cols, roi, feature_tokens=tokens)
-    if modality == "disp":
+    if modality in {"disp", "disp_ad", "disp_cnad"}:
         return _select_disp_delta(cols, roi, feature_tokens=tokens)
     if modality == "firstorder":
         return _select_firstorder_delta(cols, roi, feature_tokens=tokens)
@@ -407,6 +577,43 @@ if __name__ == "__main__":
     assert f"{roi}_L_D21_original_firstorder_Energy" not in q4_fo
     assert f"{roi}_L_D21_original_shape_Sphericity" in q4_shp
     assert f"{roi}_L_D21_original_shape_MeshVolume" not in q4_shp
+
+    # Rate / OLS (revisor 2): V=[4000,4010,3940], t=[0,6.6,12.6] → β̂1 ≈ -4.66
+    beta_ref = ols_slope_three(0.0, 6.6, 12.6, 4000.0, 4010.0, 3940.0)
+    assert abs(beta_ref - (-370.0 / 79.44)) < 0.02, beta_ref
+    times_demo = pd.DataFrame(
+        {"t0": [0.0], "t1": [6.6], "t2": [12.6]},
+        index=pd.Index(["p_demo"], name="ID_PT"),
+    )
+    wide_demo = pd.DataFrame(
+        {
+            "ID_PT": ["p_demo"],
+            "GROUP": ["sMCI"],
+            "SEX": [0],
+            f"{roi}_L_T1_gm_norm": [4000.0],
+            f"{roi}_L_T2_gm_norm": [4010.0],
+            f"{roi}_L_T3_gm_norm": [3940.0],
+        }
+    )
+    r_all = add_rate_columns(
+        wide_demo, times_demo, roi,
+        include_r10_r21=True, include_rate02=True, include_beta1=True,
+    )
+    assert abs(float(r_all[f"{roi}_L_R10_gm_norm"].iloc[0]) - (10.0 / 6.6)) < 1e-9
+    assert abs(float(r_all[f"{roi}_L_R21_gm_norm"].iloc[0]) - (-70.0 / 6.0)) < 1e-9
+    assert abs(float(r_all[f"{roi}_L_RATE02_gm_norm"].iloc[0]) - (-60.0 / 12.6)) < 1e-9
+    assert abs(float(r_all[f"{roi}_L_BETA1_gm_norm"].iloc[0]) - beta_ref) < 1e-9
+    assert feature_tokens_for_delta_representation("t1_r10_r21") == REPRESENTATION_TOKENS_R10_R21
+    assert feature_tokens_for_delta_representation("t1_rate02") == REPRESENTATION_TOKENS_RATE02
+    assert feature_tokens_for_delta_representation("t1_ols") == REPRESENTATION_TOKENS_OLS
+    r10_cols = modality_wide_columns(
+        r_all.columns, "vol", roi=roi, use_deltas=True,
+        feature_tokens=REPRESENTATION_TOKENS_R10_R21,
+    )
+    assert set(r10_cols) == {
+        f"{roi}_L_T1_gm_norm", f"{roi}_L_R10_gm_norm", f"{roi}_L_R21_gm_norm",
+    }
+
     print("ablation_deltas self-check ok")
 
     # ponytail: paridade abs×4/3 em dados reais (se CSV existir)

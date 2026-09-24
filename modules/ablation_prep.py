@@ -95,8 +95,10 @@ FIRSTORDER_DENY = frozenset({
 # DVF paper-aligned (MBEC §§3.5–3.6): D=mag, V=jac_det, S=strain_fro;
 # 4 momentos (mean/variance/skewness/kurtosis). logjac/std/percentis ficam no
 # CSV longo mas não entram no classificador.
+# Prefixo cn_/ad_ = concat DEM (disp_cnad).
 _DISP_KEEP_PREFIX = ("mag_", "jac_det_", "strain_fro_")
 _DISP_STAT_DROP_SUFFIX = ("_n", "_p05", "_p50", "_p95", "_std")
+_DISP_ANCHOR_PREFIX = ("cn_", "ad_")
 
 SHAPE_RE = re.compile(r"^original_shape_")
 TEXTURE_RE = re.compile(r"original_(glcm|gldm|glrlm|glszm|ngtdm)_")
@@ -119,9 +121,14 @@ def keep_firstorder_feat(feat: str) -> bool:
 
 
 def keep_disp_feat(feat: str) -> bool:
-    if not feat.startswith(_DISP_KEEP_PREFIX):
+    name = feat
+    for pref in _DISP_ANCHOR_PREFIX:
+        if name.startswith(pref):
+            name = name[len(pref) :]
+            break
+    if not name.startswith(_DISP_KEEP_PREFIX):
         return False
-    return not feat.endswith(_DISP_STAT_DROP_SUFFIX)
+    return not name.endswith(_DISP_STAT_DROP_SUFFIX)
 
 
 def filter_rois(
@@ -236,7 +243,7 @@ def modality_wide_columns(
         out = _select_shape_wide_columns(cols, roi)
     elif modality == "texture":
         out = _select_texture_wide_columns(cols, roi)
-    elif modality == "disp":
+    elif modality in {"disp", "disp_ad", "disp_cnad"}:
         out = _select_disp_wide_columns(cols, roi)
     elif modality == "firstorder":
         out = _select_firstorder_wide_columns(cols, roi)
@@ -306,8 +313,10 @@ def export_ablation_long_only(
     base_dir: Path | str,
     *,
     roi: str = ROI_FILTER_DEFAULT,
+    disp_ad: pd.DataFrame | None = None,
+    disp_cnad: pd.DataFrame | None = None,
 ) -> dict[str, Path]:
-    """Grava CSV long consumidos por ablation_runner (vol, shape, rad, disp, merge)."""
+    """Grava CSV long consumidos por ablation_runner (vol, shape, rad, disp*, merge)."""
     ablation_dir = Path(base_dir) / "ablation" / roi
     ablation_dir.mkdir(parents=True, exist_ok=True)
 
@@ -317,14 +326,20 @@ def export_ablation_long_only(
     vol_long = vol_long_from_rad_long(rad_long)
     shape_long = shape_long_from_rad_long(rad_long)
 
-    paths: dict[str, Path] = {}
-    for name, df in {
+    to_write: dict[str, pd.DataFrame] = {
         "rad_long": rad_long,
         "disp_long": disp_long,
         "merge_long": merge_long,
         "vol_long": vol_long,
         "shape_long": shape_long,
-    }.items():
+    }
+    if disp_ad is not None:
+        to_write["disp_ad_long"] = filter_rois(disp_ad, roi)
+    if disp_cnad is not None:
+        to_write["disp_cnad_long"] = filter_rois(disp_cnad, roi)
+
+    paths: dict[str, Path] = {}
+    for name, df in to_write.items():
         p = ablation_dir / f"{name}.csv"
         df.to_csv(p, index=False)
         paths[name] = p
@@ -468,6 +483,20 @@ if __name__ == "__main__":
     ], disp
     assert "hippocampus_L_T1_mag_std" not in disp
     assert "hippocampus_L_T1_logjac_mean" not in disp
+    assert keep_disp_feat("cn_mag_mean")
+    assert keep_disp_feat("ad_jac_det_variance")
+    assert not keep_disp_feat("cn_mag_std")
+    cnad_dummy = [
+        "hippocampus_L_T1_cn_mag_mean",
+        "hippocampus_L_T1_ad_mag_mean",
+        "hippocampus_L_T1_cn_mag_std",
+        "hippocampus_L_T1_ad_logjac_mean",
+    ]
+    cnad = modality_wide_columns(cnad_dummy, "disp_cnad")
+    assert cnad == [
+        "hippocampus_L_T1_cn_mag_mean",
+        "hippocampus_L_T1_ad_mag_mean",
+    ], cnad
     print("ok: denylist dummy T1")
 
     base = Path("csvs/cohorts/36m_6m")

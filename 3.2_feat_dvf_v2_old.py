@@ -335,7 +335,7 @@ def _build_roi_feature_row(
         "SEX": str(getattr(meta_row, "SEX", "")),
         "AGE": float(getattr(meta_row, "AGE", np.nan)),
         "MRI_DATE": str(getattr(meta_row, "MRI_DATE", "")),
-        "ref_tag": f"CN_SEX-{sex}_AGE-{age_range}",
+        "ref_tag": _ref_tag(sex, age_range),
         "roi": str(roi),
         "side": str(side),
         "label": str(label),

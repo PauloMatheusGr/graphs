@@ -1,3 +1,11 @@
+Pegar informação de como a adni fornece os diagnósticos
+
+"""
+Até a etapa 5. é a exclusão padrão do meu grupo de pesquisa, as etapas 6 e 7 são especificas das minhas coortes, com esse arquivo gerado, posso utiliza-lo como base para que meus colegas do grupo de pesquisa também utilizem esse arquivo de imagens excluidas, pelo menos até a etapa 5? 
+
+Por exemplo, o caso do Vinicius, ele utilizou o arquivo (ver em "/home/pgirardi/Desktop/exp_vinicius/raw")
+"""
+
 # Todo — fecho artigo v1
 
 Atualizado: 2026-09-17. CSVs experimentais quase fechados; falta remate disp-v4 + rebuild + figuras + stats + tex.

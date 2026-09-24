@@ -11,6 +11,7 @@ from ablation_prep import ROI_FILTER_DEFAULT, modality_wide_columns
 Representation = Literal[
     "wide", "t1_only", "t1_deltas", "deltas_only", "t1_deltas_rel",
     "t1_d21", "t1_d21_d32", "t1_ma",
+    "t1_r10_r21", "t1_rate02", "t1_ols",
 ]
 REPRESENTATIONS: tuple[str, ...] = (
     "wide",
@@ -21,13 +22,18 @@ REPRESENTATIONS: tuple[str, ...] = (
     "t1_d21",
     "t1_d21_d32",
     "t1_ma",
+    "t1_r10_r21",
+    "t1_rate02",
+    "t1_ols",
 )
 DELTA_REPRESENTATIONS = frozenset({
     "t1_deltas", "deltas_only", "t1_deltas_rel", "t1_d21", "t1_d21_d32", "t1_ma",
+    "t1_r10_r21", "t1_rate02", "t1_ols",
 })
 ABS_DELTA_REPRESENTATIONS = frozenset({
     "t1_deltas", "deltas_only", "t1_d21", "t1_d21_d32", "t1_ma",
 })
+RATE_REPRESENTATIONS = frozenset({"t1_r10_r21", "t1_rate02", "t1_ols"})
 
 FUSION_MODALITIES: tuple[str, ...] = ("vol", "shape", "texture", "disp", "firstorder")
 DEFAULT_FUSION_SPEC = "shape:t1_only,vol:deltas_only"
@@ -47,6 +53,9 @@ _REP_SHORT: dict[str, str] = {
     "t1_d21": "t1_d21",
     "t1_d21_d32": "t1_d21d32",
     "t1_ma": "t1_ma",
+    "t1_r10_r21": "t1_r10r21",
+    "t1_rate02": "t1_rate02",
+    "t1_ols": "t1_ols",
     "wide": "wide",
 }
 
@@ -60,6 +69,9 @@ RESULTS_ROOT_BY_PROTOCOL: dict[str, dict[str, str]] = {
         "t1_d21": "ablation_results_d21",
         "t1_d21_d32": "ablation_results_d21d32",
         "t1_ma": "ablation_results_ma",
+        "t1_r10_r21": "ablation_results_r10r21",
+        "t1_rate02": "ablation_results_rate02",
+        "t1_ols": "ablation_results_ols",
     },
     "leaky": {
         "wide": "ablation_results_leaky",
@@ -70,6 +82,9 @@ RESULTS_ROOT_BY_PROTOCOL: dict[str, dict[str, str]] = {
         "t1_d21": "ablation_results_leaky_d21",
         "t1_d21_d32": "ablation_results_leaky_d21d32",
         "t1_ma": "ablation_results_leaky_ma",
+        "t1_r10_r21": "ablation_results_leaky_r10r21",
+        "t1_rate02": "ablation_results_leaky_rate02",
+        "t1_ols": "ablation_results_leaky_ols",
     },
     "fusion": {
         "wide": "ablation_results_clinic_img",
@@ -80,6 +95,9 @@ RESULTS_ROOT_BY_PROTOCOL: dict[str, dict[str, str]] = {
         "t1_d21": "ablation_results_clinic_img_d21",
         "t1_d21_d32": "ablation_results_clinic_img_d21d32",
         "t1_ma": "ablation_results_clinic_img_ma",
+        "t1_r10_r21": "ablation_results_clinic_img_r10r21",
+        "t1_rate02": "ablation_results_clinic_img_rate02",
+        "t1_ols": "ablation_results_clinic_img_ols",
     },
     "longcombat": {
         "t1_d21": "ablation_results_d21_longcombat",
@@ -97,6 +115,10 @@ def parse_representation(value: str) -> Representation:
 
 def is_delta_representation(representation: str) -> bool:
     return representation in DELTA_REPRESENTATIONS
+
+
+def is_rate_representation(representation: str) -> bool:
+    return representation in RATE_REPRESENTATIONS
 
 
 def parse_fusion_spec(value: str) -> tuple[FusionSlot, ...]:
@@ -177,8 +199,19 @@ def apply_representation_wide(
     representation: str,
     *,
     roi: str = ROI_FILTER_DEFAULT,
+    times_months=None,
 ):
-    """Pós-pivot: deltas absolutos (default), dinâmica pura ou legado rel+SLOPE."""
+    """Pós-pivot: deltas absolutos, rate/OLS com tempos reais, ou legado rel+SLOPE."""
+    if is_rate_representation(representation):
+        if times_months is None:
+            raise ValueError(
+                f"{representation} exige times_months (visit_times_months do long)."
+            )
+        from ablation_deltas import add_rate_columns, rate_kwargs_for_representation
+
+        return add_rate_columns(
+            wide, times_months, roi, **rate_kwargs_for_representation(representation),
+        )
     if not is_delta_representation(representation):
         return wide
     from ablation_deltas import add_delta_columns, delta_kwargs_for_representation
@@ -426,6 +459,26 @@ if __name__ == "__main__":
     dyn_wide = apply_representation_wide(wide, "deltas_only", roi=roi)
     assert f"{roi}_L_T1_gm_norm" not in dyn_wide.columns
     assert f"{roi}_L_D21_gm_norm" in dyn_wide.columns
+
+    times_p1 = pd.DataFrame(
+        {"t0": [0.0], "t1": [6.6], "t2": [12.6]},
+        index=pd.Index(["p1"], name="ID_PT"),
+    )
+    rate_wide = apply_representation_wide(
+        wide, "t1_r10_r21", roi=roi, times_months=times_p1,
+    )
+    rate_cols = feature_columns_for_representation(
+        rate_wide.columns, "vol", roi=roi, representation="t1_r10_r21",
+    )
+    assert f"{roi}_L_R10_gm_norm" in rate_cols
+    assert f"{roi}_L_R21_gm_norm" in rate_cols
+    ols_wide = apply_representation_wide(
+        wide, "t1_ols", roi=roi, times_months=times_p1,
+    )
+    assert f"{roi}_L_BETA1_gm_norm" in feature_columns_for_representation(
+        ols_wide.columns, "vol", roi=roi, representation="t1_ols",
+    )
+    assert parse_representation("t1_rate02") == "t1_rate02"
 
     slots = parse_fusion_spec(DEFAULT_FUSION_SPEC)
     assert fusion_fingerprint(slots) == "t1_shape__deltas_vol"

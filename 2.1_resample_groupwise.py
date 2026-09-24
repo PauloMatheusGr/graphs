@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Rigid-resample CN selected T1s into images/groupwise/resample_1.0mm.
+"""Rigid-resample selected T1s (CN or AD) into images/groupwise/resample_1.0mm.
 
 Same fixed MNI and same Rigid as 2_resample.py. T1 only — no labels.
 IDs come from frozen selected_*.csv (no re-sample).
 
 Usage:
-    python 2_resample_groupwise.py
-    python 2_resample_groupwise.py --ids-only
+    python 2.1_resample_groupwise.py
+    python 2.1_resample_groupwise.py --diag AD
+    python 2.1_resample_groupwise.py --diag AD --ids-only
 """
 
 from __future__ import annotations
@@ -20,11 +21,16 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-SELECTED_DIR = ROOT.parent / "groupwise" / "adni" / "CN"
+GROUPWISE_ADNI = ROOT.parent / "groupwise" / "adni"
 INPUT_DIR = "/mnt/databases/mri/adni/preproc/4-mni-hist-matching"
 OUTPUT_DIR = ROOT / "images" / "groupwise" / "resample_1.0mm"
 REF_MNI = "/mnt/study-data/pgirardi/preproc/atlases/templates/mni152_2009c_template.nii.gz"
 SUFFIX = "_stripped_nlm_denoised_biascorrected_mni_template.nii.gz"
+VALID_DIAG = ("CN", "AD")
+
+
+def selected_dir_for(diag: str) -> Path:
+    return GROUPWISE_ADNI / diag
 
 
 def _load_resample2():
@@ -43,10 +49,11 @@ def _read_id_img(path: Path) -> list[str]:
         return [row["ID_IMG"] for row in reader]
 
 
-def collect_ids(selected_dir: Path) -> list[str]:
-    csvs = sorted(selected_dir.glob("selected_DIAG-CN_*.csv"))
+def collect_ids(selected_dir: Path, diag: str) -> list[str]:
+    pattern = f"selected_DIAG-{diag}_*.csv"
+    csvs = sorted(selected_dir.glob(pattern))
     if not csvs:
-        raise FileNotFoundError(f"nenhum selected_DIAG-CN_*.csv em {selected_dir}")
+        raise FileNotFoundError(f"nenhum {pattern} em {selected_dir}")
     ids: list[str] = []
     seen: set[str] = set()
     for p in csvs:
@@ -88,12 +95,20 @@ def run_batch(ids: list[str]) -> None:
 
 def main(argv: list[str]) -> None:
     p = argparse.ArgumentParser()
+    p.add_argument(
+        "--diag",
+        default="CN",
+        choices=VALID_DIAG,
+        help="DIAG dos selected_*.csv (default CN)",
+    )
     p.add_argument("--ids-only", action="store_true", help="lista IDs e sai (check)")
     args = p.parse_args(argv)
 
-    ids = collect_ids(SELECTED_DIR)
+    diag = str(args.diag).upper().strip()
+    selected_dir = selected_dir_for(diag)
+    ids = collect_ids(selected_dir, diag)
     assert ids, "lista ID_IMG vazia"
-    print(f"[INFO] {len(ids)} ID_IMG únicos em {SELECTED_DIR}", flush=True)
+    print(f"[INFO] DIAG={diag} {len(ids)} ID_IMG únicos em {selected_dir}", flush=True)
     if args.ids_only:
         for img_id in ids:
             print(img_id)

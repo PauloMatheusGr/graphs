@@ -102,6 +102,8 @@ def modality_collapsed_columns(
         "shape": keep_shape_feat,
         "texture": keep_texture_feat,
         "disp": keep_disp_feat,
+        "disp_ad": keep_disp_feat,
+        "disp_cnad": keep_disp_feat,
         "firstorder": keep_firstorder_feat,
     }
     if modality == "all":
