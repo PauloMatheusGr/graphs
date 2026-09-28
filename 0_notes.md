@@ -1,735 +1,261 @@
-https://chatgpt.com/share/6a96cae5-5d58-83e9-8773-481ad3fbb052
+# Métodos estatísticos — fórmulas, termos e exemplos
 
-# Artigo v1 → v2 (checklist de migração)
+Referência: `7_stats.ipynb`, `modules/stats_compare.py`. Classe positiva = pMCI.
 
-Fonte manuscrito: `Artigo 1 pgirardi/artigo_v1.tex`.  
-Plano encoding: `plan_ablation_vol_ABCD.md`. Todo runs: `0_todo.md`.  
-Figs/stats: `6_results.ipynb` (V1) · `7_stats.ipynb` (§§3–5).
-
-## O que o v1 afirma (encoding temporal)
-
-| Papel no v1 | Representation | Vetor |
+| Análise | Pergunta | Método |
 |---|---|---|
-| Baseline | `t1_only` | `[feat₀]` |
-| 2 visitas | `t1_d21` | `[feat₀, Δ₁₀]` **absoluto** |
-| 3 visitas (claim long) | `t1_d21_d32` (= B₀ / “Q4”) | `[feat₀, Δ₁₀, Δ₂₁]` **absoluto** |
-
-Justificativa v1 (§ `subsubsec:longitudinal`, ~L354–364): intervalos ~6 m com baixa dispersão → **rejeita** `D/Δt`; usa Δ absolutos; **não** entram níveis crus de i₁/i₂, Δ₂₀, nem taxas.
-
-Números claim v1 (`48m_6m`, vol SVM): baseline **0.756±0.037** · 3v abs **0.763±0.036** · late all-Q4 **0.786±0.034** · max grelha Q4 **0.825±0.032** (viés seleção). Abstract / Related / Results / Discussion repetem estes.
-
-## O que mudou (resposta revisor 2)
-
-Crítica: (1) normalizar pelo tempo real; (2) encoding estável (taxa global / OLS) vs dois Δ consecutivos.
-
-| ID | Representation | Vetor | Tempo | Papel no **v2** |
-|----|----------------|-------|-------|-----------------|
-| A | `t1_only` | `[V0]` | — | baseline (igual) |
-| B₀ | `t1_d21_d32` | `[V0, Δ10, Δ21]` abs | não | **sensibilidade / legado v1** |
-| 2v | `t1_r10` | `[V0, r10]` · r10=(V1−V0)/(t1−t0) | sim | 2 visitas **primário** |
-| B | `t1_r10_r21` | `[V0, r10, r21]` | sim | 3v taxas consecutivas |
-| C | `t1_rate02` | `[V0, (V2−V0)/(t2−t0)]` | sim | sensibilidade (≈ D) |
-| **D** | **`t1_ols`** | **`[V0, β̂₁]`** OLS 3 pts | **sim** | **3 visitas primário** |
-
-Tempo: meses desde baseline (`t0=0`); `dias / 30.436875` (`MRI_DATE`). Código: `modules/ablation_deltas.py`, `ablation_representation.py`.
-
-Pastas disco: `ablation_results_t1_only/` · `_r10/` · `_r10r21/` · `_ols/` · `_d21d32/` (legado) · late `ablation_results_late_fusion/` fingerprints com `t1_ols`.
-
-## Números já no disco (SVM, `48m_6m`, soft True — rebuild pré–4-algo)
-
-Fonte: `csvs/cohort_comparison/ablation_ABCD_grid.csv` (2026-09-24). AUC patient-level.
-
-| Família | A (T1) | B₀ (abs) | B (rates) | C (rate02) | **D (OLS)** | Δ(D−A) |
-|---|---:|---:|---:|---:|---:|---:|
-| **vol** | 0.756 | 0.763 | 0.776 | 0.783 | **0.784** | **+0.028** |
-| shape | 0.712 | 0.721 | 0.718 | 0.726 | 0.728 | +0.017 |
-| texture | 0.628 | 0.674 | 0.670 | 0.607 | 0.608 | **−0.020** |
-| firstorder | 0.687 | 0.686 | 0.689 | 0.692 | 0.692 | +0.005 |
-| disp | 0.540 | 0.582 | 0.559 | 0.568 | 0.573 | +0.033 |
-
-Vol: B−B₀ ≈ **+0.013** (÷Δt ajuda); C≈D ≫ B₀; message = “longitudinal não ajuda” no vol era em parte **artefacto de Δ absolutos**. Texture: C/D **pioram** vs T1 — reportar, não esconder. Gradient 4 coortes: ver mesma CSV (36m/48m × 6m/12m).
-
-**Ainda pendente** (tmux `claim4` + `late_ols`; ver `0_todo.md`): 4 modelos (svm/rf/elasticnet/xgb) × 4 encodings; late grelha `t1_only`×`t1_ols` (~234 specs). Depois: rebuild `cohort_compare.py --include-soft --n-boot 2000` → regenerar figs/stats → **só então** fechar números do abstract v2 (late all-D, best_late, ROC 4-algo).
-
-## Secções do `artigo_v1.tex` a reescrever no v2
-
-1. **Abstract (~L75)** — trocar “3 visitas” abs por OLS; atualizar AUCs vol / late / max grelha **após** rebuild.
-2. **Related / contributions (~L98–125)** — hierarquia: baseline / 2v rates / 3v rates / **3v OLS**; Q4 abs = controlo do encoding publicado, não claim.
-3. **`subsubsec:longitudinal` (~L354–364)** — **inverter** o argumento anti-`D/Δt`. Novo texto: intervalos nominais ~6 m **não** eliminam heterogeneidade residual de calendário; normalização temporal + colapso a uma velocidade (OLS) são o protocolo primário; Δ abs ficam sensibilidade. Definir fórmulas r10, r21, β̂₁ OLS.
-4. **Protocolo classificação** — representations CLI; pastas; late `--grid --baseline-rep t1_only --longitudinal-rep t1_ols`.
-5. **Results** — **mesmas figuras do v1, D no lugar de Q4** (decisão 2026-09-27). Fig A e ROC vol = 3 encodings (baseline / 2v R10 / 3v OLS); four_ceilings = ordem v1 com D; heatmaps e ROC × 4 algos em D (após claim_core4). 3v rates (B), C, B₀ → suplemento.
-6. **Inferência** — primário: D vs T1 e R10 vs T1 (5 fam, FDR); complementar: R10R21 vs T1 (suplemento); tetos `stats_four_ceilings_48m6m` = 7 contrastes alinhados às barras (sem R10; inclui âncora `volT1_shapeD − uni_T1`, análogo ao "late âncora − vol T1" do v1). Resultado atual (SVM, B=5000): nenhum sobrevive FDR; maiores Δ: best_late_D−best_late_T1 +0.033 [−0.004, 0.072] p=.044 (FDR .155); all_D−all_T1 +0.025 [−0.000, 0.051] p=.027 (FDR .155); uni_D−uni_T1 +0.028 [−0.013, 0.068] p=.092 (FDR .214); âncora +0.007 (ns). Tabelas: `stats_ols_vs_t1_48m6m`, `stats_r10_vs_t1_48m6m`, `stats_r10r21_vs_t1_48m6m`, gradients.
-7. **Discussão (~L837+)** — “ganhos 3v−baseline pequenos / nulos sob FDR” aplica-se a **B₀ abs**. Reescrever: com D, vol sobe ~+0.03; não generalizar a todas as famílias (texture pode cair); soft False = sensibilidade pré-conversão.
-8. **Tabela D / ComBat** — manter sensibilidade longCombat em **Q4 abs** (já medido); não misturar com claim D. Nota: re-correr ComBat em OLS só se Discussion exigir (não bloqueia v2).
-9. **Figuras PDF** (`Artigo 1 pgirardi/figures/`):
-   - `fig_a_encoding_{36m6m,36m12m,48m6m,48m12m}.pdf` — Baseline / 2v R10 / 3v OLS; 4 PDFs (legenda só 36m12m; eixo y só 36m6m/48m6m)
-   - `unimodal_t1_vs_ols_48m6m.pdf` (ex `…_vs_q4…`)
-   - `roc_vol_encodings_48m6m.pdf` — 3 curvas: baseline .756 / 2v .741 / 3v OLS .784
-   - `heatmap_models_{t1,ols}_48m6m.pdf` (ex `…_q4…`, pós claim_core4)
-   - `roc_vol_models_ols_48m6m.pdf` (ex `…_q4…`, pós claim_core4)
-   - `four_ceilings_48m6m.pdf` — 7 barras ordem v1: uni T1 .756 / uni D .784 / best late T1 .773 / best late D .806 / vol T1 ∪ forma D .763 / all-T1 .766 / all-D .791
-   - `soft_true_vs_false_48m6m_{baseline,3visits}.pdf` — 2 PDFs separados (legenda só em 3visits)
-   - **Suplemento:** `trajectories_vol_48m6m.pdf` — **novo** (cell `v1_fig_traj`): trajetórias vol bilateral (‰ ICV) × meses, reta OLS média sMCI/pMCI + IC95% bootstrap; painel B = β̂₁ por paciente. Números: sMCI n=73 β̄=−0.004 ‰ICV/ano [−0.045, +0.034]; pMCI n=120 β̄=−0.069 [−0.108, −0.032]; Mann–Whitney p=0.006. Motiva o encoding D (pMCI atrofia, sMCI ~estável).
-
-## Mensagens-chave v2 (rascunho)
-
-- Claim confirmatório: sob mesmo n (trio), **OLS 3 visitas** vs baseline em 5 famílias; métrica AUC paciente; FDR dentro do contraste.
-- Achado vol: normalização temporal + slope > Δ abs consecutivos; C≈D com 3 pts quase equiespaçados (como o revisor previa).
-- Achado heterogeneidade: ganho long **não** uniforme (vol↑, texture OLS↓).
-- Late: teto = best da grelha / all-OLS; max da grelha continua exploratório (viés seleção) — manter disclaimer v1.
-- B₀/Q4 permanece no suplemento para rastrear o encoding do v1. Corpo/figs principais = só A vs D (D escolhido a priori: OLS é o estimador padrão de velocidade, sugerido pelo revisor 2; não "o melhor da grelha"). Texture B₀ (.674) > D (.608) reportado no suplemento.
-
-## Contrastes oficiais v2 (substitui bloco antigo no fim deste ficheiro)
-
-- Unimodal claim: 5 fam × `{t1_only, t1_r10, t1_r10_r21, t1_ols}` × 4 coortes (SVM); 4-algo só claim `48m_6m`.
-- Late claim: all-T1, all-OLS, grelha baseline×OLS; best_late = argmax AUC na grelha (T1-only vs com-OLS).
-- Sensibilidade: B₀ abs, C rate02, soft False, longCombat (Q4), leaky, clínica.
-- Não crownear `wide`/`abs`/`t1_deltas`/`t1_ma` como claim.
+| §1 Idade sMCI vs pMCI | idades diferem? | Mann-Whitney U |
+| §1 Sexo sMCI vs pMCI | proporção M/F difere? | Qui-quadrado |
+| §2 Confundimento | idade/sexo sozinhos preveem? imagem supera demografia? | Permutação da AUC + bootstrap pareado ΔAUC |
+| §3/§4 Baseline vs 2v/B/D | longitudinal supera baseline? | Bootstrap pareado ΔAUC + FDR BH (por coorte) |
+| §5 Fusões (tetos) | contrastes pré-especificados diferem? | Bootstrap pareado + BH (7 contrastes) |
+| §6 Clínico vs imagem | imagem acrescenta ao clínico? | Bootstrap pareado ΔAUC |
+| §7 Soft True vs False | definição de coorte muda AUC? | descritivo (pacientes diferentes → sem pareamento) |
+| §8 ComBat vs nocombat (só T1) | harmonização muda AUC? | Bootstrap pareado ΔAUC + BH (5 famílias) |
+| §10 Sensibilidade | achados resistem a α = 1%? | mesmos p + IC 99% + BH por coorte e global |
 
 ---
 
-# Incorporar ou corrigir no artigo:
+## 1. Score do paciente
 
-## ICV: homotetia, não divisão crua (shape)
+$$s_i = \frac{1}{R}\sum_{r=1}^{R} s_{i,r}$$
 
-Bug antigo: `4_run_post_extract` fazia `x / ICV` para eixos (mm) e `SurfaceArea` (mm²). Unidades arbitrárias (mm⁻², mm⁻¹). Correção:
+| Termo | Significado |
+|---|---|
+| $s_{i,r}$ | probabilidade de pMCI dada ao paciente $i$ na repetição $r$, quando ele estava no fold de teste (out-of-fold) |
+| $R$ | nº de repetições da validação cruzada (10) |
+| $s_i$ | score final do paciente, usado em todas as AUCs |
 
-- comprimento `/ ICV^{1/3}`
-- área `/ ICV^{2/3}`
-- volume `/ ICV` (`MeshVolume`, mm³; já estava certo)
-- `SurfaceVolumeRatio` `× ICV^{1/3}` (já A/V; fica = A′/V′)
-- Sphericity / Elongation / Flatness: intocados (adimensionais)
-- `gm_norm` etc.: sem ICV
+Exemplo: paciente recebeu 0,62; 0,70; 0,58; … (10 valores) → $s_i$ = média ≈ 0,64.
 
-Texto: scaling **geométrico** (invariância de calote), não z-score. `StandardScaler` continua a jusante no SVM.
+---
 
-Pipeline: `4_` escreve em `csvs/cohorts/{COHORT}/` (o que `5_ablation --cohort` lê). Também grava `adnimerged_longitudinal.csv` nessa pasta.
+## 2. AUC (área sob a curva ROC)
 
-`3_feat_rad.py` **não** reroda. Só 4_ + ablação **shape**.
+$$\text{AUC} = \frac{1}{n_1 n_0}\sum_{i \in \text{pMCI}}\sum_{j \in \text{sMCI}} \Big[\mathbb{1}(s_i > s_j) + 0{,}5\cdot\mathbb{1}(s_i = s_j)\Big]$$
 
-## Longitudinal ComBat — sensibilidade (Beer et al., 2020)
+| Termo | Significado |
+|---|---|
+| $n_1$, $n_0$ | nº de pMCI e de sMCI |
+| $\mathbb{1}(\cdot)$ | vale 1 se a condição é verdadeira, 0 caso contrário |
+| AUC | probabilidade de um pMCI sorteado receber score maior que um sMCI sorteado. 0,5 = acaso; 1 = separação perfeita |
 
-**Papel no paper:** protocolo primário = **sem** harmonização (`--combat false`). Longitudinal ComBat = **sensibilidade** na coorte principal `48m_6m`, apenas representações com ≥2 visitas (`t1_d21`, `t1_d21_d32`). Não misturar com o contraste de encoding T1 vs 2 vs 3 imagens. Saídas em pastas `*_longcombat` (não pisa claim).
+Exemplo: pMCI = {0,8; 0,4}, sMCI = {0,5; 0,3}. Pares: 0,8>0,5 ✓; 0,8>0,3 ✓; 0,4>0,5 ✗; 0,4>0,3 ✓ → AUC = 3/4 = **0,75**.
 
-**Citação:** Beer JC, Tustison NJ, Cook PA, Davatzikos C, Sheline YI, Shinohara RT, Linn KA. Longitudinal ComBat: A method for harmonizing longitudinal multi-scanner imaging data. *NeuroImage*. 2020;220:117129. DOI: [10.1016/j.neuroimage.2020.117129](https://doi.org/10.1016/j.neuroimage.2020.117129). Código: `modules/longitudinal_combat.py` + `modules/ablation_harmonize.py`.
+Por que AUC: não depende de limiar e não é distorcida pelo desbalanceamento (120 pMCI vs 73 sMCI), ao contrário da acurácia.
 
-### Definição de lote (batch)
+### ΔAUC
 
-Igual ao ComBat transversal antigo — **não** redefinido:
+$$\Delta\text{AUC} = \text{AUC}_{\text{método}} - \text{AUC}_{\text{baseline}}$$
 
-- `batch = MANUFACTURER + "_" + FIELD_STRENGTH` (ex. `GE MEDICAL SYSTEMS_1.5`, `SIEMENS_3.0`)
-- **Fora:** site ADNI, `MFG_MODEL`, coil, software
-- Motivo: incluir modelo explode micro-lotes no ADNI (n amostral insuficiente no outer-train)
+Exemplo (ilustrativo): D = 0,733, T1 = 0,600 → ΔAUC = **+0,133** (D melhor). ΔAUC não é "taxa de acerto".
 
-### Tratamento de lotes raros (por fold, só treino)
+---
 
-1. Batch com \(n < 5\) imagens no treino → funde em `OTHER_<Tesla>` (ex. `GE MEDICAL SYSTEMS_3.0` raro → `OTHER_3.0`; **não** mistura 1.5 com 3.0)
-2. Se após o pool ainda \(n < 5\) → imagem **excluída** da harmonização (fica raw)
-3. Precisa ≥2 batches “grandes” no treino; senão skip (devolve original)
-4. Batch só no teste / nunca visto no treino → **não** harmoniza
-5. Beer exige ≥2 obs/batch; aqui limiar mais conservador: **≥5** no treino
+## 3. Bootstrap pareado da ΔAUC (§2–§6, §10)
 
-### O que remove / o que preserva
+Ideia: simular "e se eu repetisse o estudo com outros n pacientes parecidos?".
 
-| Alvo | Remove? | Como |
+**Passo 1 — reamostrar** (repetir $b = 1,\dots,B$):
+
+$$I^{*}_b = (i_1, \dots, i_n), \quad i_k \sim \text{Uniforme}\{1,\dots,n\} \text{ com reposição}$$
+
+$$\Delta^{*}_b = \text{AUC}_{\text{método}}(I^{*}_b) - \text{AUC}_{\text{baseline}}(I^{*}_b)$$
+
+| Termo | Significado |
+|---|---|
+| $n$ | nº de pacientes da coorte (ex.: 120 em 48m_12m). **Cada reamostra tem tamanho n** |
+| $B$ | nº de reamostras = 5000 (5000 conjuntos, não amostras menores) |
+| com reposição | paciente pode sair repetido ou não sair (~37% ficam fora de cada reamostra) |
+| pareado | as duas AUCs são calculadas nos **mesmos** pacientes sorteados → cancela a dificuldade individual de cada paciente |
+| $\Delta^{*}_b$ | ΔAUC na reamostra $b$ |
+
+Reamostras sorteadas só com uma classe são descartadas (AUC indefinida); $B'$ = nº de reamostras válidas.
+
+**Passo 2 — IC por percentis** (nível $1-\alpha$):
+
+$$\text{IC}_{1-\alpha} = \Big[Q_{\alpha/2}(\Delta^{*}),\; Q_{1-\alpha/2}(\Delta^{*})\Big]$$
+
+| Termo | Significado |
+|---|---|
+| $Q_x$ | percentil $x$ das 5000 ΔAUC ordenadas |
+| IC 95% | percentis 2,5 e 97,5 → 125º e 4875º valor |
+| IC 99% | percentis 0,5 e 99,5 → 25º e 4975º valor (mais largo) |
+
+**Passo 3 — p-valores:**
+
+$$p_{\text{uni}} = \frac{1 + \sum_{b=1}^{B'} \mathbb{1}(\Delta^{*}_b \le 0)}{B' + 1} \qquad p_{\text{bi}} = 2\cdot\min(p_{\text{uni}},\, 1 - p_{\text{uni}})$$
+
+| Termo | Significado |
+|---|---|
+| $p_{\text{uni}}$ | fração de reamostras em que o método **não** superou o baseline. H1: método > baseline |
+| +1 | evita p = 0 (resultado nunca é "impossível") |
+| $p_{\text{bi}}$ | versão bilateral (H1: método ≠ baseline) |
+
+**Exemplo real (48m_12m, vol, D vs T1):** ΔAUC = 0,133.
+- 5000 reamostras; ~19 deram $\Delta^{*} \le 0$ → $p_{\text{uni}} = (19+1)/5001 = $ **0,004**; $p_{\text{bi}} = 0{,}008$.
+- 125º valor = 0,040; 4875º = 0,227 → IC 95% **[0,040; 0,227]**.
+- 25º valor = 0,007; 4975º = 0,256 → IC 99% **[0,007; 0,256]**.
+
+Leitura: IC exclui 0 → dados compatíveis com ganho positivo. p ≠ "probabilidade de ser sorte".
+
+Relação IC ↔ p: IC $1-\alpha$ exclui 0 ⇔ $p_{\text{uni}} < \alpha/2$ (aprox.). Exigir IC 95% > 0 = teste bilateral a 5%.
+
+---
+
+## 4. Teste de permutação da AUC (§2)
+
+Pergunta: "o modelo é melhor que o acaso (AUC > 0,5)?".
+
+$$p_{\text{perm}} = \frac{1 + \sum_{b=1}^{B} \mathbb{1}\big(\text{AUC}(\pi_b(y), s) \ge \text{AUC}_{\text{obs}}\big)}{B + 1}$$
+
+| Termo | Significado |
+|---|---|
+| $\pi_b(y)$ | rótulos sMCI/pMCI embaralhados aleatoriamente (quebra qualquer relação real com o score) |
+| $B$ | 5000 permutações |
+| $\text{AUC}_{\text{obs}}$ | AUC real com rótulos verdadeiros |
+
+Exemplo (ilustrativo): AUC do modelo só-idade = 0,70; em 9 de 5000 embaralhamentos AUC ≥ 0,70 → $p = 10/5001 = $ **0,002** → idade sozinha prevê acima do acaso.
+
+Diferença do bootstrap: permutação compara **um** modelo com o acaso; bootstrap pareado compara **dois** modelos entre si.
+
+---
+
+## 5. Mann-Whitney U (§1, idade)
+
+Compara posições (ranks) dos dois grupos; não exige distribuição normal.
+
+$$U_1 = R_1 - \frac{n_1(n_1+1)}{2} \qquad U_0 = n_1 n_0 - U_1$$
+
+| Termo | Significado |
+|---|---|
+| $R_1$ | soma dos ranks do grupo pMCI após ordenar todas as idades juntas |
+| $n_1$, $n_0$ | tamanhos dos grupos |
+| $U_1$ | nº de pares (pMCI, sMCI) em que o pMCI é mais velho |
+| p | calculado a partir da distribuição de U sob H0 (grupos iguais), bilateral |
+
+Exemplo (ilustrativo): pMCI = {72, 75, 80}, sMCI = {70, 73}. Ranks: 70→1, 72→2, 73→3, 75→4, 80→5. $R_1 = 2+4+5 = 11$; $U_1 = 11 - 6 = 5$ de $n_1 n_0 = 6$ pares → pMCI tendem a ser mais velhos.
+
+Curiosidade: $U_1 / (n_1 n_0)$ = AUC. AUC é a estatística de Mann-Whitney aplicada a scores.
+
+---
+
+## 6. Qui-quadrado de independência (§1, sexo)
+
+$$\chi^2 = \sum_{\text{células}} \frac{(O - E)^2}{E} \qquad E = \frac{\text{total da linha}\times\text{total da coluna}}{N} \qquad gl = (r-1)(c-1)$$
+
+| Termo | Significado |
+|---|---|
+| $O$ | contagem observada na célula (ex.: pMCI homens) |
+| $E$ | contagem esperada se sexo e grupo fossem independentes |
+| $N$ | total de pacientes |
+| $gl$ | graus de liberdade; tabela 2×2 → 1 |
+
+Exemplo (ilustrativo, N = 193):
+
+| | M | F | total |
+|---|---|---|---|
+| pMCI | 70 | 50 | 120 |
+| sMCI | 40 | 33 | 73 |
+| total | 110 | 83 | 193 |
+
+$E_{\text{pMCI,M}} = 120\cdot110/193 = 68{,}4$ … $\chi^2 \approx 0{,}23$, gl = 1 → p ≈ 0,63 → sem diferença de sexo.
+Obs.: `scipy.stats.chi2_contingency` aplica correção de Yates em 2×2 (p um pouco maior).
+
+---
+
+## 7. Correção de múltiplas comparações — FDR Benjamini–Hochberg (§3–§5, §10)
+
+Problema: m testes a α = 5% → ~$m \cdot 0{,}05$ falsos positivos esperados mesmo sem efeito real (20 testes → ~1; 60 testes → ~3).
+
+**FDR** (False Discovery Rate) = proporção esperada de falsos positivos **entre os resultados declarados significativos**. BH garante FDR ≤ α.
+
+$$p_{(1)} \le p_{(2)} \le \dots \le p_{(m)} \qquad q_{(k)} = \min_{j \ge k} \; \min\!\Big(1,\; \frac{m\, p_{(j)}}{j}\Big)$$
+
+| Termo | Significado |
+|---|---|
+| $m$ | nº de testes da família (5 por coorte; 20 global; 7 nos tetos) |
+| $p_{(k)}$ | k-ésimo menor p-valor |
+| $k$ | posição (rank) do p na ordem crescente |
+| $m\,p/k$ | "pedágio": p multiplicado por m/k (o menor p paga mais) |
+| $\min_{j \ge k}$ | garante que q nunca diminui ao descer no ranking (mantém a ordem) |
+| $q$ | menor α em que o teste seria declarado descoberta |
+
+Passos: (1) ordenar p; (2) $m\,p/k$; (3) de baixo para cima, cada q = mínimo entre ele e o q abaixo.
+
+**Exemplo por coorte (m = 5; vol real, demais ilustrativos):**
+
+| Família | p | k | $5p/k$ | q | q < 0,05? |
+|---|---|---|---|---|---|
+| vol | 0,004 | 1 | 0,020 | **0,020** | sim |
+| texture | 0,030 | 2 | 0,075 | 0,075 | não |
+| shape | 0,200 | 3 | 0,333 | 0,333 | não |
+| disp | 0,450 | 4 | 0,563 | 0,563 | não |
+| firstorder | 0,800 | 5 | 0,800 | 0,800 | não |
+
+texture: p = 0,03 parecia significativo; após BH q = 0,075 → "raw sig." mas não "FDR sig.".
+
+**Global (m = 20):** vol continua menor p → $q = 0{,}004 \cdot 20/1 = $ **0,080** > 0,05 → não passa.
+
+Leitura de q = 0,020: se declaro significativos todos os testes com q ≤ 0,02, espera-se no máximo 2% de falsos entre eles.
+
+Por que BH e não Bonferroni ($p \cdot m$ para todos): Bonferroni controla a chance de **qualquer** falso positivo; com testes correlacionados (mesmos pacientes em todas as famílias) é conservador demais. BH é o padrão para várias famílias de atributos.
+
+Família por coorte vs global: por coorte = cada coorte é uma pergunta separada (critério atual); global = uma pergunta única (mais rigoroso). Reportar o outro como sensibilidade.
+
+---
+
+## 8. Rótulos de significância
+
+| Rótulo | Regra | Significado |
 |---|---|---|
-| Fabricante (via batch) | Sim | efeito fixo de lote + EB location/scale |
-| Campo 1.5/3 T (via batch) | Sim | no mesmo rótulo `MANUFACTURER_FIELD` |
-| Modelo de scanner | Não | deliberadamente fora do batch |
-| Biologia entre pacientes | **Não** | intercepto aleatório \((1\mid\mathrm{ID\_PT})\) **preserva** nível do sujeito |
-| Mesmo paciente, scanners/Tesla diferentes nas visitas | Corrige salto técnico | cada visita usa o efeito do **seu** batch; \(\eta_j\) partilha nível biológico |
-| Diagnóstico / sMCI×pMCI (`GROUP`) | Não | **fora** da fórmula (evita leakage de rótulo) |
-| Deltas \(\Delta_{21}/\Delta_{32}\) | Não directamente | harmoniza atributo **por visita**; \(\Delta\) calculado **depois** |
-
-### Passo a passo (nested CV, cada fold externo)
-
-1. Filtra pacientes do fold (treino ∪ teste); se `combat=true`, corta visitas antes do LME (`t1_d21` → T1+T2; `t1_d21_d32` → três). Impede T3 de informar BLUP numa análise D21.
-2. Monta tabela **por imagem** (`ID_IMG`): features da família (roi×side×atributo), `batch`, `SEX`, idade basal (AGE da 1ª visita), `time_years` (anos desde `MRI_DATE` da 1ª visita). Uma família por vez (vol com vol, …).
-3. Pool / exclusão de batches pequenos (acima).
-4. **Fit só no treino.** Para cada feature, MixedLM REML:
-
-\[
-y_{ij}(t)=\alpha+\beta_{\mathrm{age}}\,\mathrm{age}_0+\beta_t\,t+\beta_{\mathrm{sex}}\,\mathrm{sex}+\gamma_{\mathrm{batch}}+\eta_j+\varepsilon
-\]
-
-com \(\eta_j\sim N(0,\rho^2)\). Sem `GROUP`.
-
-5. Recupera efeitos de batch com \(\sum_i n_i\gamma_i=0\); padroniza resíduos; Empirical Bayes (30 iterações) → \(\gamma^\star\) (média) e \(\delta^{2\star}\) (variância) por batch×feature (Beer REML).
-6. **Transform** treino+teste com parâmetros congelados do treino:
-
-\[
-y^{\mathrm{ComBat}}=\frac{\sigma}{\delta^\star}(z-\gamma^\star)+\hat y-\gamma_{\mathrm{adj}}
-\]
-
-No teste: \(\eta_j\) = BLUP só com as visitas **desse** sujeito; batch desconhecido → linha intacta.
-
-7. Pivot T1/T2/(T3) → \(\Delta\) → SVM / late fusion. Classificador vê encoding já sobre atributos corrigidos.
-
-### Paciente com scanners diferentes ao longo do tempo
-
-Ex.: T1 em `GE_1.5`, T2 em `SIEMENS_3.0`. Remove efeito do lote de cada visita; \(\eta_j\) comum mantém nível biológico; salto técnico entre visitas deixa de entrar no \(\Delta\) (na medida em que o batch o captura). Mudança só de **modelo** GE mantendo `GE_1.5` → mesmo lote (trade-off n amostral).
-
-### Software / saídas
-
-- Python (`statsmodels.MixedLM`); port conceptual do R `longCombat` (Beer), com apply indutivo (pacote R é transductivo).
-- CLI: `--combat true` em `5_ablation.py` / `5_ablation_late_fusion.py`.
-- Roots: `ablation_results_d21_longcombat/`, `ablation_results_d21d32_longcombat/`, `ablation_results_late_fusion_longcombat/`.
-- Meta CSV: `harmonization_method = longitudinal_combat_reml` quando ligado.
-
-### Frase-âncora (Métodos)
-
-> O protocolo primário não aplica harmonização entre aparelhos. Como análise de sensibilidade na coorte principal, nas representações de duas e três visitas, ajustámos Longitudinal ComBat (Beer et al., 2020; REML) aos atributos de cada família ao nível da visita, com lote definido por fabricante × intensidade de campo (1,5/3 T), intercepto aleatório por indivíduo, covariáveis sexo, idade basal e tempo desde a primeira visita, sem o rótulo de classe, estimado apenas no treino de cada dobra externa. Lotes com menos de cinco imagens no treino foram fundidos em `OTHER_<Tesla>` ou excluídos. Os incrementos temporais foram calculados após a correção. A representação restrita à primeira visita não entra neste braço: o modelo misto exige medidas repetidas.
-
-### Limitações (Discussão / Tabela D)
-
-- Sensibilidade ≠ ablação de encoding (não reportar ΔAUC T1 vs Q4 *com* longCombat como prova de 2/3 imagens).
-- EB com poucas features (hipocampo L+R × momentos da família) vs 62 espessuras do Beer — prior mais fraco.
-- \(\eta=0\) aproximação no teste é BLUP local do sujeito; Beer original é transductivo.
-- Sem `GROUP`: se scanner e diagnóstico se associam, parte do sinal de classe pode ir para o lote (trade-off leakage vs preservação).
-- Batch grosso (sem modelo): residual de scanner possível.
-- Reportar uma linha na Tabela D (ligado vs desligado), não figura grande.
-
-### Resultado empírico (2026-09-17) — `48m_6m` Q4 vs longCombat
-
-**Setup:** coorte `48m_6m` (`soft_pmci=True`), encoding `t1_d21_d32`, SVM, `l1_stable`, Optuna 10 trials, 10×5 folds (50), seed 42. Primário = `ablation_results_d21d32/` (`combat=false`). Sensibilidade = `ablation_results_d21d32_longcombat/` + late `ablation_results_late_fusion_longcombat/` (`harmonization_method=longitudinal_combat_reml`). Métrica: `auc_patient_mean`.
-
-**Veredito:** Longitudinal ComBat **não** melhora o conjunto. Piora famílias fortes e o late fusion; ganhos só em texture/disp (já fracos). Manter primário sem ComBat; Tabela D = sensibilidade negativa.
-
-#### Unimodal Q4
-
-| Família | sem ComBat | longCombat | Δ |
-|---|---:|---:|---:|
-| vol | 0.763 | 0.726 | **−0.037** |
-| shape | 0.721 | 0.724 | +0.003 |
-| texture | 0.674 | 0.704 | +0.030 |
-| disp | 0.577 | 0.609 | +0.032 |
-| firstorder | 0.686 | 0.637 | **−0.049** |
-
-#### Late fusion (5 famílias Q4)
-
-| | `auc_patient_mean` | `auc_mean` | `auc_pooled` |
-|---|---:|---:|---:|
-| sem ComBat | **0.787** | 0.777 | 0.771 |
-| longCombat | 0.761 | 0.749 | 0.741 |
-| Δ | **−0.026** | −0.028 | −0.030 |
-
-**Nota:** ramo `disp` neste run ainda = features **v3** (`disp_long` pré-v4). Se promover DVF v4, re-correr só `disp` + late fusion longCombat; vol/shape/texture/firstorder deste run mantêm-se.
-
-**Frase Tabela D (rascunho):** *Na coorte principal, representação de três visitas, Longitudinal ComBat (Beer, REML) não elevou a AUC patient-level face ao protocolo sem harmonização (late fusion 0,787 → 0,761; volume −0,037; first-order −0,049); ganhos pontuais em textura/deslocamento não alteram a conclusão primária.*
-
-# Incorporar ou corrigir no artigo (resto):
-
-## Quantidade de dados após o split dentro do treino/teste externo e interno.
-
-Dados presentes:
-
-Tamanho total por coorte (ex: coorte principal 48m_6m n total, n sMCI / n pMCI)
-Razão aproximada: "80% treino, 20% teste" no fold externo
-Tabela tab:nfeat mostra cardinalidade média de features, mas não n por fold
-Faltam: contagens exatas tipo "fold 1: treino, teste" ou distribuição classe por fold no split externo, e idem para interno. Esse detalhe não está no artigo atual. Seria informação útil para reprodutibilidade — vale adicionar como tabela ou no texto descritivo da seção de validação cruzada.
-
-
-
-refazer todas as demais analises com a nova coorte principal (48m_6m) feitas a priori com a coorte 48m_12m e reescrever o artigo com base na nova coorte principal. 
-
-Sim — há suporte médico sólido para a detecção de alterações estruturais em T1-w MRI em intervalos de aproximadamente 6 meses, inclusive no MCI. Contudo, existe uma distinção essencial: a literatura demonstra muito melhor a detectabilidade estatística da alteração em grupos do que a capacidade de medir, com alta confiabilidade, uma alteração biologicamente verdadeira em cada indivíduo ao longo de apenas seis meses.
-
-Isso torna a estratégia 48m_6m defensável, mas eu mudaria ligeiramente a forma de justificá-la.
-
-O trabalho mais diretamente relacionado ao nosso problema
-
-Mubeen et al., no Journal of Neuroradiology (2017), estudaram exatamente a questão: se adicionar uma avaliação longitudinal em aproximadamente 6 meses melhora a predição de conversão sMCI → pMCI. Foram 247 indivíduos com MCI, 162 pMCI e 85 sMCI, usando MRI estrutural T1, variáveis cognitivas e demográficas. O modelo baseline apresentou AUC 0,82, enquanto o modelo incorporando baseline + 6 meses atingiu AUC 0,87, com melhora significativa (\(P<0,05\)). Os autores utilizaram, entre os biomarcadores estruturais, medidas de integridade/atrofia hipocampal e corpo caloso.
-
-Mubeen AM et al. A six-month longitudinal evaluation significantly improves accuracy of predicting incipient Alzheimer's disease in mild cognitive impairment. Journal of Neuroradiology. 2017;44(6):381–387. DOI: 10.1016/j.neurad.2017.05.008.
-
-Há uma ressalva: esse resultado não prova que T1 MRI isoladamente melhora de 0,82 para 0,87, porque o classificador era multimodal. Entretanto, os próprios autores relatam que as alterações estruturais foram particularmente informativas no intervalo curto.
-
-Evidência biológica ainda mais importante: Schuff et al., Brain
-
-Para nossa justificativa, considero este talvez o artigo mais importante.
-
-Schuff et al. analisaram ADNI multicêntrico com 127 CN, 226 MCI e 96 AD, todos examinados em baseline, 6 e 12 meses. Eles mediram diretamente a perda de volume hipocampal em T1-w MRI.
-
-No intervalo 0–6 meses, as taxas anualizadas foram aproximadamente:
-
-Grupo	Taxa anualizada de perda hipocampal
-CN	\(-0,9\%\)
-MCI	\(-2,0\%\)
-AD	\(-3,3\%\)
-
-No MCI, a perda hipocampal já era altamente significativa em 0–6 meses (\(P<0,0001\)).
-
-Isso corresponde aproximadamente, em seis meses, a:
-
-$$ \Delta V_{\rm MCI}^{6m}\approx -1.0\% $$
-
-e, para AD,
-
-$$ \Delta V_{\rm AD}^{6m}\approx -1.65\%. $$
-
-Portanto, a resposta biológica é inequívoca: sim, ocorre alteração macroscópica detectável por T1 MRI nesse intervalo.
-
-Schuff N et al. MRI of hippocampal volume loss in early Alzheimer's disease in relation to ApoE genotype and biomarkers. Brain. 2009;132(4):1067–1077. DOI: 10.1093/brain/awp007.
-
-Há uma nuance importante nesses números
-
-O hipocampo médio dos indivíduos MCI naquele estudo tinha cerca de \(1846~\mathrm{mm^3}\), e a perda anual estimada em 0–6 meses foi aproximadamente
-
-$$ -37.7~\mathrm{mm^3/ano}. $$
-
-Logo, em seis meses estamos falando de apenas aproximadamente
-
-$$ 19~\mathrm{mm^3}. $$
-
-Isso parece pequeno para uma imagem com voxels da ordem de \(1~\mathrm{mm^3}\), mas métodos longitudinais não dependem de detectar “19 voxels que desapareceram”. Registro intraindivíduo, modelos de superfície, BSI, TBM etc. acumulam pequenas alterações de fronteira distribuídas por centenas ou milhares de pontos e podem estimar deslocamentos subvoxel.
-
-Por isso é possível detectar uma variação de ~1% mesmo quando nenhum voxel isolado apresenta uma mudança inequívoca.
-
-Mas aqui está a advertência: no artigo de Schuff, a variabilidade interindividual era muito maior que a alteração média. Portanto,
-
-$$ \text{significância populacional} \;\not\Rightarrow\; \text{medição individual precisa}. $$
-
-Esse ponto deve ser explicitamente reconhecido no nosso artigo.
-
-Evidência especificamente para late MCI
-
-Hua et al., usando 5.738 exames ADNI2, estudaram TBM em T1-w MRI com aquisições em screening, 3, 6, 12 e 24 meses. A conclusão particularmente relevante foi:
-
-para obter potência estatística razoável com biomarcadores MRI-TBM, o intervalo mínimo foi 6 meses para LMCI e AD, mas 12 meses para EMCI.
-
-Hua X et al. MRI-based brain atrophy rates in ADNI phase 2: acceleration and enrichment considerations for clinical trials. Neurobiology of Aging. 2016;37:26–37. DOI: 10.1016/j.neurobiolaging.2015.09.018.
-
-Isso é extremamente relevante para nós porque mostra que a resposta à pergunta
-
-“seis meses é suficiente?”
-
-não é simplesmente sim ou não.
-
-Depende do estágio da doença:
-
-$$ \text{CN/EMCI} \quad\rightarrow\quad \text{sinal menor} $$ $$ \text{LMCI/pMCI próximo da conversão} \quad\rightarrow\quad \text{sinal maior}. $$
-
-E justamente os indivíduos pMCI deveriam estar enriquecidos no segundo cenário.
-
-Outro artigo muito pertinente: Leung et al., Neurology
-
-Leung et al. analisaram scans ADNI em
-
-$$ 0,\;6,\;12,\;18,\;24,\;36~\mathrm{meses} $$
-
-e calcularam mudanças de cérebro inteiro, hipocampo e ventrículos com BSI. Encontraram aceleração significativa da atrofia hipocampal em MCI,
-
-$$ 0.22\%/\mathrm{ano^2}, \qquad p=0.037, $$
-
-e, mais importante, uma análise posterior mostrou que essa aceleração era principalmente determinada pelos MCI que posteriormente converteram para AD, para os quais a aceleração chegou a
-
-$$ 0.50\%/\mathrm{ano^2}, \qquad p=0.003. $$
-
-Leung KK et al. Cerebral atrophy in mild cognitive impairment and Alzheimer disease: rates and acceleration. Neurology. 2013;80(7):648–654. DOI: 10.1212/WNL.0b013e318281ccd3.
-
-Isso fornece precisamente a justificativa biológica que precisamos: os pacientes MCI que caminham para AD são justamente aqueles nos quais esperamos maior dinâmica estrutural longitudinal.
-
-E existe evidência até em indivíduos cognitivamente normais
-
-Murphy et al., NeuroImage (2010), mostraram que mudanças em estruturas do lobo temporal medial entre baseline e 6 meses em T1-w MRI de 142 idosos cognitivamente normais estavam associadas ao declínio cognitivo posterior.
-
-DOI: 10.1016/j.neuroimage.2010.07.016.
-
-Portanto, seis meses não é um intervalo biologicamente absurdo mesmo em CN; naturalmente, o SNR é pior.
-
-Mas existe um ponto muito importante para o nosso próprio desenho
-
-Na realidade, nossa coorte 6m é mais forte do que a expressão “alterações em seis meses” sugere.
-
-Nós temos três imagens:
-
-$$ i_1,\;i_2,\;i_3 $$
-
-com aproximadamente
-
-$$ t_2-t_1\simeq6~\mathrm{meses}, \qquad t_3-t_2\simeq6~\mathrm{meses}. $$
-
-Portanto:
-
-$$ t_3-t_1\simeq12~\mathrm{meses}. $$
-
-Ou seja, a representação longitudinal não está observando apenas um deslocamento em seis meses. Ela contém aproximadamente:
-
-$$ x(t_1), \qquad \Delta x_{21}, \qquad \Delta x_{32}, $$
-
-e implicitamente uma trajetória cobrindo aproximadamente um ano.
-
-Isso muda bastante minha avaliação.
-
-Eu não escreveria:
-
-“we expect substantial hippocampal changes within six months.”
-
-Isso seria forte demais.
-
-Escreveria algo conceitualmente como:
-
-Six-month interscan intervals were selected to provide dense temporal sampling of structural change. Although individual morphometric changes over a single six-month interval can be subtle, previous ADNI studies have demonstrated measurable hippocampal and regional atrophy over this interval, particularly in late MCI and AD. Importantly, the present three-visit design spans approximately 12 months while providing two consecutive short-term change estimates.
-
-Essa formulação é cientificamente muito robusta.
-
-Onde eu ficaria mais cético: nem todos os nossos atributos têm a mesma sustentação
-
-Este é, para mim, o aspecto mais importante da sua pergunta.
-
-A literatura dá sustentação muito forte para mudanças de seis meses em:
-
-volume
-
-$$ V(t) $$
-
-shape/morfometria
-
-cortical thickness
-
-deslocamento/deformação obtidos de registro longitudinal apropriado
-
-ventricular expansion.
-
-Mas eu não estenderia automaticamente essa justificativa para GLCM e first-order intensity features.
-
-T1-w MRI convencional não é uma modalidade quantitativa de intensidade:
-
-$$ I_{\mathrm{T1w}} \neq T_1 $$
-
-e
-
-$$ I_{\mathrm{T1w}}(x) $$
-
-depende de coil sensitivity, ganho, scanner, sequência, bias field, reconstrução, normalização etc.
-
-Portanto, afirmar que uma mudança de textura hipocampal em seis meses representa diretamente alteração microestrutural seria muito mais difícil de defender.
-
-Aliás, o próprio resultado do nosso experimento de histogram matching — com grande alteração do comportamento de GLCM e first-order — é praticamente uma advertência empírica de que essas famílias são bastante sensíveis à transformação fotométrica.
-
-Eu faria uma distinção forte no artigo:
-
-$$ \boxed{\text{morphometric longitudinal biomarkers}} $$
-
-versus
-
-$$ \boxed{\text{intensity-derived exploratory biomarkers}}. $$
-
-Isso aumentaria a credibilidade do estudo.
-
-Portanto, eu manteria 48m_6m strict?
-
-Sim. Depois de verificar a literatura, eu a manteria — e com mais confiança.
-
-Mas com uma mudança conceitual importante:
-
-Eu não justificaria 48m_6m dizendo que:
-
-seis meses necessariamente produzem uma alteração hipocampal grande.
-
-A justificativa seria:
-
-mudanças morfométricas hipocampais já foram demonstradas em MCI em seis meses;
-a detectabilidade é maior em estágios mais avançados de MCI e em indivíduos que progridem para AD;
-estudos ADNI mostram que 6 meses pode constituir intervalo mínimo útil para LMCI;
-já existe inclusive um estudo de classificação sMCI/pMCI mostrando ganho com dados longitudinais de seis meses;
-nosso experimento contém três observações e, portanto, cobre aproximadamente 12 meses, com dois incrementos consecutivos de aproximadamente seis meses.
-
-Esse último ponto me parece particularmente forte.
-
-Uma consequência experimental que eu considero importante
-
-Diante da literatura, eu acrescentaria uma análise muito simples aos novos experimentos strict.
-
-Além de comparar
-
-$$ T1 \quad \text{vs.}\quad Q4, $$
-
-calcularia explicitamente para cada atributo longitudinal:
-
-$$ \Delta_{21}=x_2-x_1, \qquad \Delta_{32}=x_3-x_2 $$
-
-e
-
-$$ \Delta_{31}=x_3-x_1. $$
-
-Então verificaríamos a magnitude e distribuição de
-
-$$ |\Delta_{21}|,\;|\Delta_{32}|,\;|\Delta_{31}| $$
-
-em sMCI e pMCI.
-
-Se o sinal for biologicamente real e relativamente consistente, esperaríamos algo aproximadamente como
-
-$$ |\Delta_{31}| > |\Delta_{21}| $$
-
-e/ou
-
-$$ |\Delta_{31}| > |\Delta_{32}|, $$
-
-especialmente para volume e algumas características de shape.
-
-Isso nos permitiria responder empiricamente a uma pergunta que certamente um revisor da TMI poderá fazer:
-
-Are the six-month structural changes larger than the variability of the measurement itself?
-
-E eu iria um pouco além: se existirem scans repetidos muito próximos temporalmente no ADNI que possam ser usados para estimar test–retest variability, poderíamos estabelecer um noise floor para cada família:
-
-$$ \sigma_{\mathrm{retest}} $$
-
-e então avaliar
-
-$$ \frac{|\Delta x_{6m}|}{\sigma_{\mathrm{retest}}}. $$
-
-Isso transformaria uma potencial fraqueza da escolha de seis meses em uma análise metodológica bastante sofisticada.
-
-Em síntese: a literatura médica apoia claramente mudanças morfométricas detectáveis em seis meses, especialmente em LMCI/pMCI. Portanto, eu não abandonaria a coorte 48m_6m strict. Pelo contrário: com 73 sMCI × 74 pMCI, três visitas pré-conversão e ~12 meses de extensão total da trajetória, considero agora que ela tem uma fundamentação biológica e metodológica convincente. O cuidado deve estar em não extrapolar essa sustentação igualmente para todas as famílias de atributos, sobretudo textura e primeira ordem.
-
-Se desejar, posso fazer em seguida uma busca sistemática mais profunda especificamente por estudos T1-w MRI de 6 meses em sMCI/pMCI, separando evidência de volume, shape, TBM/deformação e radiômica, para decidirmos exatamente quais trabalhos devem entrar no estado da arte do manuscrito.
-
-##############################
-
-# Testes realizados
-
-## Definição melhor abordagem longitudinal
-
-- deltas absolutos (D21=T2−T1, D31=T3−T1, D32=T3−T2)
-- deltas relativos (D21=(T2−T1)/T1, D31=(T3−T1)/T1, D32=(T3−T2)/T2)
-- absolutos atributos (T1, T2, T3)
-- deltas absolutos + deltas dos deltas (D21, D32, A=D32−D21)
-- i1 absoluto + 2 deltas sequenciais (T1, D21, D32) (Vencedor)
-- i1 absoluto + 3 deltas sequenciais (T1, D21, D31, D32)
-- i1 absoluto + ritmo + aceleração (T1, M=(D21+D32)/2, A=D32−D21)
-
-# Notas — pipeline do paper (pós Patch A)
-
-Allowlist 4–5 nomes **morta**. Números em `cohort_results.csv` / tex antigos = experimento errado. Não citar.
-
-Mapa do repo `graphs/` por etapa. Ordem = fluxo do paper (Patch A / late).
+| FDR sig. | $q < \alpha$ **e** $\text{IC}_{\text{lo}} > 0$ | ganho resiste à correção de múltiplos testes |
+| raw sig. | $p_{\text{uni}} < \alpha$ **e** $\text{IC}_{\text{lo}} > 0$ | ganho no teste isolado, não resiste à correção |
+| sem evidência | caso contrário | não mostrou superioridade (≠ provar que não há efeito) |
+
+Por que exigir p/q **e** IC: p diz se há evidência; IC mostra tamanho e incerteza. Exigir IC > 0 evita declarar ganho cujo intervalo inclui perda.
 
 ---
 
-## 0. Pré-proc ADNI (fora + patch)
+## 9. Sensibilidade α = 1% (§10)
 
-| Script | Etapa |
+Mesmos p (bootstrap refeito com as mesmas seeds); muda só o limiar e o IC.
+
+$$\text{sig}_{1\%} = (p \text{ ou } q < 0{,}01) \;\wedge\; Q_{0{,}005}(\Delta^{*}) > 0$$
+
+Critérios: sem correção, FDR por coorte, FDR global (20).
+
+**Resultados atuais (unimodal, 60 testes):**
+
+| Contraste | ΔAUC | IC 95% | IC 99% | p | q coorte | q global | 5% | 1% |
+|---|---|---|---|---|---|---|---|---|
+| D vol 48m_12m | 0,133 | [0,040; 0,227] | [0,007; 0,256] | 0,004 | 0,020 | 0,080 | FDR sig. | só sem correção |
+| 2v texture 36m_6m | 0,076 | [0,012; 0,143] | [−0,004; 0,162] | 0,009 | 0,045 | 0,180 | FDR sig. | não |
+| D texture 36m_6m | 0,055 | [0,005; 0,104] | [−0,010; 0,119] | 0,016 | 0,080 | 0,160 | raw sig. | não |
+| B vol 48m_12m | 0,085 | [0,004; 0,167] | [−0,024; 0,191] | 0,021 | 0,104 | 0,382 | raw sig. | não |
+
+Racional: 60 testes a 5% → ~3 falsos positivos esperados; 2 FDR sig. e 4 raw sig. são compatíveis com acaso. α = 1% testa robustez do achado principal.
+
+**Frase para o artigo:** "Na coorte 48m_12m, o método D superou o baseline no volume (ΔAUC = 0,133; IC 95% 0,040–0,227; p = 0,004), resistindo à correção FDR dentro da coorte (q = 0,020), mas não à correção global sobre 20 contrastes (q = 0,080). Em α = 1%, o efeito se manteve apenas sem correção (IC 99% 0,007–0,256). Trata-se de achado sugestivo e localizado, que requer confirmação independente."
+
+---
+
+## 10. Escolha do método D entre B, C, D — pendente (não implementado)
+
+Hoje: escolha por valores absolutos → sem teste e com viés de seleção (mesmos dados escolhem e testam).
+
+Opções: (a) justificar a priori (D usa as 3 visitas numa reta: nível + inclinação, menos sensível a ruído de uma visita); (b) teste de Friedman; (c) bootstrap pareado D vs B e D vs C + BH.
+
+**Friedman** (Demšar, 2006 — comparar métodos em vários cenários):
+
+$$\chi^2_F = \frac{12N}{k(k+1)}\left[\sum_{j=1}^{k} \bar{R}_j^{\,2} - \frac{k(k+1)^2}{4}\right]$$
+
+| Termo | Significado |
 |---|---|
-| Pipeline ADNI em `/mnt/databases/...` (strip→bias→MNI→seg→DKT) | Gera raw/preproc; **não** está neste repo |
-| `preproc/dkt_labelling.py` + `run_dkt_labelling.py` (pasta `preproc/`) | Parcellation DKT (antspynet) |
-| `fix_missing_dkt.py` | **Patch:** 4D→3D + DKT nos IDs sem `regions` → `insert_to_databases_regions/` |
+| $N$ | nº de blocos (cenários) = 5 famílias × 4 coortes = 20 |
+| $k$ | nº de métodos comparados (ex.: B, C, D → 3) |
+| $\bar{R}_j$ | rank médio do método $j$ (1º = maior AUC em cada bloco) |
+| gl | $k-1$ |
 
----
-
-## 1. Coorte / clínica
-
-| Script | Etapa |
-|---|---|
-| `1_dataset.ipynb` | Define coortes (`36m_*`, `48m_*`, `all_population`), bandas ±2 m, CSVs longitudinais |
-| `1_dataset_old.ipynb` | Legado (protocolo antigo) |
-| `analysis_adni.ipynb` | Análise exploratória ADNI (não é etapa do claim) |
-
----
-
-## 2. Espaço comum MNI
-
-| Script | Etapa |
-|---|---|
-| `2_resample.py` | Rigid T1→MNI 1 mm; warpa `regions`/`seg`/`brain_mask` → `images/{resampled_1.0mm,regions,seg,brain_mask}/` |
-
----
-
-## 3. Extração de features (store `all_population`)
-
-| Script | Etapa | Saída |
-|---|---|---|
-| `3_feat_vol.py` | Volumes CSF/GM/WM por ROI | `features_volumetric.csv` |
-| `3_feat_rad.py` | Radiomics (shape/GLCM/firstorder) | `features_radiomic.csv` |
-| `3_feat_gen_dvf_v2.py` | Warps sujeito→template CN | `images/displacement_field_v2/` |
-| `3_feat_dvf_v2.py` | Stats DVF por ROI (espaço template) | `features_displacement_v2.csv` |
-| `3_feat_gen_dvf.py` + `3_feat_dvf.py` | **Legado v1** (fixed=clínica) | `features_displacement.csv` — preferir v2 |
-
----
-
-## 4. Merge / long para ablação
-
-| Script | Etapa |
-|---|---|
-| `4_run_post_extract.py` | Junta vol+rad+disp_v3 → longs em `csvs/cohorts/{COHORT}/ablation/` (homotetia ICV); scanner batch |
-
-Módulos usados aqui: `ablation_prep` (export long, batch).
-
----
-
-## 5. Modelos / ablação
-
-| Script | Etapa | Paper? |
-|---|---|---|
-| `5_ablation.py` | Unimodal nested CV (vol/shape/texture/disp/firstorder) | **Sim** (mono) |
-| `5_ablation_late_fusion.py` | Late fusion (média de scores SVM) | **Sim** |
-| `5_clinic_img.py` | Clínica e clinic+img | Extra / suplemento |
-| `5_ablation_leaky.py` | Controlo leaky | Extra |
-| `5_ablation_early_fusion.py` | Early concat | **Fora** do paper |
-| `run_ablation_full.sh` | Orquestra mono + late (+ extra) nas 4 coortes | **Sim** (driver) |
-| `scripts_compare_fusion_vs_shape.py` | Comparação pontual fusion vs shape | Auxiliar |
-
-### Módulos (`modules/`) — onde entram
-
-| Módulo | Papel | Usado em |
-|---|---|---|
-| `ablation_prep.py` | ROI filter, denylist/keep, load long, scanner | `4_`, `5_*` |
-| `ablation_deltas.py` | Deltas T1/D21/D32; colunas por família | prep / runner / Q4 |
-| `ablation_representation.py` | `t1_only`, `t1_d21_d32`, fusion specs, paths | `5_*` |
-| `ablation_stable.py` | Seletor `l1_stable` (corr → L1 → π) | runner |
-| `ablation_harmonize.py` | Longitudinal ComBat Beer REML (se `--combat true`) | runner |
-| `longitudinal_combat.py` | Fit/transform LME+EB (Beer 2020) | `ablation_harmonize` |
-| `ablation_optuna.py` | Tune SVM/etc. | runner, clinic |
-| `ablation_runner.py` | Nested CV unimodal + early fusion suite | `5_ablation`, early, clinic |
-| `ablation_late_fusion.py` | Inner-join por `ID_PT`, mean/weighted scores | `5_ablation_late_fusion` |
-| `ablation_runner_leaky.py` | Pipeline leaky | `5_ablation_leaky` |
-| `ablation_analysis.py` | AUC patient-level, freq. features, summaries | todos `5_*`, notebooks |
-| `cohort_compare.py` | Multi-coorte → `cohort_results` / `cohort_features_long` | pós-run / rebuild planilha |
-| `stats_compare.py` | Contrastes estatísticos entre configs | `7_stats` |
-
----
-
-## 6–7. Resultados, stats, artigo
-
-| Script | Etapa |
-|---|---|
-| `6_results.ipynb` | Figs / tabelas a partir dos CSVs de ablação |
-| `7_stats.ipynb` | Stats oficiais (Q4 vs t1_only, FDR, etc.) |
-| `artigo/` (`artigo.tex`) | Draft paper (números só após CSVs novos) |
-
-Notas: `0_notes.md`, `0_todo.md` — protocolo e checklist, não código.
-
----
-
-## Fluxo resumido (paper atual)
-
-```
-1_dataset.ipynb
-    → 2_resample.py
-    → 3_feat_vol + 3_feat_rad + 3_feat_gen_dvf_v2 + 3_feat_dvf_v2
-    → 4_run_post_extract.py
-    → run_ablation_full.sh  (5_ablation + 5_ablation_late_fusion [+ extra])
-    → cohort_compare / 6_results / 7_stats
-    → artigo.tex
-```
-
-**Estado agora:** etapa **3** a meio (vol/rad incompletos; disp_v2 ainda não); `4`/`5`/`6`/`7` do claim novo ainda à frente.
-
-## Perguntas
-
-1. sMCI vs pMCI: Q4 (`t1_d21_d32` = T1+D21+D32) agrega sinal vs `t1_only`?
-2. Quais atributos o seletor escolhe em cada família (frequência across folds×repeats)?
-3. União **late** (3 specs) bate teto unimodal?
-
-## Porquê late, não early
-
-Late = 5 SVMs, um por família, média de scores. Forma não vê 144 GLCM. Volume não vê firstorder. `p≫n` da união **não** aplica: cresce nº de modelos, não a dimensão de um só.
-
-Early / `--modality all` = concat. Classe cheia × Q4 → centenas de colunas, n=120. Fora do paper. `run_ablation_full.sh` não corre early.
-
-## Espaço (antes do seletor)
-
-Classe completa; denylist só definição (`keep_*_feat` em `ablation_prep.py` + `ablation_deltas.py`). Mesmos sufixos em `t1_only` e Q4. Cada sufixo × L e R. `t1_only` ×1 (T1). Q4 ×3 (T1, D21, D32).
-
-| Família | Entra | Denylist | t1 L+R | Q4 L+R |
-|---|---|---|---|---|
-| vol | 4 sufixos | mm³ crus (`mask_mm3`, `gm_mm3`, …) | 8 | 24 |
-| shape | 12 IBSI (`original_shape_`) | MeshVolume, VoxelVolume | 24 | 72 |
-| texture | 24 GLCM (`original_glcm_`) | GLRLM/GLSZM/GLDM/NGTDM | 48 | 144 |
-| firstorder | 16 (`original_firstorder_`) | Energy, TotalEnergy | 32 | 96 |
-| disp | 15 momentos (`mag_`, `logjac_`, `strain_fro_`) | `ux/uy/uz`, `_n`, percentis | 30 | 90 |
-
-Texture = GLCM Original. Sem wavelet/LoG.
-
-### vol (4)
-- `gm_norm`
-- `wm_norm`
-- `csf_norm`
-- `original_shape_MeshVolume`
-
-### shape (12)
-- `original_shape_SurfaceArea`
-- `original_shape_SurfaceVolumeRatio`
-- `original_shape_Sphericity`
-- `original_shape_Elongation`
-- `original_shape_Flatness`
-- `original_shape_LeastAxisLength`
-- `original_shape_MajorAxisLength`
-- `original_shape_MinorAxisLength`
-- `original_shape_Maximum2DDiameterColumn`
-- `original_shape_Maximum2DDiameterRow`
-- `original_shape_Maximum2DDiameterSlice`
-- `original_shape_Maximum3DDiameter`
-
-### texture — GLCM (24)
-- `original_glcm_Autocorrelation`
-- `original_glcm_ClusterProminence`
-- `original_glcm_ClusterShade`
-- `original_glcm_ClusterTendency`
-- `original_glcm_Contrast`
-- `original_glcm_Correlation`
-- `original_glcm_DifferenceAverage`
-- `original_glcm_DifferenceEntropy`
-- `original_glcm_DifferenceVariance`
-- `original_glcm_Id`
-- `original_glcm_Idm`
-- `original_glcm_Idmn`
-- `original_glcm_Idn`
-- `original_glcm_Imc1`
-- `original_glcm_Imc2`
-- `original_glcm_InverseVariance`
-- `original_glcm_JointAverage`
-- `original_glcm_JointEnergy`
-- `original_glcm_JointEntropy`
-- `original_glcm_MCC`
-- `original_glcm_MaximumProbability`
-- `original_glcm_SumAverage`
-- `original_glcm_SumEntropy`
-- `original_glcm_SumSquares`
-
-### firstorder (16; deny Energy, TotalEnergy)
-- `original_firstorder_10Percentile`
-- `original_firstorder_90Percentile`
-- `original_firstorder_Entropy`
-- `original_firstorder_InterquartileRange`
-- `original_firstorder_Kurtosis`
-- `original_firstorder_Maximum`
-- `original_firstorder_Mean`
-- `original_firstorder_MeanAbsoluteDeviation`
-- `original_firstorder_Median`
-- `original_firstorder_Minimum`
-- `original_firstorder_Range`
-- `original_firstorder_RobustMeanAbsoluteDeviation`
-- `original_firstorder_RootMeanSquared`
-- `original_firstorder_Skewness`
-- `original_firstorder_Uniformity`
-- `original_firstorder_Variance`
-
-### disp (15; prefixos `mag_`, `logjac_`, `strain_fro_`)
-- `mag_mean`, `mag_std`, `mag_variance`, `mag_skewness`, `mag_kurtosis`
-- `logjac_mean`, `logjac_std`, `logjac_variance`, `logjac_skewness`, `logjac_kurtosis`
-- `strain_fro_mean`, `strain_fro_std`, `strain_fro_variance`, `strain_fro_skewness`, `strain_fro_kurtosis`
-
-Fora: `ux_*`, `uy_*`, `uz_*`, `curlmag_*`, `*_n`, `*_p05`, `*_p50`, `*_p95`.
-
-## Seletor (`l1_stable`, só outer train)
-
-1. Variance threshold (se zerar → `var>0`, não restaurar classe)
-2. Corr `|ρ|>0.85` **uma vez**; fica maior `|ρ|` com `y`; nunca T1 vs D21/D32 do mesmo `anatomical_key`
-3. 50× L1 `C=0.1`; coef=0 → `[]` (não keep-all)
-4. π≥70% nos boots. Pool vazio → vazio, **nunca** a classe inteira
-5. SVM nesse pool. `min_timepoints=0` em t1/Q4
-
-Entre colineares: representante, não “melhor Haralick”. Reportar frequência across folds.
-
-## Contrastes oficiais (legado v1 — **substituído**)
-
-> Ver bloco **Artigo v1 → v2** no topo deste ficheiro.  
-> Antigo: 5 fam × `{t1_only, t1_d21_d32}` + late all-T1 / all-Q4 / âncora shape.  
-> Novo claim: `{t1_only, t1_r10, t1_r10_r21, t1_ols}` + late all-T1 / all-OLS / grelha; Q4 abs = sensibilidade.
-
-## Paper (quando CSVs novos existirem)
-
-Unimodal claim = Δ(**OLS**−T1) e Δ(R10−T1) por família (FDR). Late = teto all-OLS / best_late na grelha, não “onde o tempo mais ganha”. Nomes = frequência across folds, não assinatura única.
+Exemplo (ilustrativo): ranks médios D = 1,6; B = 2,0; C = 2,4 (N = 20, k = 3) → $\chi^2_F = \frac{240}{12}[1{,}6^2 + 2^2 + 2{,}4^2 - 12] = 20 \cdot 0{,}32 = 6{,}4$, gl = 2 → p ≈ 0,04 → algum método se destaca; seguir com Wilcoxon pareado/Nemenyi + correção.
+Ressalva: blocos não totalmente independentes (mesmos pacientes em várias famílias).

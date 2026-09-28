@@ -138,7 +138,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--combat",
         default="false",
         type=_parse_combat,
-        help="false | true | both (true = Longitudinal ComBat REML; requer >=2 visitas)",
+        help="false | true | both (true = ComBat transversal / NeuroComBat → ablation_results_combat_*)",
+    )
+    p.add_argument(
+        "--long-combat", "--long_combat",
+        dest="long_combat",
+        action="store_true",
+        help="Longitudinal ComBat REML (Beer 2020) → ablation_results_*_longcombat; exclusivo com --combat",
     )
     p.add_argument("--repeats", "-r", type=int, default=10, help="Repetições (0 = 1× nested 5×5)")
     p.add_argument("--seed", type=int, default=42)
@@ -206,7 +212,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.long_combat:
+        if True in args.combat:
+            parser.error("--long-combat e --combat true/both são exclusivos")
+        args.combat = (True,)
+    combat_method = "longitudinal" if args.long_combat else "transversal"
     modalities = _parse_modalities(args.modality)
     tasks = _parse_tasks(args.tasks)
     selection_modes = _parse_selection(args.selection)
@@ -215,7 +227,10 @@ def main(argv: list[str] | None = None) -> int:
 
     base_dir = args.base_dir or Path(f"csvs/cohorts/{args.cohort}/ablation/{args.roi}")
     representation = args.representation
-    output_protocol = "longcombat" if args.combat == (True,) else "abs"
+    output_protocol = (
+        ("longcombat" if args.long_combat else "combat")
+        if args.combat == (True,) else "abs"
+    )
 
     if args.results_dir is None and len(modalities) == 1:
         results_dir = default_results_dir(
@@ -250,7 +265,7 @@ def main(argv: list[str] | None = None) -> int:
     log.info("tasks:        %s", tasks)
     log.info("seleção:      %s", selection_modes)
     log.info("modelos:      %s", models)
-    log.info("combat:       %s", args.combat)
+    log.info("combat:       %s (%s)", args.combat, combat_method)
     log.info("tuner:        %s", args.tuner)
     if args.tuner == "optuna":
         log.info("optuna trials:%d", args.optuna_trials)
@@ -286,6 +301,7 @@ def main(argv: list[str] | None = None) -> int:
             optuna_trials=args.optuna_trials,
             representation=representation,
             exclude_features=exclude_features,
+            combat_method=combat_method,
         )
     except Exception:
         elapsed = time.monotonic() - t0

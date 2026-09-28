@@ -1,23 +1,36 @@
-"""Longitudinal ComBat por fold (Beer et al., NeuroImage 2020).
+"""ComBat por fold: longitudinal (Beer et al., NeuroImage 2020) ou transversal (NeuroComBat).
 
-Fit REML/EB somente no treino. Transformação usa efeitos de scanner congelados;
-covariáveis biológicas: idade basal, tempo desde T1 e sexo (sem GROUP).
+Fit somente no treino; sem GROUP nas covariáveis.
+- longitudinal: REML/EB, idade basal + tempo desde T1 + sexo, (1|ID_PT).
+- transversal: NeuroComBat por imagem (visitas independentes), AGE + SEX.
 """
 
 from __future__ import annotations
 
+import contextlib
+import io
 import warnings
-from typing import Any
+from typing import Any, Iterator
 
 import numpy as np
 import pandas as pd
+from neuroCombat import neuroCombat
+from neuroCombat.neuroCombat import neuroCombatFromTraining
 
 from longitudinal_combat import fit_longitudinal_combat
+
+COMBAT_METHODS = ("longitudinal", "transversal")
 
 MIN_BATCH_SAMPLES = 5
 LONGITUDINAL_COMBAT_VISITS = {
     "t1_d21": 2,
     "t1_d21_d32": 3,
+    # t1_only: fit nas 3 visitas (mesma harmonização de B/C/D); o BLUP do sujeito
+    # usa T2/T3, logo T1 harmonizado não é estritamente "só baseline".
+    "t1_only": 3,
+    "t1_r10_r21": 3,
+    "t1_rate02": 3,
+    "t1_ols": 3,
 }
 
 
@@ -208,6 +221,47 @@ def _write_wide_back(
                 df_out.at[idx, feat] = val
 
 
+@contextlib.contextmanager
+def _quiet_combat(quiet: bool) -> Iterator[None]:
+    if not quiet:
+        yield
+        return
+    with contextlib.redirect_stdout(io.StringIO()), warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        yield
+
+
+def _neurocombat_fit_transform(
+    wide: pd.DataFrame,
+    cov: pd.DataFrame,
+    train_ids: list[str],
+    apply_ids: list[str],
+    *,
+    quiet: bool,
+) -> pd.DataFrame:
+    """NeuroComBat: fit+harmoniza treino; aplica estimativas congeladas em apply_ids."""
+    with _quiet_combat(quiet):
+        res = neuroCombat(
+            dat=wide.loc[train_ids].to_numpy(dtype=np.float64).T,
+            covars=cov.loc[train_ids, ["batch", "AGE", "SEX"]],
+            batch_col="batch",
+            categorical_cols=["SEX"],
+            continuous_cols=["AGE"],
+            eb=True,
+            parametric=True,
+            mean_only=False,
+        )
+        parts = [pd.DataFrame(np.asarray(res["data"]).T, index=train_ids, columns=wide.columns)]
+        if apply_ids:
+            app = neuroCombatFromTraining(
+                dat=wide.loc[apply_ids].to_numpy(dtype=np.float64).T,
+                batch=cov.loc[apply_ids, "batch"].to_numpy(dtype=str),
+                estimates=res["estimates"],
+            )
+            parts.append(pd.DataFrame(np.asarray(app["data"]).T, index=apply_ids, columns=wide.columns))
+    return pd.concat(parts)
+
+
 def harmonize_long_fold(
     df_long: pd.DataFrame,
     *,
@@ -216,8 +270,11 @@ def harmonize_long_fold(
     feature_cols: list[str] | None = None,
     fold_id: int = 0,
     quiet: bool = True,
+    method: str = "longitudinal",
 ) -> pd.DataFrame:
-    """Fit Longitudinal ComBat no treino; transforma treino e sujeitos de teste."""
+    """Fit ComBat (longitudinal|transversal) no treino; transforma treino e sujeitos de teste."""
+    if method not in COMBAT_METHODS:
+        raise ValueError(f"method ComBat inválido: {method!r} (use {COMBAT_METHODS})")
     if not train_id_imgs:
         raise ValueError("train_id_imgs vazio — impossível ajustar ComBat.")
     if not transform_id_imgs:
@@ -262,7 +319,7 @@ def harmonize_long_fold(
 
     if len(good_batches) < 2:
         warnings.warn(
-            f"[fold {fold_id}] Longitudinal ComBat precisa de >=2 batches no treino; "
+            f"[fold {fold_id}] ComBat {method} precisa de >=2 batches no treino; "
             f"encontrados {len(good_batches)} (de {len(train_batches)} no total). "
             f"Retornando original."
         )
@@ -289,16 +346,24 @@ def harmonize_long_fold(
 
     if len(known_ids) < 2:
         warnings.warn(
-            f"[fold {fold_id}] Longitudinal ComBat ignorado (<2 imagens harmonizáveis). "
+            f"[fold {fold_id}] ComBat {method} ignorado (<2 imagens harmonizáveis). "
             f"Retornando original."
         )
         return df_out
 
     if len(train_known) < 2:
         warnings.warn(
-            f"[fold {fold_id}] Longitudinal ComBat ignorado (<2 imagens no treino). "
+            f"[fold {fold_id}] ComBat {method} ignorado (<2 imagens no treino). "
             f"Retornando original."
         )
+        return df_out
+
+    if method == "transversal":
+        apply_ids = [img for img in known_ids if img not in set(train_known)]
+        wide_harmonized = _neurocombat_fit_transform(
+            wide_all, cov_all, train_known, apply_ids, quiet=quiet,
+        )
+        _write_wide_back(df_out, wide_harmonized, combat_feats, set(known_ids))
         return df_out
 
     train_frame = pd.concat(
@@ -325,7 +390,7 @@ def select_longitudinal_visits(df_long: pd.DataFrame, representation: str) -> pd
     """Seleciona T1..Tn antes do LME; impede T3 de informar uma análise D21."""
     if representation not in LONGITUDINAL_COMBAT_VISITS:
         raise ValueError(
-            "Longitudinal ComBat aplica-se apenas a t1_d21 ou t1_d21_d32; "
+            f"Longitudinal ComBat aplica-se apenas a {sorted(LONGITUDINAL_COMBAT_VISITS)}; "
             f"recebido {representation!r}."
         )
     n_visits = LONGITUDINAL_COMBAT_VISITS[representation]

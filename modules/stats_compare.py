@@ -29,6 +29,10 @@ def image_ablation_path(base: Path, protocol: str, modality: str) -> Path:
         "t1_r10_r21": base / "ablation_results_r10r21",
         "t1_rate02": base / "ablation_results_rate02",
         "t1_ols": base / "ablation_results_ols",
+        "t1_only_longcombat": base / "ablation_results_t1_only_longcombat",
+        "t1_r10_r21_longcombat": base / "ablation_results_r10r21_longcombat",
+        "t1_rate02_longcombat": base / "ablation_results_rate02_longcombat",
+        "t1_ols_longcombat": base / "ablation_results_ols_longcombat",
         "global": base / "ablation_results_leaky",
         "t1_d21_d32_global": base / "ablation_results_leaky_d21d32",
     }
@@ -101,6 +105,7 @@ def bootstrap_auc_diff_test(
     *,
     n_boot: int,
     seed: int,
+    ci_level: float = 0.95,
 ) -> tuple[float, float, float, float, float]:
     y = np.asarray(y, dtype=int)
     a, b = np.asarray(scores_a, float), np.asarray(scores_b, float)
@@ -114,7 +119,8 @@ def bootstrap_auc_diff_test(
             continue
         diffs.append(float(roc_auc_score(yb, ab) - roc_auc_score(yb, bb)))
     diffs_arr = np.asarray(diffs)
-    ci_lo, ci_hi = np.percentile(diffs_arr, [2.5, 97.5])
+    tail = round(50 * (1 - ci_level), 6)
+    ci_lo, ci_hi = np.percentile(diffs_arr, [tail, 100 - tail])
     p_one = float((np.sum(diffs_arr <= 0) + 1) / (len(diffs_arr) + 1))
     p_two = float(2 * min(p_one, 1 - p_one))
     return obs, float(ci_lo), float(ci_hi), p_one, p_two

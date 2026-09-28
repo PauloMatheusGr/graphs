@@ -506,11 +506,21 @@ def wide_for_fold(
     representation: str = "wide",
     roi: str = ROI_FILTER_DEFAULT,
     fusion_slots: tuple[FusionSlot, ...] | None = None,
+    combat_method: str = "longitudinal",
 ) -> pd.DataFrame:
     pts = train_pts | test_pts
     sub = df_long[df_long["ID_PT"].astype(str).isin(pts)].copy()
     expected_visits = 3
-    if with_combat:
+    if with_combat and combat_method == "transversal":
+        sub = harmonize_long_fold(
+            sub,
+            train_id_imgs=image_ids_for_patients(sub, train_pts),
+            transform_id_imgs=image_ids_for_patients(sub, pts),
+            fold_id=fold_id,
+            quiet=combat_quiet,
+            method="transversal",
+        )
+    elif with_combat:
         if fusion_slots is None:
             combat_representation = representation
         else:
@@ -584,6 +594,7 @@ def nested_cv_ablation(
     verbose: bool = False,
     representation: str = "wide",
     fusion_slots: tuple[FusionSlot, ...] | None = None,
+    combat_method: str = "longitudinal",
 ) -> pd.DataFrame:
     pt = patient_labels_from_long(df_long, task)
     y = pt["y"].to_numpy(dtype=int)
@@ -621,6 +632,7 @@ def nested_cv_ablation(
             representation=representation if fusion_slots is None else "wide",
             roi=roi,
             fusion_slots=fusion_slots,
+            combat_method=combat_method,
         )
         wide = wide[wide["GROUP"].astype(str).isin(task.groups)].copy()
         wide["y"] = wide["GROUP"].map(task.label_map).astype(int)
@@ -720,7 +732,9 @@ def nested_cv_ablation(
             "task": task.task_id,
             "with_combat": with_combat,
             "harmonization_method": (
-                "longitudinal_combat_reml" if with_combat else "none"
+                "none" if not with_combat
+                else "neurocombat" if combat_method == "transversal"
+                else "longitudinal_combat_reml"
             ),
             "selection_mode": selection_mode,
             "modality": modality,
@@ -795,6 +809,7 @@ def run_full_ablation_suite(
     optuna_trials: int = 30,
     representation: str = "wide",
     exclude_features: tuple[str, ...] = (),
+    combat_method: str = "longitudinal",
 ) -> pd.DataFrame:
     stable_pool_min_timepoints = resolve_stable_pool_min_timepoints(
         representation, stable_pool_min_timepoints, log=log,
@@ -802,7 +817,8 @@ def run_full_ablation_suite(
 
     base = Path(base_dir)
     output_protocol = (
-        "longcombat" if with_combat_flags == (True,) else "abs"
+        ("combat" if combat_method == "transversal" else "longcombat")
+        if with_combat_flags == (True,) else "abs"
     )
     all_results: list[pd.DataFrame] = []
     n_reps = len(repeat_ids(r_repeats))
@@ -898,6 +914,7 @@ def run_full_ablation_suite(
                                 optuna_trials=optuna_trials,
                                 verbose=verbose,
                                 representation=representation,
+                                combat_method=combat_method,
                             )
                             auc_mean = float(res["auc"].mean()) if "auc" in res.columns else float("nan")
                             log.info(

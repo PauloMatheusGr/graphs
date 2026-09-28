@@ -104,9 +104,21 @@ RESULTS_ROOT_BY_PROTOCOL: dict[str, dict[str, str]] = {
         "t1_rate02": "ablation_results_clinic_img_rate02",
         "t1_ols": "ablation_results_clinic_img_ols",
     },
+    "combat": {
+        "t1_only": "ablation_results_combat_t1_only",
+        "t1_d21_d32": "ablation_results_combat_d21d32",
+        "t1_r10": "ablation_results_combat_r10",
+        "t1_r10_r21": "ablation_results_combat_r10r21",
+        "t1_rate02": "ablation_results_combat_rate02",
+        "t1_ols": "ablation_results_combat_ols",
+    },
     "longcombat": {
         "t1_d21": "ablation_results_d21_longcombat",
         "t1_d21_d32": "ablation_results_d21d32_longcombat",
+        "t1_only": "ablation_results_t1_only_longcombat",
+        "t1_r10_r21": "ablation_results_r10r21_longcombat",
+        "t1_rate02": "ablation_results_rate02_longcombat",
+        "t1_ols": "ablation_results_ols_longcombat",
     },
 }
 
@@ -334,9 +346,9 @@ def default_results_dir(
     if results_dir is not None:
         return Path(results_dir)
     base = Path(base_dir)
-    if protocol == "longcombat" and representation not in RESULTS_ROOT_BY_PROTOCOL[protocol]:
+    if protocol in ("combat", "longcombat") and representation not in RESULTS_ROOT_BY_PROTOCOL[protocol]:
         raise ValueError(
-            "Longitudinal ComBat só possui saída para t1_d21 ou t1_d21_d32; "
+            f"{protocol} só possui saída para {sorted(RESULTS_ROOT_BY_PROTOCOL[protocol])}; "
             f"recebido {representation!r}."
         )
     root_name = RESULTS_ROOT_BY_PROTOCOL[protocol].get(representation, "ablation_results")
