@@ -26,7 +26,7 @@ import ants
 import pandas as pd
 
 COHORT = "all_population"
-DEFAULT_IMAGES_CSV = f"csvs/cohorts/{COHORT}/all_population.csv"
+DEFAULT_IMAGES_CSV = f"csvs/cohorts/{COHORT}/all_population_True.csv"
 DEFAULT_MIN_OUTPUT_BYTES = 1024
 VALID_DIAG = ("CN", "AD")
 

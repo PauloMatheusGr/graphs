@@ -57,17 +57,19 @@ Vol: B−B₀ ≈ **+0.013** (÷Δt ajuda); C≈D ≫ B₀; message = “longitu
 2. **Related / contributions (~L98–125)** — hierarquia: baseline / 2v rates / 3v rates / **3v OLS**; Q4 abs = controlo do encoding publicado, não claim.
 3. **`subsubsec:longitudinal` (~L354–364)** — **inverter** o argumento anti-`D/Δt`. Novo texto: intervalos nominais ~6 m **não** eliminam heterogeneidade residual de calendário; normalização temporal + colapso a uma velocidade (OLS) são o protocolo primário; Δ abs ficam sensibilidade. Definir fórmulas r10, r21, β̂₁ OLS.
 4. **Protocolo classificação** — representations CLI; pastas; late `--grid --baseline-rep t1_only --longitudinal-rep t1_ols`.
-5. **Results** — Fig A = 4 encodings (não 3); ROC vol 4 curvas; unimodal claim T1 vs D; four_ceilings = uni T1/D/R10 + best late T1/D + all-T1/all-D; nova fig ROC × 4 algos (após claim4).
-6. **Inferência** — primário: D vs T1 e R10 vs T1 (5 fam, FDR); complementar: R10R21 vs T1; tetos `stats_four_ceilings_48m6m` (incl. best_late). Tabelas: `stats_ols_vs_t1_48m6m`, `stats_r10_vs_t1_48m6m`, `stats_r10r21_vs_t1_48m6m`, gradients.
+5. **Results** — **mesmas figuras do v1, D no lugar de Q4** (decisão 2026-09-27). Fig A e ROC vol = 3 encodings (baseline / 2v R10 / 3v OLS); four_ceilings = ordem v1 com D; heatmaps e ROC × 4 algos em D (após claim_core4). 3v rates (B), C, B₀ → suplemento.
+6. **Inferência** — primário: D vs T1 e R10 vs T1 (5 fam, FDR); complementar: R10R21 vs T1 (suplemento); tetos `stats_four_ceilings_48m6m` = 7 contrastes alinhados às barras (sem R10; inclui âncora `volT1_shapeD − uni_T1`, análogo ao "late âncora − vol T1" do v1). Resultado atual (SVM, B=5000): nenhum sobrevive FDR; maiores Δ: best_late_D−best_late_T1 +0.033 [−0.004, 0.072] p=.044 (FDR .155); all_D−all_T1 +0.025 [−0.000, 0.051] p=.027 (FDR .155); uni_D−uni_T1 +0.028 [−0.013, 0.068] p=.092 (FDR .214); âncora +0.007 (ns). Tabelas: `stats_ols_vs_t1_48m6m`, `stats_r10_vs_t1_48m6m`, `stats_r10r21_vs_t1_48m6m`, gradients.
 7. **Discussão (~L837+)** — “ganhos 3v−baseline pequenos / nulos sob FDR” aplica-se a **B₀ abs**. Reescrever: com D, vol sobe ~+0.03; não generalizar a todas as famílias (texture pode cair); soft False = sensibilidade pré-conversão.
 8. **Tabela D / ComBat** — manter sensibilidade longCombat em **Q4 abs** (já medido); não misturar com claim D. Nota: re-correr ComBat em OLS só se Discussion exigir (não bloqueia v2).
 9. **Figuras PDF** (`Artigo 1 pgirardi/figures/`):
-   - `fig_a_encoding_4cohorts.pdf` — Baseline / 2v R10 / 3v rates / 3v OLS
+   - `fig_a_encoding_{36m6m,36m12m,48m6m,48m12m}.pdf` — Baseline / 2v R10 / 3v OLS; 4 PDFs (legenda só 36m12m; eixo y só 36m6m/48m6m)
    - `unimodal_t1_vs_ols_48m6m.pdf` (ex `…_vs_q4…`)
-   - `roc_vol_encodings_48m6m.pdf` — 4 curvas
-   - `roc_vol_models_ols_48m6m.pdf` — novo (pós claim4)
-   - `four_ceilings_48m6m.pdf` — 7 barras (uni×3 + best late×2 + all×2)
-   - `soft_true_vs_false_48m6m.pdf` — painéis T1 vs OLS
+   - `roc_vol_encodings_48m6m.pdf` — 3 curvas: baseline .756 / 2v .741 / 3v OLS .784
+   - `heatmap_models_{t1,ols}_48m6m.pdf` (ex `…_q4…`, pós claim_core4)
+   - `roc_vol_models_ols_48m6m.pdf` (ex `…_q4…`, pós claim_core4)
+   - `four_ceilings_48m6m.pdf` — 7 barras ordem v1: uni T1 .756 / uni D .784 / best late T1 .773 / best late D .806 / vol T1 ∪ forma D .763 / all-T1 .766 / all-D .791
+   - `soft_true_vs_false_48m6m_{baseline,3visits}.pdf` — 2 PDFs separados (legenda só em 3visits)
+   - **Suplemento:** `trajectories_vol_48m6m.pdf` — **novo** (cell `v1_fig_traj`): trajetórias vol bilateral (‰ ICV) × meses, reta OLS média sMCI/pMCI + IC95% bootstrap; painel B = β̂₁ por paciente. Números: sMCI n=73 β̄=−0.004 ‰ICV/ano [−0.045, +0.034]; pMCI n=120 β̄=−0.069 [−0.108, −0.032]; Mann–Whitney p=0.006. Motiva o encoding D (pMCI atrofia, sMCI ~estável).
 
 ## Mensagens-chave v2 (rascunho)
 
@@ -75,7 +77,7 @@ Vol: B−B₀ ≈ **+0.013** (÷Δt ajuda); C≈D ≫ B₀; message = “longitu
 - Achado vol: normalização temporal + slope > Δ abs consecutivos; C≈D com 3 pts quase equiespaçados (como o revisor previa).
 - Achado heterogeneidade: ganho long **não** uniforme (vol↑, texture OLS↓).
 - Late: teto = best da grelha / all-OLS; max da grelha continua exploratório (viés seleção) — manter disclaimer v1.
-- B₀/Q4 permanece no suplemento para rastrear o encoding do v1.
+- B₀/Q4 permanece no suplemento para rastrear o encoding do v1. Corpo/figs principais = só A vs D (D escolhido a priori: OLS é o estimador padrão de velocidade, sugerido pelo revisor 2; não "o melhor da grelha"). Texture B₀ (.674) > D (.608) reportado no suplemento.
 
 ## Contrastes oficiais v2 (substitui bloco antigo no fim deste ficheiro)
 
