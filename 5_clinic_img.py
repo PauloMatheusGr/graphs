@@ -3,6 +3,7 @@
 
 --feature-set clinical → SEX, AGE, MMSE, ADAS, FAQ (sem imagem).
 --feature-set fusion   → imagem (rep escolhida) + mesmas cols clínicas.
+--clinical-cols SEX,AGE → subconjunto (demografia); saída ganha sufixo _sex_age.
 
 Imagem only: 5_ablation.py. Nome antigo: 5_baseline_comparison.py
 ('baseline' confundia com t1_only / encoding temporal).
@@ -66,10 +67,26 @@ log = logging.getLogger("clinic_img")
 COHORT = "36m_6m"  # default se --cohort omitido
 
 CLINICAL_COLS = ("SEX", "AGE", "MMSE_SCORE", "ADAS_SCORE", "FAQ_SCORE") #, "CDR_GLOBAL")
+DEFAULT_CLINICAL_COLS = CLINICAL_COLS
 
 
 def _split_csv(value: str) -> tuple[str, ...]:
     return tuple(x.strip() for x in value.split(",") if x.strip())
+
+
+def _parse_clinical_cols(value: str) -> tuple[str, ...]:
+    cols = _split_csv(value)
+    unknown = set(cols) - set(DEFAULT_CLINICAL_COLS)
+    if not cols or unknown:
+        raise argparse.ArgumentTypeError(
+            f"--clinical-cols inválido {sorted(unknown)}; opções: {DEFAULT_CLINICAL_COLS}"
+        )
+    return cols
+
+
+def _clinical_cols_tag(cols: tuple[str, ...]) -> str:
+    """'' p/ as 5 cols default (nomes de arquivo inalterados); senão _sex_age etc."""
+    return "" if cols == DEFAULT_CLINICAL_COLS else "_" + "_".join(c.lower() for c in cols)
 
 
 def _parse_tasks(value: str) -> tuple[str, ...]:
@@ -478,6 +495,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="disp",
         help="Só para fusion: lista vol,shape,texture,disp,firstorder,all (1 arquivo/modalidade)",
     )
+    p.add_argument(
+        "--clinical-cols",
+        type=_parse_clinical_cols,
+        default=DEFAULT_CLINICAL_COLS,
+        help=f"Subconjunto de {','.join(DEFAULT_CLINICAL_COLS)} (ex.: SEX,AGE = demografia)",
+    )
     p.add_argument("--models", default="svm,rf,xgb,mlp,logreg_l1,elasticnet")
     p.add_argument("--selection", default="l1_stable")
     p.add_argument("--combat", choices=["false", "true"], default="false")
@@ -517,8 +540,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    global CLINICAL_COLS
     args = build_parser().parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+    # ponytail: override do global lido por todas as funções clínicas; 1 config por processo.
+    # Se precisar de várias configs no mesmo processo, passar cols como parâmetro.
+    CLINICAL_COLS = args.clinical_cols
+    cols_tag = _clinical_cols_tag(CLINICAL_COLS)
+    log.info("clinical cols: %s", CLINICAL_COLS)
 
     tasks = _parse_tasks(args.tasks)
     models = _split_csv(args.models)
@@ -557,7 +586,7 @@ def main(argv: list[str] | None = None) -> int:
                         tuner=args.tuner,
                         optuna_trials=args.optuna_trials,
                     ))
-        _write_outputs(out_dir, "clinical", rows)
+        _write_outputs(out_dir, f"clinical{cols_tag}", rows)
         log.info("tempo: %s", fmt_duration(time.monotonic() - t0))
         return 0
 
@@ -593,7 +622,7 @@ def main(argv: list[str] | None = None) -> int:
         tag = f"fusion_{modality}_{args.selection}_{combat_tag}"
         if representation != "wide":
             tag = f"{tag}_{representation}"
-        _write_outputs(out_dir, tag, rows)
+        _write_outputs(out_dir, f"{tag}{cols_tag}", rows)
 
     log.info("tempo: %s", fmt_duration(time.monotonic() - t0))
     return 0
@@ -609,6 +638,13 @@ if __name__ == "__main__":
         pipe.fit(X, y)
         names = _clinical_selected_names("logreg_l1", pipe.named_steps["clf"], list(CLINICAL_COLS))
         assert 1 <= len(names) <= len(CLINICAL_COLS)
+        assert _clinical_cols_tag(DEFAULT_CLINICAL_COLS) == ""
+        assert _clinical_cols_tag(_parse_clinical_cols("SEX,AGE")) == "_sex_age"
+        try:
+            _parse_clinical_cols("SEX,FOO")
+            raise AssertionError("coluna inválida aceita")
+        except argparse.ArgumentTypeError:
+            pass
         print("OK clinic_img self-check")
         sys.exit(0)
     sys.exit(main())
