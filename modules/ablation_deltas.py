@@ -458,7 +458,7 @@ def modality_wide_columns(
         return _select_shape_delta(cols, roi, feature_tokens=tokens)
     if modality == "texture":
         return _select_texture_delta(cols, roi, feature_tokens=tokens)
-    if modality in {"disp", "disp_ad", "disp_cnad"}:
+    if modality.startswith("disp"):
         return _select_disp_delta(cols, roi, feature_tokens=tokens)
     if modality == "firstorder":
         return _select_firstorder_delta(cols, roi, feature_tokens=tokens)

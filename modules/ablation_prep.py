@@ -243,7 +243,7 @@ def modality_wide_columns(
         out = _select_shape_wide_columns(cols, roi)
     elif modality == "texture":
         out = _select_texture_wide_columns(cols, roi)
-    elif modality in {"disp", "disp_ad", "disp_cnad"}:
+    elif modality.startswith("disp"):
         out = _select_disp_wide_columns(cols, roi)
     elif modality == "firstorder":
         out = _select_firstorder_wide_columns(cols, roi)

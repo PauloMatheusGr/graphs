@@ -130,6 +130,21 @@ MODALITIES: dict[str, dict[str, str]] = {
         "wide": "disp_cnad_wide.csv",
         "label": "deslocamento CN+AD",
     },
+    "disp_oasis": {
+        "long": "disp_oasis_long.csv",
+        "wide": "disp_oasis_wide.csv",
+        "label": "deslocamento OASIS CN",
+    },
+    "disp_oasis_ad": {
+        "long": "disp_oasis_ad_long.csv",
+        "wide": "disp_oasis_ad_wide.csv",
+        "label": "deslocamento OASIS AD",
+    },
+    "disp_oasis_cnad": {
+        "long": "disp_oasis_cnad_long.csv",
+        "wide": "disp_oasis_cnad_wide.csv",
+        "label": "deslocamento OASIS CN+AD",
+    },
     "firstorder": {"long": "rad_long.csv", "wide": "firstorder_wide.csv", "label": "firstorder"},
     "all": {
         "long": "merge_long.csv",

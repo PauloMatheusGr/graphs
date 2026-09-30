@@ -12,6 +12,12 @@ Pré-requisito: 3.1_feat_gen_dvf.py --diag {CN|AD}
 Saídas:
   CN → features_displacement_v4.csv    | warps displacement_field_v3/
   AD → features_displacement_v4_ad.csv | warps displacement_field_v3_ad/
+
+Modo --src oasis (3.1 --src oasis): domínio = imagem clínica, labels/máscara lidas direto.
+  ROIs hipocampo núcleo / d2 / d4 / d8 (dilatação EDT em mm) / shell4 = d4 sem núcleo.
+  Mapas jac_det, logjac, mag, strain_fro (ε infinitesimal).
+  Sinal: fixed=sujeito, então jac_det > 1 = sujeito menor que o template (atrofia).
+  CN → features_displacement_oasis_cn.csv | AD → features_displacement_oasis_ad.csv
 """
 
 from __future__ import annotations
@@ -27,7 +33,11 @@ from pathlib import Path
 import ants
 import numpy as np
 import pandas as pd
+from scipy.ndimage import distance_transform_edt
 from scipy.stats import kurtosis, skew
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "modules"))
+import oasis_refs  # noqa: E402
 
 # =========================
 # CONFIG
@@ -907,6 +917,147 @@ def main() -> None:
     )
 
 
+HIPPO_LABELS = (("L", 17), ("R", 53))
+OASIS_DILATIONS_MM = (2, 4, 8)
+OASIS_MAPS = ("jac_det", "logjac", "mag", "strain_fro")
+
+
+def hippocampus_rois(
+    labels: np.ndarray, brain: np.ndarray, spacing: tuple[float, float, float]
+) -> list[tuple[str, str, int, np.ndarray]]:
+    """Núcleo, dilatações em mm (EDT físico) e casca de 4 mm, sempre dentro do cérebro."""
+    out = []
+    for side, lab in HIPPO_LABELS:
+        core = labels == lab
+        dist = distance_transform_edt(~core, sampling=spacing)
+        out.append(("hippocampus", side, lab, core & brain))
+        for r in OASIS_DILATIONS_MM:
+            out.append((f"hippocampus_d{r}", side, lab, (dist <= r) & brain))
+        out.append(("hippocampus_shell4", side, lab, (dist <= 4) & ~core & brain))
+    return out
+
+
+def _map_stat_columns(prefix: str, x: np.ndarray) -> dict[str, float]:
+    s = _stats_percentiles(x)
+    m = _stats_moments(x)
+    row = {f"{prefix}_{k}": s[k] for k in ("n", "mean", "std", "p05", "p50", "p95")}
+    row.update({f"{prefix}_{k}": m[k] for k in ("variance", "skewness", "kurtosis")})
+    return row
+
+
+def compute_oasis_maps(domain_img: ants.ANTsImage, warp_path: str) -> dict[str, np.ndarray]:
+    delta = load_nonlinear_displacement(domain_img, [warp_path])
+    jac = ants.create_jacobian_determinant_image(domain_img, delta, do_log=False).numpy()
+    arr = delta.numpy().astype(np.float32, copy=False)
+    return {
+        "jac_det": jac.astype(np.float32),
+        "logjac": np.log(np.clip(jac, 1e-6, None)).astype(np.float32),
+        "mag": np.sqrt((arr * arr).sum(-1)).astype(np.float32),
+        "strain_fro": _infinitesimal_strain_fro_map(
+            arr[..., 0], arr[..., 1], arr[..., 2], tuple(map(float, delta.spacing))
+        ),
+    }
+
+
+def _read_on_domain(path: str, domain: ants.ANTsImage) -> np.ndarray:
+    img = ants.image_read(path)
+    diff = _geometry_differences(img, domain)
+    if diff:
+        raise ValueError(f"geometria de {path} difere da imagem clínica: {'; '.join(diff)}")
+    return img.numpy()
+
+
+def main_oasis(diag: str, ids_csv: str | None = None) -> None:
+    warps_dir = f"./images/displacement_field_oasis_{diag.lower()}"
+    out_csv = f"{COHORT_DIR}/features_displacement_oasis_{diag.lower()}.csv"
+    run_dir = os.path.join(warps_dir, "features", COHORT)
+    os.makedirs(run_dir, exist_ok=True)
+    done_keys_path = os.path.join(run_dir, "done_keys.txt")
+    with open(os.path.join(run_dir, "run_meta.json"), "w", encoding="utf-8") as f:
+        json.dump({
+            "created_at": datetime.now().isoformat(timespec="seconds"),
+            "variant": f"dvf_oasis_{diag.lower()}",
+            "inputs": {"images_csv": IMAGES_CSV, "warps_dir": warps_dir, "ids_csv": ids_csv},
+            "outputs": {"out_csv": out_csv},
+            "domain": "imagem clínica (fixed do SyNRA)",
+            "sign": "jac_det > 1 = sujeito menor que o template (atrofia); inverso do disp ADNI",
+            "rois": ["hippocampus", *[f"hippocampus_d{r}" for r in OASIS_DILATIONS_MM], "hippocampus_shell4"],
+            "maps": list(OASIS_MAPS),
+        }, f, ensure_ascii=False, indent=2)
+
+    df = pd.read_csv(IMAGES_CSV)
+    ref_by_pt = oasis_refs.baseline_by_pt(df)
+    if ids_csv:
+        ids = set(pd.read_csv(ids_csv)["ID_IMG"].astype(str).str.strip())
+        df = df[df["ID_IMG"].astype(str).str.strip().isin(ids)]
+    done = load_done_keys(done_keys_path) if RESUME else set()
+    print(f"[INFO] oasis {diag} imagens={len(df)} feitas={len(done)} out={out_csv}", flush=True)
+
+    t0 = time.time()
+    processed = 0
+    skip_reason = {"resume": 0, "no_ref": 0, "missing_inputs": 0}
+    for r in df.itertuples(index=False):
+        id_pt, img_id = str(r.ID_PT), str(r.ID_IMG).strip()
+        if img_id in done:
+            skip_reason["resume"] += 1
+            continue
+        if id_pt not in ref_by_pt:
+            skip_reason["no_ref"] += 1
+            continue
+        sex, abin = ref_by_pt[id_pt]
+        tag = oasis_refs.ref_tag(diag, sex, abin)
+        warp_p = os.path.join(warps_dir, f"{img_id}_{tag}_1Warp.nii.gz")
+        subj_p = subject_path_for(CLINIC_DIR, img_id)
+        regions_p = os.path.join(REGIONS_DIR, f"{img_id}_regions.nii.gz")
+        bm_p = os.path.join(BRAIN_MASK_DIR, f"{img_id}_brain_mask.nii.gz")
+        if not all(os.path.isfile(p) for p in (warp_p, subj_p, regions_p, bm_p)):
+            skip_reason["missing_inputs"] += 1
+            continue
+
+        t_img = time.time()
+        domain = ants.image_read(subj_p)
+        maps = compute_oasis_maps(domain, warp_p)
+        labels = np.rint(_read_on_domain(regions_p, domain)).astype(np.int32)
+        brain = _read_on_domain(bm_p, domain) > 0.5
+        rows = []
+        for roi, side, lab, mask in hippocampus_rois(labels, brain, tuple(map(float, domain.spacing))):
+            cx, cy, cz = _centroid_physical(mask, domain)
+            row = {
+                "ID_PT": id_pt, "ID_IMG": img_id, "DIAG": str(getattr(r, "DIAG", "")),
+                "GROUP": str(getattr(r, "GROUP", "")), "SEX": str(r.SEX), "AGE": float(r.AGE),
+                "MRI_DATE": str(r.MRI_DATE), "ref_tag": tag, "roi": roi, "side": side,
+                "label": str(lab), "centroid_x": cx, "centroid_y": cy, "centroid_z": cz,
+            }
+            for name in OASIS_MAPS:
+                row.update(_map_stat_columns(name, maps[name][mask]))
+            rows.append(row)
+        append_csv(pd.DataFrame(rows), out_csv)
+        append_done_key(done_keys_path, img_id)
+        processed += 1
+        print(f"[OK] IMG={img_id} ref={tag} rows={len(rows)} dt={time.time() - t_img:.1f}s "
+              f"processed={processed}", flush=True)
+
+    print(f"[DONE] oasis {diag} processed={processed} reasons={skip_reason} "
+          f"elapsed={(time.time() - t0) / 60:.1f}min out={out_csv}", flush=True)
+
+
+def self_check_oasis() -> None:
+    labels = np.zeros((40, 40, 40), dtype=np.int32)
+    labels[10:14, 10:14, 10:14] = 17
+    labels[26:30, 26:30, 26:30] = 53
+    rois = hippocampus_rois(labels, np.ones_like(labels, bool), (1.0, 1.0, 1.0))
+    assert len(rois) == 10
+    by = {(roi, side): m for roi, side, _, m in rois}
+    for side in ("L", "R"):
+        vols = [by[(k, side)].sum() for k in ("hippocampus", "hippocampus_d2", "hippocampus_d4", "hippocampus_d8")]
+        assert vols[0] == 64 and vols == sorted(vols) and len(set(vols)) == 4, vols
+        assert not (by[("hippocampus_shell4", side)] & by[("hippocampus", side)]).any()
+        assert by[("hippocampus_shell4", side)].sum() == vols[2] - vols[0]
+    row = _map_stat_columns("jac_det", np.array([1.0, 2.0, 3.0]))
+    assert row["jac_det_mean"] == 2.0 and "jac_det_kurtosis" in row and len(row) == 9
+    print("ok: 3.2_feat_dvf --src oasis (ROIs núcleo/d2/d4/d8/shell4, colunas)")
+
+
 def self_check(diag: str = "CN") -> None:
     configure_anchor(diag)
     template = ants.from_numpy(np.zeros((3, 3, 3), dtype=np.float32))
@@ -932,10 +1083,15 @@ def self_check(diag: str = "CN") -> None:
 def cli(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description="DVF features CN|AD")
     p.add_argument("--diag", default="CN", choices=VALID_DIAG)
+    p.add_argument("--src", default="adni", choices=("adni", "oasis"))
+    p.add_argument("--ids-csv", default=None, help="CSV com coluna ID_IMG (só --src oasis)")
     p.add_argument("--self-check", action="store_true")
     args = p.parse_args(argv)
     if args.self_check:
-        self_check(args.diag)
+        self_check_oasis() if args.src == "oasis" else self_check(args.diag)
+        return
+    if args.src == "oasis":
+        main_oasis(args.diag, args.ids_csv)
         return
     configure_anchor(args.diag)
     main()

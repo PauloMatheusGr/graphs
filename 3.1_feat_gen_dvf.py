@@ -5,10 +5,13 @@ Gera warps ANTs (DVF): clínica → template groupwise estratificado (sexo/idade
 Uso:
     python 3.1_feat_gen_dvf.py              # âncora CN (default)
     python 3.1_feat_gen_dvf.py --diag AD    # âncora AD
+    python 3.1_feat_gen_dvf.py --src oasis --diag CN --ids-csv csvs/pilot/x.csv --shard 0/8
 
 Saídas:
   CN → images/displacement_field_v3/
   AD → images/displacement_field_v3_ad/
+  --src oasis → images/displacement_field_oasis_{cn,ad}/  (fixed=clínica, moving=template OASIS
+    em MNI, SyNRA CC r4 100x70x50x20; o 1Warp fica na grade da imagem clínica)
 
 Feats: 3.2_feat_dvf.py --diag {CN|AD}
 DIAG/GROUP do paciente não escolhem o template — só SEX e idade baseline.
@@ -22,8 +25,13 @@ import shutil
 import sys
 from dataclasses import dataclass
 
+import time
+
 import ants
 import pandas as pd
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "modules"))
+import oasis_refs  # noqa: E402
 
 COHORT = "all_population"
 DEFAULT_IMAGES_CSV = f"csvs/cohorts/{COHORT}/all_population_True.csv"
@@ -37,7 +45,9 @@ SLOT_ORDER = {"baseline": 0, "m12": 1, "m24": 2, "t0": 0, "t1": 1, "t2": 2}
 
 # Set by configure_anchor()
 ANCHOR_DIAG = "CN"
+SRC = "adni"
 warps_output = "images/displacement_field_v3"
+SEED = 42
 
 
 @dataclass(frozen=True)
@@ -48,13 +58,17 @@ class BaselineReference:
     ref_path: str
 
 
-def configure_anchor(diag: str) -> None:
-    global ANCHOR_DIAG, warps_output
+def configure_anchor(diag: str, src: str = "adni") -> None:
+    global ANCHOR_DIAG, SRC, warps_output
     diag = str(diag).upper().strip()
     if diag not in VALID_DIAG:
         raise ValueError(f"diag={diag!r}; use {VALID_DIAG}")
     ANCHOR_DIAG = diag
-    if diag == "CN":
+    SRC = src
+    if src == "oasis":
+        warps_output = f"images/displacement_field_oasis_{diag.lower()}"
+        tmp_default = f"./{warps_output}/_tmp_ants"
+    elif diag == "CN":
         warps_output = "images/displacement_field_v3"
         tmp_default = "./images/displacement_field_v3/_tmp_ants"
     else:
@@ -142,6 +156,14 @@ def _sort_images_chronologically(df: pd.DataFrame) -> pd.DataFrame:
 
 def build_baseline_reference_map(df_images: pd.DataFrame) -> dict[str, BaselineReference]:
     """Template estratificado por SEX/idade baseline (âncora = ANCHOR_DIAG)."""
+    if SRC == "oasis":
+        return {
+            pt: BaselineReference(
+                sex=sex, age=-1, age_range=abin,
+                ref_path=oasis_refs.template_path(ANCHOR_DIAG, sex, abin),
+            )
+            for pt, (sex, abin) in oasis_refs.baseline_by_pt(df_images).items()
+        }
     df = _sort_images_chronologically(df_images)
     ref_by_pt: dict[str, BaselineReference] = {}
     for id_pt, g in df.groupby("ID_PT", sort=False):
@@ -156,20 +178,63 @@ def build_baseline_reference_map(df_images: pd.DataFrame) -> dict[str, BaselineR
     return ref_by_pt
 
 
+def _register(fixed_path: str, moving_path: str, *, verbose: bool) -> dict:
+    fixed_img = ants.image_read(fixed_path)
+    moving_img = ants.image_read(moving_path)
+    if SRC == "oasis":
+        # ponytail: antsRegistrationSyN[s,4] não serve, ANTsPy 0.6.3 força CC raio 2 no modo não-quick.
+        reg = ants.registration(
+            fixed=fixed_img, moving=moving_img, type_of_transform="SyNRA",
+            syn_metric="CC", syn_sampling=4, reg_iterations=(100, 70, 50, 20),
+            verbose=verbose,
+        )
+        fwd = reg["fwdtransforms"]
+        assert sum(str(p).endswith(".mat") for p in fwd) == 1, fwd
+        assert sum(str(p).endswith("Warp.nii.gz") for p in fwd) == 1, fwd
+        return reg
+    return ants.registration(
+        fixed=fixed_img, moving=moving_img, type_of_transform="SyN", interpolator="bspline",
+    )
+
+
+def select_rows(df: pd.DataFrame, ids_csv: str | None, shard: str | None) -> pd.DataFrame:
+    if ids_csv:
+        ids = set(pd.read_csv(ids_csv)["ID_IMG"].astype(str).str.strip())
+        df = df[df["ID_IMG"].astype(str).str.strip().isin(ids)]
+        missing = ids - set(df["ID_IMG"].astype(str).str.strip())
+        if missing:
+            raise ValueError(f"{len(missing)} ID_IMG de {ids_csv} fora do CSV de imagens: {sorted(missing)[:5]}")
+    if shard:
+        k, n = map(int, shard.split("/"))
+        assert 0 <= k < n, shard
+        df = df.iloc[k::n]
+    return df
+
+
 def run_individual_registrations(
-    csv_images_path: str, *, min_output_bytes: int = DEFAULT_MIN_OUTPUT_BYTES
+    csv_images_path: str,
+    *,
+    min_output_bytes: int = DEFAULT_MIN_OUTPUT_BYTES,
+    ids_csv: str | None = None,
+    shard: str | None = None,
+    verbose_first: bool = False,
 ) -> None:
-    df_imgs = pd.read_csv(csv_images_path)
+    df_all = pd.read_csv(csv_images_path)
     required = {"ID_PT", "ID_IMG", "SEX", "AGE", "MRI_DATE"}
-    missing = required - set(df_imgs.columns)
+    missing = required - set(df_all.columns)
     if missing:
         raise ValueError(f"CSV sem colunas obrigatorias: {sorted(missing)}")
 
-    ref_by_pt = build_baseline_reference_map(df_imgs)
+    # Baseline vem do CSV inteiro; o filtro só restringe quais imagens registrar.
+    ref_by_pt = build_baseline_reference_map(df_all)
+    df_imgs = select_rows(df_all, ids_csv, shard)
     n_total = len(df_imgs)
     n_skip = n_ok = n_err = 0
+    times_csv = os.path.join(
+        warps_output, f"reg_times_{shard.replace('/', 'of')}.csv" if shard else "reg_times.csv"
+    )
 
-    for idx, row in df_imgs.iterrows():
+    for idx, (_, row) in enumerate(df_imgs.iterrows()):
         img_id = str(row["ID_IMG"]).strip()
         id_pt = str(row["ID_PT"]).strip()
         ref = ref_by_pt.get(id_pt)
@@ -178,7 +243,11 @@ def run_individual_registrations(
             n_skip += 1
             continue
 
-        ref_tag = f"{ANCHOR_DIAG}_SEX-{ref.sex}_AGE-{ref.age_range}"
+        ref_tag = (
+            oasis_refs.ref_tag(ANCHOR_DIAG, ref.sex, ref.age_range)
+            if SRC == "oasis"
+            else f"{ANCHOR_DIAG}_SEX-{ref.sex}_AGE-{ref.age_range}"
+        )
         affine_out = os.path.join(warps_output, f"{img_id}_{ref_tag}_0GenericAffine.mat")
         warp_out = os.path.join(warps_output, f"{img_id}_{ref_tag}_1Warp.nii.gz")
         inv_warp_out = os.path.join(
@@ -200,33 +269,32 @@ def run_individual_registrations(
                 reason=f"Registro incompleto para {img_id}",
             )
 
-        fixed_path = ref.ref_path
-        moving_path = subject_path_for(img_id)
-        if not os.path.isfile(moving_path):
-            print(f"[{idx + 1}/{n_total}] [SKIP] {img_id}: imagem clinica ausente: {moving_path}")
+        tpl_path, subj_path = ref.ref_path, subject_path_for(img_id)
+        if SRC == "oasis":
+            fixed_path, moving_path, roles = subj_path, tpl_path, "fixed=sujeito, moving=template"
+        else:
+            fixed_path, moving_path, roles = tpl_path, subj_path, "fixed=template, moving=sujeito"
+        if not os.path.isfile(subj_path):
+            print(f"[{idx + 1}/{n_total}] [SKIP] {img_id}: imagem clinica ausente: {subj_path}")
             n_skip += 1
             continue
-        if not os.path.isfile(fixed_path):
+        if not os.path.isfile(tpl_path):
             print(
                 f"[{idx + 1}/{n_total}] [SKIP] {img_id}: "
-                f"template {ANCHOR_DIAG} ausente: {fixed_path}"
+                f"template {ANCHOR_DIAG} ausente: {tpl_path}"
             )
             n_skip += 1
             continue
 
         print(
             f"[{idx + 1}/{n_total}] [RUN] {img_id} "
-            f"(paciente={id_pt}, fixed=template {ref_tag}, moving=sujeito)"
+            f"(paciente={id_pt}, ref={ref_tag}, {roles})",
+            flush=True,
         )
         try:
-            fixed_img = ants.image_read(fixed_path)
-            moving_img = ants.image_read(moving_path)
-            reg = ants.registration(
-                fixed=fixed_img,
-                moving=moving_img,
-                type_of_transform="SyN",
-                interpolator="bspline",
-            )
+            t_reg = time.time()
+            reg = _register(fixed_path, moving_path, verbose=verbose_first and n_ok == 0)
+            dt = time.time() - t_reg
 
             fwd = reg.get("fwdtransforms", []) or []
             inv = reg.get("invtransforms", []) or []
@@ -247,7 +315,10 @@ def run_individual_registrations(
             shutil.copy2(affine_src, affine_out)
             shutil.copy2(fwd_warp_src, warp_out)
             shutil.copy2(inv_warp_src, inv_warp_out)
-            print(f"[{idx + 1}/{n_total}] [OK] {img_id} -> {warp_out}")
+            pd.DataFrame([{"ID_IMG": img_id, "ref_tag": ref_tag, "seconds": round(dt, 1),
+                           "threads": os.environ.get("ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS", "")}]
+                         ).to_csv(times_csv, mode="a", header=not os.path.isfile(times_csv), index=False)
+            print(f"[{idx + 1}/{n_total}] [OK] {img_id} -> {warp_out} ({dt / 60:.1f} min)", flush=True)
             n_ok += 1
         except Exception as e:
             print(f"[{idx + 1}/{n_total}] [ERROR] {img_id}: {e}")
@@ -262,7 +333,14 @@ def run_individual_registrations(
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description="DVF warps: clínica → template CN|AD")
     p.add_argument("--diag", default="CN", choices=VALID_DIAG, help="âncora normativa")
+    p.add_argument("--src", default="adni", choices=("adni", "oasis"), help="origem dos templates")
     p.add_argument("--csv", default=DEFAULT_IMAGES_CSV, help="CSV de imagens")
+    p.add_argument("--ids-csv", default=None, help="CSV com coluna ID_IMG para restringir")
+    p.add_argument("--shard", default=None, help="k/n: processa linhas k::n")
+    p.add_argument("--threads", type=int, default=1,
+                   help="threads ITK (oasis); 1 = determinístico com --random-seed")
+    p.add_argument("--verbose-first", action="store_true",
+                   help="imprime o comando antsRegistration no primeiro registro")
     p.add_argument(
         "--min-bytes",
         type=int,
@@ -270,9 +348,15 @@ def main(argv: list[str] | None = None) -> None:
         help="tamanho mínimo warp NIfTI",
     )
     args = p.parse_args(argv)
-    configure_anchor(args.diag)
-    print(f"[INFO] ANCHOR={ANCHOR_DIAG} warps={warps_output}", flush=True)
-    run_individual_registrations(args.csv, min_output_bytes=args.min_bytes)
+    if args.src == "oasis":
+        ants.config.set_ants_deterministic(True, SEED)
+        os.environ["ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS"] = str(args.threads)
+    configure_anchor(args.diag, args.src)
+    print(f"[INFO] SRC={SRC} ANCHOR={ANCHOR_DIAG} warps={warps_output} shard={args.shard}", flush=True)
+    run_individual_registrations(
+        args.csv, min_output_bytes=args.min_bytes, ids_csv=args.ids_csv,
+        shard=args.shard, verbose_first=args.verbose_first,
+    )
 
 
 if __name__ == "__main__":

@@ -6,6 +6,9 @@ ICV: homotetia de volume, não divisão crua.
   SurfaceVolumeRatio * ICV^{1/3}  (já A/V; fica = A'/V')
   gm/wm/csf_norm: sem ICV
 5_ablation --cohort X lê csvs/cohorts/X/ablation/ — 4_ escreve aí.
+
+disp OASIS (3.2 --src oasis): ablation/<roi>/disp_oasis{,_ad,_cnad}_long.csv para cada ROI
+da família hipocampo. `--oasis-only` exporta só isso, sem refazer rad/vol/disp ADNI.
 """
 
 from __future__ import annotations
@@ -17,8 +20,10 @@ _MOD = Path(__file__).resolve().parent / "modules"
 if str(_MOD) not in sys.path:
     sys.path.insert(0, str(_MOD))
 
+import argparse
+
 import pandas as pd
-from ablation_prep import assign_scanner_batch, export_ablation_long_only
+from ablation_prep import assign_scanner_batch, export_ablation_long_only, filter_rois
 
 FEATURES_DIR = Path("csvs/cohorts/all_population")
 # (pasta 5_ablation --cohort, PARAM_SOFT_PMCI)
@@ -32,6 +37,8 @@ POST_JOBS: tuple[tuple[str, bool], ...] = (
 MERGE_KEYS = ["ID_IMG", "roi", "side", "label"]
 DISP_FEATURES = "features_displacement_v4.csv"
 DISP_FEATURES_AD = "features_displacement_v4_ad.csv"
+DISP_OASIS_CN = "features_displacement_oasis_cn.csv"
+DISP_OASIS_AD = "features_displacement_oasis_ad.csv"
 
 # Meta kept once on CN side when building disp_cnad (feats get cn_/ad_ prefix).
 _DISP_CNAD_META = {
@@ -360,7 +367,42 @@ def export_one(
     print(f"ablation export OK: {len(paths)} → {out_dir / 'ablation'}")
 
 
+def export_oasis(cohort: str, soft_pmci: bool) -> None:
+    """disp_oasis / _ad / _cnad em ablation/<roi>/ para cada ROI da família hipocampo."""
+    long_path = resolve_longitudinal(cohort, soft_pmci)
+    long = pd.read_csv(long_path)
+    _check_soft_flag(long, long_path, soft_pmci)
+    stores = {
+        name: build_feat_disp_all(load_disp_store(fn), long)
+        for name, fn in (("disp_oasis_long", DISP_OASIS_CN), ("disp_oasis_ad_long", DISP_OASIS_AD))
+        if (FEATURES_DIR / fn).is_file()
+    }
+    if len(stores) == 2:
+        stores["disp_oasis_cnad_long"] = build_feat_disp_cnad(
+            stores["disp_oasis_long"], stores["disp_oasis_ad_long"]
+        )
+    rois = sorted({r for df in stores.values() for r in df["roi"].astype(str).unique()})
+    for roi in rois:
+        out_dir = Path("csvs/cohorts") / cohort / "ablation" / roi
+        out_dir.mkdir(parents=True, exist_ok=True)
+        for name, df in stores.items():
+            sub = filter_rois(df, roi)
+            sub.to_csv(out_dir / f"{name}.csv", index=False)
+            print(f"[oasis] {cohort}/{roi}/{name}.csv rows={len(sub)} pts={sub['ID_PT'].nunique()}")
+
+
 def main() -> None:
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--oasis-only", action="store_true",
+                   help="só exporta disp_oasis* (não refaz rad/vol/disp ADNI)")
+    args = p.parse_args()
+    if args.oasis_only:
+        oasis = [FEATURES_DIR / f for f in (DISP_OASIS_CN, DISP_OASIS_AD)]
+        if not any(f.is_file() for f in oasis):
+            raise FileNotFoundError(f"nenhum CSV OASIS: {oasis}")
+        for cohort, soft in POST_JOBS:
+            export_oasis(cohort, soft)
+        return
     _selfcheck_icv_homothety()
     required = [
         FEATURES_DIR / "features_volumetric.csv",
@@ -381,6 +423,8 @@ def main() -> None:
         print(f"[WARN] {disp_ad_path} ausente — só exporta disp_long (CN)")
     for cohort, soft in POST_JOBS:
         export_one(merged_all, disp_all, cohort, soft, disp_ad_all=disp_ad_all)
+        if (FEATURES_DIR / DISP_OASIS_CN).is_file() or (FEATURES_DIR / DISP_OASIS_AD).is_file():
+            export_oasis(cohort, soft)
     print(
         f"features←{FEATURES_DIR} | disp←{DISP_FEATURES} "
         f"| disp_ad←{DISP_FEATURES_AD if disp_ad_all is not None else 'SKIP'} "

@@ -104,6 +104,9 @@ def modality_collapsed_columns(
         "disp": keep_disp_feat,
         "disp_ad": keep_disp_feat,
         "disp_cnad": keep_disp_feat,
+        "disp_oasis": keep_disp_feat,
+        "disp_oasis_ad": keep_disp_feat,
+        "disp_oasis_cnad": keep_disp_feat,
         "firstorder": keep_firstorder_feat,
     }
     if modality == "all":
