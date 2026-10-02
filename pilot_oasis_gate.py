@@ -5,6 +5,8 @@
   python pilot_oasis_gate.py ids-b    # baselines de 48m_6m ∪ 48m_6m_soft_False
   python pilot_oasis_gate.py gate-a   # tempo, |rho| jac_det × volume/ICV, AUC univariada CN×AD
   python pilot_oasis_gate.py gate-b   # sMCI×pMCI pareado: × disp ADNI, × vol, d2 × núcleo
+  python pilot_oasis_gate.py ids-full                  # todas as visitas das coortes
+  python pilot_oasis_gate.py compare --rep t1_r10      # mesmo pareamento do gate-b; t1_r10 | t1_ols
   python pilot_oasis_gate.py --self-check
 
 Pré-especificado: ROI principal = hippocampus_d2 (esfera de 2 voxels, literatura); núcleo
@@ -26,6 +28,7 @@ from sklearn.metrics import roc_auc_score
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "modules"))
 from ablation_analysis import explode_patient_predictions  # noqa: E402
+from ablation_representation import RESULTS_ROOT_BY_PROTOCOL  # noqa: E402
 from stats_compare import bootstrap_auc_diff_test  # noqa: E402
 
 SEED = 42
@@ -35,6 +38,7 @@ COHORTS = ("48m_6m", "48m_6m_soft_False")
 PRIMARY_ROI = "hippocampus_d2"
 CORE_ROI = "hippocampus"
 ROIS = (PRIMARY_ROI, CORE_ROI)
+LONG_REPS = ("t1_r10", "t1_ols")  # S0,R10 (2 visitas) e D (OLS, 3 visitas)
 PAIRS = (("disp_oasis", "disp"), ("disp_oasis_ad", "disp_ad"), ("disp_oasis_cnad", "disp_cnad"))
 OLD_FEAT = {"cn": "features_displacement_v4.csv", "ad": "features_displacement_v4_ad.csv"}
 NEW_FEAT = {"cn": "features_displacement_oasis_cn.csv", "ad": "features_displacement_oasis_ad.csv"}
@@ -65,6 +69,17 @@ def ids_b() -> Path:
     p = PILOT / "oasis_gateB_ids.csv"
     b[["ID_IMG", "ID_PT", "GROUP", "SEX", "AGE"]].to_csv(p, index=False)
     print(f"{len(b)} baselines → {p}")
+    return p
+
+
+def ids_full() -> Path:
+    """Todas as visitas (t0/t1/t2) das coortes: base para R10 (2 visitas) e OLS (3 visitas)."""
+    long = pd.concat([pd.read_csv(f"csvs/cohorts/{c}/adnimerged_longitudinal.csv") for c in COHORTS])
+    b = long.drop_duplicates("ID_IMG").sort_values(["slot", "ID_PT"])  # t1 antes de t2: R10 fica pronto antes
+    PILOT.mkdir(parents=True, exist_ok=True)
+    p = PILOT / "oasis_full_ids.csv"
+    b[["ID_IMG", "ID_PT", "GROUP", "SEX", "AGE", "slot"]].to_csv(p, index=False)
+    print(b["slot"].value_counts().sort_index().to_string(), f"\n{len(b)} imagens → {p}")
     return p
 
 
@@ -127,12 +142,12 @@ def patient_scores(d: pd.DataFrame) -> pd.DataFrame:
     return explode_patient_predictions(d).groupby("ID_PT", as_index=False).agg(y=("y", "first"), score=("score", "mean"))
 
 
-def new_results_path(cohort: str, roi: str, mod: str) -> Path:
-    return Path(f"csvs/cohorts/{cohort}/ablation_results_oasis/{roi}/t1_only/{mod}/ablation_results_all.csv")
+def new_results_path(cohort: str, roi: str, mod: str, rep: str = "t1_only") -> Path:
+    return Path(f"csvs/cohorts/{cohort}/ablation_results_oasis/{roi}/{rep}/{mod}/ablation_results_all.csv")
 
 
-def ref_results_path(cohort: str, mod: str) -> Path:
-    return Path(f"csvs/cohorts/{cohort}/ablation_results_t1_only/{mod}/ablation_results_all.csv")
+def ref_results_path(cohort: str, mod: str, rep: str = "t1_only") -> Path:
+    return Path(f"csvs/cohorts/{cohort}/{RESULTS_ROOT_BY_PROTOCOL['abs'][rep]}/{mod}/ablation_results_all.csv")
 
 
 def cn_ad_auc(path: Path) -> float:
@@ -158,24 +173,34 @@ def paired_auc(p_new: Path, p_ref: Path, n_boot: int) -> dict:
             "delta": d, "ci95_lo": lo, "ci95_hi": hi, "p_one": p1}
 
 
-def gate_b(n_boot: int = 5000) -> str:
+def compare(rep: str, out: Path, n_boot: int = 5000) -> pd.DataFrame:
+    """sMCI×pMCI pareado na representação rep: OASIS × disp ADNI, × vol, d2 × núcleo OASIS."""
     rows = []
     for cohort in COHORTS:
         for roi in ROIS:
             for new_mod, old_mod in PAIRS:
-                p_new = new_results_path(cohort, roi, new_mod)
-                refs = [(old_mod, ref_results_path(cohort, old_mod)), ("vol", ref_results_path(cohort, "vol"))]
+                p_new = new_results_path(cohort, roi, new_mod, rep)
+                refs = [(old_mod, ref_results_path(cohort, old_mod, rep)), ("vol", ref_results_path(cohort, "vol", rep))]
                 if roi == PRIMARY_ROI:
-                    refs.append((f"{new_mod}@{CORE_ROI}", new_results_path(cohort, CORE_ROI, new_mod)))
+                    refs.append((f"{new_mod}@{CORE_ROI}", new_results_path(cohort, CORE_ROI, new_mod, rep)))
                 for ref, p_ref in refs:
                     if not p_new.is_file() or not p_ref.is_file():
                         print(f"[skip] {cohort} {roi} {new_mod} × {ref}: falta {p_new if not p_new.is_file() else p_ref}")
                         continue
-                    rows.append({"cohort": cohort, "roi": roi, "new": new_mod, "ref": ref,
+                    rows.append({"rep": rep, "cohort": cohort, "roi": roi, "new": new_mod, "ref": ref,
                                  **paired_auc(p_new, p_ref, n_boot), "auc_cn_ad_new": cn_ad_auc(p_new)})
     t = pd.DataFrame(rows)
-    t.to_csv(PILOT / "gateB_summary.csv", index=False)
-    print(t.round(3).to_string(index=False))
+    assert not t.empty, f"nenhum par com resultados para {rep}"
+    t.to_csv(out, index=False)
+    print(t.round(3).to_string(index=False), f"\n→ {out}")
+    for r in t.itertuples():
+        side = "> ref" if r.ci95_lo > 0 else "< ref" if r.ci95_hi < 0 else "≈ ref (IC cruza 0)"
+        print(f"  {r.cohort} {r.roi} {r.new} × {r.ref}: Δ={r.delta:+.3f} [{r.ci95_lo:+.3f}, {r.ci95_hi:+.3f}] → {side}")
+    return t
+
+
+def gate_b(n_boot: int = 5000) -> str:
+    t = compare("t1_only", PILOT / "gateB_summary.csv", n_boot)
     prim = t[t["roi"] == PRIMARY_ROI]
     vs_disp = prim[prim["ref"].isin([o for _, o in PAIRS])]
     cn_ad = prim.loc[(prim["new"] == "disp_oasis") & (prim["cohort"] == COHORTS[0]), "auc_cn_ad_new"].max()
@@ -186,9 +211,6 @@ def gate_b(n_boot: int = 5000) -> str:
     else:
         verdict = "FALHA (reportar como resultado negativo)"
     print(f"GATE B ({PRIMARY_ROI}, CN×AD disp_oasis={cn_ad:.3f}) × disp ADNI: {verdict}")
-    for r in t[t["ref"] != t["new"].map(dict(PAIRS))].itertuples():
-        side = "> ref" if r.ci95_lo > 0 else "< ref" if r.ci95_hi < 0 else "≈ ref (IC cruza 0)"
-        print(f"  {r.cohort} {r.roi} {r.new} × {r.ref}: Δ={r.delta:+.3f} [{r.ci95_lo:+.3f}, {r.ci95_hi:+.3f}] → {side}")
     return verdict
 
 
@@ -198,15 +220,21 @@ def self_check() -> None:
     assert folds(r) == folds(r2)
     r2.loc[1, "test_id_pts"] = '["d"]'
     assert folds(r) != folds(r2)
+    assert "/ablation_results_ols/disp_ad/" in str(ref_results_path("c", "disp_ad", "t1_ols"))
+    assert "/ablation_results_r10/vol/" in str(ref_results_path("c", "vol", "t1_r10"))
+    assert "/hippocampus_d2/t1_r10/disp_oasis/" in str(new_results_path("c", PRIMARY_ROI, "disp_oasis", "t1_r10"))
     print("ok: pilot_oasis_gate")
 
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
-    p.add_argument("cmd", nargs="?", choices=("ids-a", "ids-b", "gate-a", "gate-b"))
+    p.add_argument("cmd", nargs="?", choices=("ids-a", "ids-b", "ids-full", "gate-a", "gate-b", "compare"))
+    p.add_argument("--rep", default="t1_only", choices=("t1_only", *LONG_REPS), help="compare: representação")
     p.add_argument("--self-check", action="store_true")
     a = p.parse_args()
     if a.self_check or a.cmd is None:
         self_check()
+    elif a.cmd == "compare":
+        compare(a.rep, PILOT / f"compare_{a.rep}.csv")
     else:
-        {"ids-a": ids_a, "ids-b": ids_b, "gate-a": gate_a, "gate-b": gate_b}[a.cmd]()
+        {"ids-a": ids_a, "ids-b": ids_b, "ids-full": ids_full, "gate-a": gate_a, "gate-b": gate_b}[a.cmd]()

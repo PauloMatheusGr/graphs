@@ -149,10 +149,26 @@ SHARDS=12 bash run_dvf_oasis_pilot.sh gate-b
 
 Resultado: `csvs/pilot/gateB_summary.csv`.
 
-## 6. Rodada completa (só se Gate B passar)
+## 6. Rodada completa (só se Gate B passar) — `run_dvf_oasis_full.sh`
 
-- Todas as imagens; reps t1_only / t1_d21 / t1_d21_d32; tabela final com d2 (principal) e
-  núcleo (controle).
+| Abordagem | Representação | De onde sai |
+|---|---|---|
+| 1 visita | `t1_only` | Gate B (`gateB_summary.csv`) |
+| 2 visitas — S0,R10 (descarta i2; T1 + taxa i0→i1, tempo real) | `t1_r10` | `full` |
+| 3 visitas — D (T1 + inclinação OLS em (tₖ, Sₖ)) | `t1_ols` | `full` |
+
+1326 imagens (442 pacientes × t0/t1/t2); as 442 baselines já vêm do Gate B → 884 novas × 2
+âncoras ≈ 1768 registros × ~3,2 h / 24 núcleos ≈ **~10 dias**. t1 é registrado antes de t2.
+
+```bash
+SHARDS=12 bash run_dvf_oasis_full.sh register   # registro + 3.2 + 4_ --oasis-only
+JOBS=4 bash run_dvf_oasis_full.sh refs          # disp_ad/disp_cnad ADNI em t1_r10/t1_ols (faltam)
+JOBS=4 bash run_dvf_oasis_full.sh ablate        # 24 ablações OASIS + compare_t1_r10/t1_ols.csv
+```
+
+`refs` não depende da OASIS: pode rodar a qualquer momento com CPU livre. Saídas em
+`csvs/pilot/compare_t1_r10.csv` e `compare_t1_ols.csv` (mesmas comparações do Gate B).
+
 - Opcional: fusão `vol` + `disp_oasis` (DVF como complemento do volume).
 
 ## Pendências menores
