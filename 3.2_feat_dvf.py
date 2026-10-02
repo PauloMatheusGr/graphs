@@ -14,8 +14,8 @@ Saídas:
   AD → features_displacement_v4_ad.csv | warps displacement_field_v3_ad/
 
 Modo --src oasis (3.1 --src oasis): domínio = imagem clínica, labels/máscara lidas direto.
-  ROIs hipocampo núcleo / d2 / d4 / d8 (dilatação EDT em mm) / shell4 = d4 sem núcleo.
-  Mapas jac_det, logjac, mag, strain_fro (ε infinitesimal).
+  ROIs hipocampo núcleo e hippocampus_d2 = núcleo ∪ voxels a ≤ 2 mm (dilatação por esfera de
+  2 voxels a 1 mm, como na literatura). Mapas jac_det, logjac, mag, strain_fro (ε infinitesimal).
   Sinal: fixed=sujeito, então jac_det > 1 = sujeito menor que o template (atrofia).
   CN → features_displacement_oasis_cn.csv | AD → features_displacement_oasis_ad.csv
 """
@@ -33,7 +33,7 @@ from pathlib import Path
 import ants
 import numpy as np
 import pandas as pd
-from scipy.ndimage import distance_transform_edt
+from scipy.ndimage import binary_dilation, distance_transform_edt
 from scipy.stats import kurtosis, skew
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "modules"))
@@ -918,22 +918,20 @@ def main() -> None:
 
 
 HIPPO_LABELS = (("L", 17), ("R", 53))
-OASIS_DILATIONS_MM = (2, 4, 8)
+OASIS_DILATION_MM = 2
 OASIS_MAPS = ("jac_det", "logjac", "mag", "strain_fro")
 
 
 def hippocampus_rois(
     labels: np.ndarray, brain: np.ndarray, spacing: tuple[float, float, float]
 ) -> list[tuple[str, str, int, np.ndarray]]:
-    """Núcleo, dilatações em mm (EDT físico) e casca de 4 mm, sempre dentro do cérebro."""
+    """Núcleo e núcleo dilatado em mm (EDT físico), dentro do cérebro."""
     out = []
     for side, lab in HIPPO_LABELS:
         core = labels == lab
         dist = distance_transform_edt(~core, sampling=spacing)
         out.append(("hippocampus", side, lab, core & brain))
-        for r in OASIS_DILATIONS_MM:
-            out.append((f"hippocampus_d{r}", side, lab, (dist <= r) & brain))
-        out.append(("hippocampus_shell4", side, lab, (dist <= 4) & ~core & brain))
+        out.append((f"hippocampus_d{OASIS_DILATION_MM}", side, lab, (dist <= OASIS_DILATION_MM) & brain))
     return out
 
 
@@ -981,7 +979,7 @@ def main_oasis(diag: str, ids_csv: str | None = None) -> None:
             "outputs": {"out_csv": out_csv},
             "domain": "imagem clínica (fixed do SyNRA)",
             "sign": "jac_det > 1 = sujeito menor que o template (atrofia); inverso do disp ADNI",
-            "rois": ["hippocampus", *[f"hippocampus_d{r}" for r in OASIS_DILATIONS_MM], "hippocampus_shell4"],
+            "rois": ["hippocampus", f"hippocampus_d{OASIS_DILATION_MM}"],
             "maps": list(OASIS_MAPS),
         }, f, ensure_ascii=False, indent=2)
 
@@ -1046,16 +1044,16 @@ def self_check_oasis() -> None:
     labels[10:14, 10:14, 10:14] = 17
     labels[26:30, 26:30, 26:30] = 53
     rois = hippocampus_rois(labels, np.ones_like(labels, bool), (1.0, 1.0, 1.0))
-    assert len(rois) == 10
+    assert len(rois) == 4
     by = {(roi, side): m for roi, side, _, m in rois}
-    for side in ("L", "R"):
-        vols = [by[(k, side)].sum() for k in ("hippocampus", "hippocampus_d2", "hippocampus_d4", "hippocampus_d8")]
-        assert vols[0] == 64 and vols == sorted(vols) and len(set(vols)) == 4, vols
-        assert not (by[("hippocampus_shell4", side)] & by[("hippocampus", side)]).any()
-        assert by[("hippocampus_shell4", side)].sum() == vols[2] - vols[0]
+    ball = np.sum(np.square(np.indices((5, 5, 5)) - 2), axis=0) <= 4
+    for side, lab in HIPPO_LABELS:
+        core, d2 = by[("hippocampus", side)], by[("hippocampus_d2", side)]
+        assert core.sum() == 64 and (d2 & core).sum() == 64 and d2.sum() > 64
+        assert (d2 == binary_dilation(labels == lab, structure=ball)).all(), "d2 ≠ dilatação esfera r=2 voxels"
     row = _map_stat_columns("jac_det", np.array([1.0, 2.0, 3.0]))
     assert row["jac_det_mean"] == 2.0 and "jac_det_kurtosis" in row and len(row) == 9
-    print("ok: 3.2_feat_dvf --src oasis (ROIs núcleo/d2/d4/d8/shell4, colunas)")
+    print("ok: 3.2_feat_dvf --src oasis (ROIs núcleo/d2 = esfera r=2 voxels, colunas)")
 
 
 def self_check(diag: str = "CN") -> None:

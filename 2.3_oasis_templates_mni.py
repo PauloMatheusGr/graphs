@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Templates OASIS-3 em MNI152 com o mesmo protocolo da ADNI.
+"""Templates OASIS-3 em MNI152.
 
-  preproc/hist_match.py (histogram_match_image2 → MNI) → 2.1 (Rigid → MNI 1 mm) → 2.2 (groupwise SyN)
+  preproc/hist_match.py (histogram_match_image2 → MNI) → 2.1 (Rigid → MNI 1 mm), como a ADNI;
+  build = ants.build_template (atualização de forma + Sharpen), SyN MI com iterações na
+  resolução máxima (TEMPLATE_REG). Mais robusto que o 2.2 da ADNI (SyN padrão 40x20x0).
 
 Estratos DIAG (CN|AD) × SEX × década (60-69, 70-79, 80-89) da planilha oasis3merged.csv, com
 idade no exame = AGE (entrada no estudo) + MRI_DATE/365.25. Uma sessão por paciente: a primeira
@@ -24,6 +26,7 @@ import importlib.util
 import os
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 import ants
@@ -49,6 +52,10 @@ N_MAX = 20
 MIN_N = 5  # ponytail: abaixo disso a média de poucos sujeitos vira anatomia individual; usa a década vizinha
 SEED = 42
 MIN_NCC_RIGID = 0.15  # ADNI ~0.30; orientação errada dá ~0.09
+TEMPLATE_ITERS = 4
+# ponytail: MI, não CC r4 — CC na resolução máxima ~3 h/registro (semanas por template);
+# imagens já hist-matched ao MNI, então MI basta para T1×T1.
+TEMPLATE_REG = {"type_of_transform": "SyN", "syn_metric": "mattes", "reg_iterations": (100, 70, 50, 20)}
 
 
 def _load(name: str, file: str):
@@ -168,14 +175,20 @@ def build(diag: str, sex: str, abin: str) -> None:
         print(f"[SKIP] {out}")
         return
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    gw = _load("groupwise22", "2.2_groupwise_ants.py")
+    imgs = [ants.image_read(str(p)) for p in paths]
     tmp_base = ROOT / "images" / "groupwise" / "references" / "_tmp_ants"
     tmp_base.mkdir(parents=True, exist_ok=True)
+    t_all = time.time()
     with tempfile.TemporaryDirectory(prefix=f"oasis_{diag}{sex}{abin}_", dir=tmp_base) as tmp:
-        gw._set_tmp_env(Path(tmp))
-        template = gw.build_groupwise_template(paths, gw.N_ITER_TEMPLATE, gw.TYPE_OF_TRANSFORM)
+        os.environ["TMPDIR"] = tempfile.tempdir = tmp
+        template = None
+        for it in range(1, TEMPLATE_ITERS + 1):
+            t0 = time.time()
+            template = ants.build_template(initial_template=template, image_list=imgs, iterations=1, **TEMPLATE_REG)
+            print(f"[build] {diag} {sex} {abin} iter {it}/{TEMPLATE_ITERS} N={len(imgs)} "
+                  f"{(time.time() - t0) / 60:.1f} min", flush=True)
     ants.image_write(template, str(out))
-    print(f"[OK] {out}", flush=True)
+    print(f"[OK] {out} {(time.time() - t_all) / 3600:.2f} h", flush=True)
 
 
 def qc() -> None:

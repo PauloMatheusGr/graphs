@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Piloto DVF OASIS: templates OASIS em MNI, SyNRA CC r4, hipocampo núcleo/d2/d4/d8/shell4.
-#   bash run_dvf_oasis_pilot.sh templates   # 2.3: OASIS-1 hist-match → rígido MNI → groupwise por estrato (+ qc)
+# Piloto DVF OASIS: templates OASIS em MNI, SyNRA CC r4, mesmos atributos disp da ADNI.
+#   bash run_dvf_oasis_pilot.sh templates   # 2.3: OASIS-3 hist-match → rígido MNI → groupwise por estrato (+ qc)
 #   bash run_dvf_oasis_pilot.sh gate-a      # 80 CN/AD: registro, atributos, gate A
 #   bash run_dvf_oasis_pilot.sh gate-b      # baselines 48m_6m(+soft_False): registro, 4_, ablação t1_only, gate B
+# ROIs: hippocampus_d2 (núcleo + esfera de 2 voxels, principal) e hippocampus (núcleo, controle).
 # SHARDS processos por âncora (CN e AD em paralelo), 1 thread ITK cada = determinístico.
 set -euo pipefail
 cd /mnt/study-data/pgirardi/graphs
@@ -13,7 +14,7 @@ mkdir -p logs
 STAGE="${1:?uso: $0 templates|gate-a|gate-b}"
 SHARDS="${SHARDS:-12}"
 COHORTS=(${COHORTS:-48m_6m 48m_6m_soft_False})
-ROIS=(${ROIS:-hippocampus_d4 hippocampus hippocampus_d2 hippocampus_d8 hippocampus_shell4})
+ROIS=(${ROIS:-hippocampus_d2 hippocampus})
 MODS=(disp_oasis disp_oasis_ad disp_oasis_cnad)
 STAMP=$(date +%Y%m%d_%H%M%S)
 LOG="logs/dvf_oasis_${STAGE}_${STAMP}.log"

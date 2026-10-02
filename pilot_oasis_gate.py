@@ -3,9 +3,12 @@
 
   python pilot_oasis_gate.py ids-a    # 40 CN + 40 AD baseline 48m_6m (20 F + 20 M cada)
   python pilot_oasis_gate.py ids-b    # baselines de 48m_6m ∪ 48m_6m_soft_False
-  python pilot_oasis_gate.py gate-a   # tempo, |rho| jac × volume/ICV, AUC univariada CN×AD
-  python pilot_oasis_gate.py gate-b   # ablação t1_only pareada: disp_oasis* × disp*
+  python pilot_oasis_gate.py gate-a   # tempo, |rho| jac_det × volume/ICV, AUC univariada CN×AD
+  python pilot_oasis_gate.py gate-b   # sMCI×pMCI pareado: × disp ADNI, × vol, d2 × núcleo
   python pilot_oasis_gate.py --self-check
+
+Pré-especificado: ROI principal = hippocampus_d2 (esfera de 2 voxels, literatura); núcleo
+OASIS = controle (separa efeito do template do efeito da dilatação).
 """
 
 from __future__ import annotations
@@ -29,8 +32,9 @@ SEED = 42
 PILOT = Path("csvs/pilot")
 FEAT = Path("csvs/cohorts/all_population")
 COHORTS = ("48m_6m", "48m_6m_soft_False")
-ROIS = ("hippocampus_d4", "hippocampus", "hippocampus_d2", "hippocampus_d8", "hippocampus_shell4")
-PRIMARY_ROI = "hippocampus_d4"
+PRIMARY_ROI = "hippocampus_d2"
+CORE_ROI = "hippocampus"
+ROIS = (PRIMARY_ROI, CORE_ROI)
 PAIRS = (("disp_oasis", "disp"), ("disp_oasis_ad", "disp_ad"), ("disp_oasis_cnad", "disp_cnad"))
 OLD_FEAT = {"cn": "features_displacement_v4.csv", "ad": "features_displacement_v4_ad.csv"}
 NEW_FEAT = {"cn": "features_displacement_oasis_cn.csv", "ad": "features_displacement_oasis_ad.csv"}
@@ -72,13 +76,14 @@ def hippo_vol_icv() -> pd.DataFrame:
     return h[["ID_IMG", "side", "vol_icv"]]
 
 
-def univariate(feat: pd.DataFrame, ids: pd.DataFrame, vol: pd.DataFrame, roi: str) -> dict:
+def univariate(feat: pd.DataFrame, ids: pd.DataFrame, vol: pd.DataFrame, roi: str, col: str) -> dict:
     f = feat[(feat["roi"] == roi) & feat["ID_IMG"].isin(ids["ID_IMG"])]
-    f = f[["ID_IMG", "side", "jac_det_mean"]].merge(vol, on=["ID_IMG", "side"], validate="one_to_one")
-    rho = float(np.mean([abs(spearmanr(g["jac_det_mean"], g["vol_icv"])[0]) for _, g in f.groupby("side")]))
-    per_img = f.groupby("ID_IMG")["jac_det_mean"].mean().rename("jac").reset_index().merge(ids, on="ID_IMG")
-    auc = roc_auc_score(per_img["GROUP"] == "AD", per_img["jac"])
-    return {"roi": roi, "n_img": per_img["ID_IMG"].nunique(), "abs_rho_vol": rho, "auc_cn_ad": max(auc, 1 - auc)}
+    f = f[["ID_IMG", "side", col]].merge(vol, on=["ID_IMG", "side"], validate="one_to_one")
+    rho = float(np.mean([abs(spearmanr(g[col], g["vol_icv"])[0]) for _, g in f.groupby("side")]))
+    per_img = f.groupby("ID_IMG")[col].mean().rename("x").reset_index().merge(ids, on="ID_IMG")
+    auc = roc_auc_score(per_img["GROUP"] == "AD", per_img["x"])
+    return {"roi": roi, "feat": col, "n_img": per_img["ID_IMG"].nunique(), "abs_rho_vol": rho,
+            "auc_cn_ad": max(auc, 1 - auc)}
 
 
 def gate_a() -> bool:
@@ -90,18 +95,18 @@ def gate_a() -> bool:
         times = times[times["ID_IMG"].isin(ids["ID_IMG"])]
         new = pd.read_csv(FEAT / NEW_FEAT[anchor])
         old = pd.read_csv(FEAT / OLD_FEAT[anchor], usecols=["ID_IMG", "roi", "side", "jac_det_mean"])
-        o = univariate(old, ids, vol, "hippocampus")
+        o = univariate(old, ids, vol, CORE_ROI, "jac_det_mean")
         for roi in ROIS:
-            r = univariate(new, ids, vol, roi)
+            r = univariate(new, ids, vol, roi, "jac_det_mean")
             rows.append({"anchor": anchor, **r, "old_abs_rho_vol": o["abs_rho_vol"], "old_auc_cn_ad": o["auc_cn_ad"],
                          "old_n_img": o["n_img"], "reg_min_mean": times["seconds"].mean() / 60, "n_reg": len(times)})
     t = pd.DataFrame(rows)
     t.to_csv(PILOT / "gateA_summary.csv", index=False)
     print(t.round(3).to_string(index=False))
+    assert (t["n_img"] == len(ids)).all(), "Gate A incompleto: nem todas as 80 imagens têm atributos"
     prim = t[t["roi"] == PRIMARY_ROI]
-    assert (prim["n_img"] == len(ids)).all(), "Gate A incompleto: nem todas as 80 imagens têm atributos"
     ok = bool(((prim["abs_rho_vol"] > prim["old_abs_rho_vol"]) & (prim["auc_cn_ad"] >= 0.75)).any())
-    print(f"GATE A ({PRIMARY_ROI}): {'PASSA' if ok else 'FALHA'}")
+    print(f"GATE A ({PRIMARY_ROI} jac_det_mean): {'PASSA' if ok else 'FALHA'}")
     return ok
 
 
@@ -126,44 +131,64 @@ def new_results_path(cohort: str, roi: str, mod: str) -> Path:
     return Path(f"csvs/cohorts/{cohort}/ablation_results_oasis/{roi}/t1_only/{mod}/ablation_results_all.csv")
 
 
+def ref_results_path(cohort: str, mod: str) -> Path:
+    return Path(f"csvs/cohorts/{cohort}/ablation_results_t1_only/{mod}/ablation_results_all.csv")
+
+
+def cn_ad_auc(path: Path) -> float:
+    if not path.is_file():
+        return np.nan
+    try:
+        s = patient_scores(load_results(path, "cn_ad"))
+    except AssertionError:
+        return np.nan
+    return float(roc_auc_score(s["y"], s["score"]))
+
+
+def paired_auc(p_new: Path, p_ref: Path, n_boot: int) -> dict:
+    a, b = load_results(p_new, "smci_pmci"), load_results(p_ref, "smci_pmci")
+    assert folds(a) == folds(b), f"folds diferentes: {p_new} × {p_ref}"
+    sa, sb = patient_scores(a), patient_scores(b)
+    paired = sa.merge(sb, on=["ID_PT", "y"], suffixes=("_new", "_ref"), validate="one_to_one")
+    assert len(paired) == len(sa) == len(sb), (len(paired), len(sa), len(sb))
+    d, lo, hi, p1, _ = bootstrap_auc_diff_test(
+        paired["y"], paired["score_new"], paired["score_ref"], n_boot=n_boot, seed=SEED)
+    return {"n_pts": len(paired), "auc_new": roc_auc_score(paired["y"], paired["score_new"]),
+            "auc_ref": roc_auc_score(paired["y"], paired["score_ref"]),
+            "delta": d, "ci95_lo": lo, "ci95_hi": hi, "p_one": p1}
+
+
 def gate_b(n_boot: int = 5000) -> str:
     rows = []
     for cohort in COHORTS:
         for roi in ROIS:
             for new_mod, old_mod in PAIRS:
                 p_new = new_results_path(cohort, roi, new_mod)
-                p_old = Path(f"csvs/cohorts/{cohort}/ablation_results_t1_only/{old_mod}/ablation_results_all.csv")
-                if not p_new.is_file() or not p_old.is_file():
-                    print(f"[skip] {cohort} {roi} {new_mod}: falta {p_new if not p_new.is_file() else p_old}")
-                    continue
-                a, b = load_results(p_new, "smci_pmci"), load_results(p_old, "smci_pmci")
-                assert folds(a) == folds(b), f"folds diferentes: {p_new} × {p_old}"
-                sa, sb = patient_scores(a), patient_scores(b)
-                paired = sa.merge(sb, on=["ID_PT", "y"], suffixes=("_new", "_old"), validate="one_to_one")
-                assert len(paired) == len(sa) == len(sb), (len(paired), len(sa), len(sb))
-                d, lo, hi, p1, _ = bootstrap_auc_diff_test(
-                    paired["y"], paired["score_new"], paired["score_old"], n_boot=n_boot, seed=SEED)
-                cn_ad = np.nan
-                try:
-                    cn_ad = roc_auc_score(*patient_scores(load_results(p_new, "cn_ad"))[["y", "score"]].T.values)
-                except AssertionError:
-                    pass
-                rows.append({"cohort": cohort, "roi": roi, "new": new_mod, "old": old_mod, "n_pts": len(paired),
-                             "auc_new": roc_auc_score(paired["y"], paired["score_new"]),
-                             "auc_old": roc_auc_score(paired["y"], paired["score_old"]),
-                             "delta": d, "ci95_lo": lo, "ci95_hi": hi, "p_one": p1, "auc_cn_ad_new": cn_ad})
+                refs = [(old_mod, ref_results_path(cohort, old_mod)), ("vol", ref_results_path(cohort, "vol"))]
+                if roi == PRIMARY_ROI:
+                    refs.append((f"{new_mod}@{CORE_ROI}", new_results_path(cohort, CORE_ROI, new_mod)))
+                for ref, p_ref in refs:
+                    if not p_new.is_file() or not p_ref.is_file():
+                        print(f"[skip] {cohort} {roi} {new_mod} × {ref}: falta {p_new if not p_new.is_file() else p_ref}")
+                        continue
+                    rows.append({"cohort": cohort, "roi": roi, "new": new_mod, "ref": ref,
+                                 **paired_auc(p_new, p_ref, n_boot), "auc_cn_ad_new": cn_ad_auc(p_new)})
     t = pd.DataFrame(rows)
     t.to_csv(PILOT / "gateB_summary.csv", index=False)
     print(t.round(3).to_string(index=False))
     prim = t[t["roi"] == PRIMARY_ROI]
-    cn_ad_ok = bool((prim.loc[prim["new"] == "disp_oasis", "auc_cn_ad_new"] >= 0.75).any())
-    if cn_ad_ok and (prim["ci95_lo"] > 0).any():
+    vs_disp = prim[prim["ref"].isin([o for _, o in PAIRS])]
+    cn_ad = prim.loc[(prim["new"] == "disp_oasis") & (prim["cohort"] == COHORTS[0]), "auc_cn_ad_new"].max()
+    if cn_ad >= 0.75 and (vs_disp["ci95_lo"] > 0).any():
         verdict = "PASSA"
-    elif (prim["delta"] >= 0.03).any():
-        verdict = "INCONCLUSIVO (Δ ≥ 0.03 mas IC cruza 0): decisão do usuário sobre F7"
+    elif (vs_disp["delta"] >= 0.03).any():
+        verdict = "INCONCLUSIVO (Δ ≥ 0.03 mas IC cruza 0): decisão do usuário sobre a rodada completa"
     else:
         verdict = "FALHA (reportar como resultado negativo)"
-    print(f"GATE B ({PRIMARY_ROI}, cn_ad disp_oasis ok={cn_ad_ok}): {verdict}")
+    print(f"GATE B ({PRIMARY_ROI}, CN×AD disp_oasis={cn_ad:.3f}) × disp ADNI: {verdict}")
+    for r in t[t["ref"] != t["new"].map(dict(PAIRS))].itertuples():
+        side = "> ref" if r.ci95_lo > 0 else "< ref" if r.ci95_hi < 0 else "≈ ref (IC cruza 0)"
+        print(f"  {r.cohort} {r.roi} {r.new} × {r.ref}: Δ={r.delta:+.3f} [{r.ci95_lo:+.3f}, {r.ci95_hi:+.3f}] → {side}")
     return verdict
 
 
