@@ -62,79 +62,77 @@ processos; `exit` dentro do tmux mata.
       revertidos em `oasis_refs.py`, `ablation_prep.py`, `4_run_post_extract.py`;
       `3.2_feat_dvf.py` só gera `hippocampus` e `hippocampus_d2`; `pilot_oasis_gate.py` sem
       escolha de largura; `run_dvf_oasis_pilot.sh` com `ROIS` = d2 + núcleo.
+- [x] `build` dos 12 templates (`ants.build_template`, SyN MI 100x70x50x20, 4 iterações) em
+      `images/groupwise/references/oasis_mni/` + QC (`qc.png`, `qc_hippo_zoom.png`).
+- [x] Gate A (02/10 12:44 → 04/10 01:00, ~36 h): 80 CN/AD × 2 âncoras, ~300 min por registro
+      (1 thread ITK). **PASSA** (`csvs/pilot/gateA_summary.csv`):
 
-## 1. `build` dos 12 templates (tempo a medir; estimativa 6–15 h)
+      | âncora | ROI | \|rho\| vol/ICV | AUC CN×AD | ADNI antigo (núcleo) \|rho\| / AUC |
+      |---|---|---|---|---|
+      | cn | d2 | 0,598 | 0,804 | 0,139 / 0,611 |
+      | cn | núcleo | 0,717 | 0,883 | |
+      | ad | d2 | 0,527 | 0,762 | 0,092 / 0,592 |
+      | ad | núcleo | 0,661 | 0,853 | |
 
-Protocolo novo (30/09, antes de qualquer resultado): `ants.build_template` com atualização de
-forma + Sharpen, SyN MI `reg_iterations=(100,70,50,20)` (com iterações na resolução máxima),
-4 iterações (`TEMPLATE_REG` / `TEMPLATE_ITERS` no `2.3`). O primeiro build (SyN padrão 40x20x0,
-mesmo do 2.2 ADNI) foi cancelado: deixaria o hipocampo borrado.
+      Núcleo > d2 nas duas âncoras: d2 segue principal (pré-especificado); d2 × núcleo é
+      reportado no Gate B. \|rho\| alto com volume = risco de redundância com `vol` no Gate B.
+- [x] Teste de determinismo descartado: o script ficava em `/tmp/oasis_qc` e foi apagado; não
+      muda nenhuma decisão (gates comparam modalidades sobre os mesmos warps; registro já usa
+      `--random-seed 42` + 1 thread ITK). Se o artigo afirmar reprodutibilidade exata, recriar
+      no repositório (nunca em `/tmp`): registrar I14392 de novo (~5 h) e comparar com o warp
+      do Gate A via `np.allclose(atol=1e-4)`.
 
-Nada pesado em paralelo. 12 builds × `BUILD_THREADS=2` = 24 núcleos. **Rodar uma vez só**: antes,
-`pgrep -fc "python 2.3_oasis_templates_mni.py build"` tem que dar 0 (no dia 30 o loop foi colado
-duas vezes e ficaram 24 processos disputando 24 núcleos).
+## 1. Gate B (em andamento desde 04/10 13:26 hora do servidor; ~7–8 dias)
 
-```bash
-pgrep -fc "python 2.3_oasis_templates_mni.py build"   # tem que ser 0
-mkdir -p logs/oasis_build && rm -f logs/oasis_build/*.log
-for d in CN AD; do for s in F M; do for a in 60-69 70-79 80-89; do
-  BUILD_THREADS=2 .venv/bin/python 2.3_oasis_templates_mni.py build $d $s $a > logs/oasis_build/${d}_${s}_${a}.log 2>&1 &
-done; done; done; wait; date
-ls images/groupwise/references/oasis_mni/*_template.nii.gz | wc -l   # 12
-grep -l -E "Traceback|AssertionError" logs/oasis_build/*.log          # vazio
-```
+Log: `logs/dvf_oasis_gate-b_20261004_132641.log`; registro em
+`logs/dvf_oasis_reg_*_20261004_132641.log`. **Não editar `run_dvf_oasis_pilot.sh` enquanto roda**
+(bash lê o script aos poucos).
 
-Estimar o tempo total quando a 1ª iteração acabar (total ≈ 4 × iter 1):
+442 baselines (`csvs/pilot/oasis_gateB_ids.csv`: 149 AD, 100 CN, 120 pMCI, 73 sMCI); as 80 do
+Gate A são puladas → 362 novas × 2 âncoras = 724 registros / 24 processos ≈ 30 × 5 h ≈ 6–7 dias,
+depois `3.2` (~30 s/imagem), `4_ --oasis-only` e 12 ablações em sequência. Ablação t1_only
+cn_ad / smci_pmci em `hippocampus_d2` e `hippocampus` × `disp_oasis`/`_ad`/`_cnad`
+(2 coortes × 2 ROIs × 3 = 12 ablações). As ablações t1_only são o resultado final de 1 visita.
 
-```bash
-grep -h "\[build\]" logs/oasis_build/*.log      # ex.: "[build] CN F 70-79 iter 1/4 N=20 95.3 min"
-pgrep -fc "python 2.3_oasis_templates_mni.py build"   # 12 = rodando, 0 = terminou
-```
-
-Se iter 1 passar de ~4 h (total > 16 h), avaliar reduzir para `(100,70,50,10)` ou 3 iterações.
-Cancelar de verdade (Ctrl-C só interrompe o `wait`, os builds continuam):
-`pkill -f "python 2.3_oasis_templates_mni.py build"` e depois
-`rm -rf images/groupwise/references/_tmp_ants/oasis_*`.
-
-## 2. QC dos templates
+Acompanhar:
 
 ```bash
-.venv/bin/python 2.3_oasis_templates_mni.py qc
+grep -h "\[OK\]" logs/dvf_oasis_reg_*_20261004_132641.log | wc -l   # meta: 724
+grep -h "\[ERROR\]\|Traceback" logs/dvf_oasis_reg_*_20261004_132641.log
 ```
 
-Inspecionar `images/groupwise/references/oasis_mni/qc.png` (coronal y=-20 mm: hipocampo nítido,
-AD com ventrículos maiores que CN) e `qc.csv` (ncc_mni e sharpness parecidos entre estratos).
+### Se cair a energia
 
-## 3. Gate A (~21 h)
+Retomada é por item terminado: registro pula warp completo (perde a imagem em curso, ≤ 5 h);
+`3.2` pula imagens em `done_keys.txt`; `4_` é barato; **as 12 ablações do gate-b recomeçam do
+zero** (não há checagem de "já existe" no piloto).
 
-40 CN + 40 AD; tempo por registro; por âncora, |rho| com `vol/ICV` e AUC univariada CN×AD de
-`jac_det_mean` em d2 e no núcleo. Passa se d2 tiver |rho| > o do `jac_det_mean` ADNI antigo
-(núcleo) e AUC CN×AD ≥ 0,75 em alguma âncora. Primeiro sinal real: se não separar CN×AD,
-dificilmente separa sMCI×pMCI. As 80 imagens fazem parte do Gate B (warps reaproveitados).
+1. `tmux new -s 0`, `cd /mnt/study-data/pgirardi/graphs && source .venv/bin/activate`.
+2. `pgrep -fc 3.1_feat_gen_dvf.py` tem que dar 0.
+3. Warp truncado passa pelo teste de tamanho (> 1 KB) do `3.1`; conferir os gravados perto da
+   queda e apagar os 3 arquivos (`_1Warp`, `_1InverseWarp`, `_0GenericAffine.mat`) do que falhar:
 
-```bash
-SHARDS=12 bash run_dvf_oasis_pilot.sh gate-a
-```
+   ```bash
+   for f in $(find images/displacement_field_oasis_cn images/displacement_field_oasis_ad -name "*Warp.nii.gz" -mmin -120); do gzip -t "$f" 2>/dev/null || echo "CORROMPIDO: $f"; done
+   ```
 
-Resultado: `csvs/pilot/gateA_summary.csv`.
+4. Se caiu na extração (`[OK] IMG=... rows=4` no log): o `3.2` grava as linhas antes do
+   `done_keys`, então pode duplicar ou truncar linha. Conferir (tem que dar 0 e ler sem erro):
 
-## 4. Teste de determinismo (~3 h, depois do Gate A)
+   ```bash
+   .venv/bin/python -c "
+   import pandas as pd
+   for a in ('cn','ad'):
+       d = pd.read_csv(f'csvs/cohorts/all_population/features_displacement_oasis_{a}.csv')
+       print(a, 'duplicadas:', d.duplicated(['ID_IMG','roi','side']).sum())"
+   ```
 
-Copiar antes `/tmp/oasis_qc/repro_check.py` para o projeto (o `/tmp` pode ser limpo).
-Rodar os dois comandos separados — nunca no mesmo bloco com `rm`.
+5. Se caiu nas ablações (`=== MONO ...`): antes de relançar, adicionar ao loop do gate-b o
+   mesmo `SKIP` por `ablation_results_all.csv` do `run_dvf_oasis_full.sh`.
+6. `rm -rf images/displacement_field_oasis_*/_tmp_ants/*` (só com o passo 2 dando 0).
+7. Relançar o mesmo comando: `SHARDS=12 bash run_dvf_oasis_pilot.sh gate-b`.
 
-```bash
-.venv/bin/python /tmp/oasis_qc/repro_check.py I14392 run
-```
-
-```bash
-.venv/bin/python /tmp/oasis_qc/repro_check.py I14392 compare     # np.allclose(atol=1e-4)
-```
-
-## 5. Gate B (~4–5 dias, só se Gate A passar)
-
-Baselines 48m_6m + soft_False; ablação t1_only cn_ad / smci_pmci em `hippocampus_d2` e
-`hippocampus` × `disp_oasis`/`_ad`/`_cnad` (2 coortes × 2 ROIs × 3 = 12 ablações).
+### Critério (impresso no fim do log)
 
 - PASSA: CN×AD de `disp_oasis` d2 (48m_6m) ≥ 0,75 **e** algum par d2 × `disp` ADNI com IC95
   todo > 0.
@@ -149,7 +147,10 @@ SHARDS=12 bash run_dvf_oasis_pilot.sh gate-b
 
 Resultado: `csvs/pilot/gateB_summary.csv`.
 
-## 6. Rodada completa (só se Gate B passar) — `run_dvf_oasis_full.sh`
+## 2. Rodada completa (só se Gate B passar) — `run_dvf_oasis_full.sh`
+
+Nada é refeito: registro e `3.2` pulam as 442 baselines (warps e `done_keys`), só acrescentam
+t1/t2 ao mesmo CSV de atributos; `t1_r10` / `t1_ols` são calculados na ablação a partir dele.
 
 | Abordagem | Representação | De onde sai |
 |---|---|---|
@@ -158,7 +159,8 @@ Resultado: `csvs/pilot/gateB_summary.csv`.
 | 3 visitas — D (T1 + inclinação OLS em (tₖ, Sₖ)) | `t1_ols` | `full` |
 
 1326 imagens (442 pacientes × t0/t1/t2); as 442 baselines já vêm do Gate B → 884 novas × 2
-âncoras ≈ 1768 registros × ~3,2 h / 24 núcleos ≈ **~10 dias**. t1 é registrado antes de t2.
+âncoras ≈ 1768 registros × ~5 h / 24 núcleos ≈ **~15 dias**. t1 é registrado antes de t2.
+`refs` nunca junto com `register` (24 núcleos ocupados).
 
 ```bash
 SHARDS=12 bash run_dvf_oasis_full.sh register   # registro + 3.2 + 4_ --oasis-only
