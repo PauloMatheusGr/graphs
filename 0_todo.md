@@ -46,6 +46,62 @@ seed 42, sem ComBat).
 
 Folds de `vol` e `disp` ADNI conferidos: idênticos nas duas coortes.
 
+### Adendo 06/10/2026 (antes de qualquer resultado sMCI×pMCI do Gate B)
+
+Registro (`3.1`) intacto; mudanças só no `3.2` e em análises secundárias.
+
+- **Correção de bug** (não muda atributo): `strain_fro` derivava o campo nos eixos de índice,
+  sem a matriz de direção da imagem (MNI/LPS ≠ identidade) → cisalhamentos xz/yz misturavam
+  rotação. Agora gradiente físico = gradiente de índice · Dᵀ (`3.2`, self-check de rotação rígida
+  → strain 0). `jac_det` (ANTs) e `mag` não mudam. Atributos OASIS do Gate A reextraídos.
+- **Novos resumos no CSV** (fora de `keep_disp_feat` → família primária inalterada):
+  `logjac_rel_mean` = média logJ na ROI − média logJ no cérebro; `jac_nonpos_frac` (QC).
+- **Análise secundária** (não altera o veredito do Gate B): famílias só-jacobiano
+  `disp_oasis_jac` e `disp_oasis_ad_jac` = {`jac_det_mean`, `logjac_mean`, `logjac_rel_mean`} × L/R
+  (6 atributos), d2 e núcleo, 2 coortes, mesmo `COMMON_MONO`. Comparações pareadas (mesmos folds,
+  bootstrap 5000, IC95) vs `disp_oasis`/`disp_oasis_ad`, vs `disp`/`disp_ad` ADNI e vs `vol`;
+  BH dentro da família secundária; reportar todas.
+- **QC** (descritivo, não muda escolha): fração de jac ≤ 0 por imagem e |rho| de `jac_det_mean` /
+  `logjac_rel_mean` com volume hipocampal / TIV (TIV = GM+WM+CSF; o `mask_mm3` global é FOV).
+- **Fora**: SyN guiado pelo hipocampo (correlação por construção, novo registro), `∫J` (com
+  fixed=sujeito ≈ volume do template, constante), mudanças no pipeline ADNI antigo.
+
+**Rodada longitudinal (decidir com orientador ANTES do resultado do Gate B):**
+442 pacientes × 3 visitas; t0 já registrado no Gate B. Ritmo atual ≈ 4,4 registros/h
+(1 registro = 1 imagem × 1 âncora). Estimativas para t1/t2 restantes:
+
+| opção | registros | tempo |
+|---|---|---|
+| (a) t1 + t2, âncoras CN e AD (independente, mesmo método do t0) | 1768 | ~17 dias |
+| (c1) só t1 (R10, 2 visitas), CN e AD | 884 | ~8 dias |
+| (c2) t1 + t2, só âncora CN | 884 | ~8 dias |
+| (c3) só t1, só âncora CN | 442 | ~4 dias |
+
+- (a) consistente com o t0 e com o pipeline ADNI; ruído de registro independente por visita.
+- (b) template intraindivíduo (SST) + SST→OASIS: menos ruído longitudinal, mas muda o método
+  (t0 teria que ser refeito) → não cabe no prazo; fica como trabalho futuro.
+- (c) restrição declarada a priori (visitas e/ou âncora); escolha não pode depender do Gate B.
+
+Decisão: ______ (data: __/__/2026)
+
+### Próximos passos (checklist, em ordem)
+
+1. [ ] **Reextração Gate A** (iniciada 06/10 ~12h, fora do tmux, termina ~14h30 do mesmo dia).
+       Terminou quando aparecerem 2 linhas `[DONE]` (CN e AD):
+       `grep "\[DONE\]" logs/logs_reextract_gateA.txt`
+2. [ ] **Conferir Gate A** (segundos; só lê CSVs): `.venv/bin/python pilot_oasis_gate.py gate-a`
+       → esperado `GATE A: PASSA`, números idênticos ao backup:
+       `diff csvs/pilot/backup_pre_strainfix_20261006/gateA_summary.csv csvs/pilot/gateA_summary.csv && echo idêntico`
+3. [ ] **Decidir rodada longitudinal com o orientador** (tabela acima) e preencher "Decisão"
+       ANTES do resultado do Gate B.
+4. [ ] **Esperar Gate B** (tmux `0`, ~11/10). Progresso:
+       `ls images/displacement_field_oasis_{cn,ad}/*1Warp.nii.gz | wc -l` (meta 884; parado 2–5 h é
+       normal, ondas). Terminou quando existir `csvs/pilot/gateB_summary.csv` e o tmux mostrar
+       `GATE B (...): PASSA | INCONCLUSIVO | FALHA`.
+5. [ ] **Análise secundária** (só depois do passo 4), no tmux: `bash run_dvf_oasis_secondary.sh`
+       → `csvs/pilot/gateB_qc.csv` e `csvs/pilot/secondary_jac_summary.csv`.
+6. [ ] Levar ao orientador: veredito do Gate B + QC + secundária.
+
 Rodar sempre no tmux (`tmux a -t 0`), um bloco por vez. `Ctrl-b d` desanexa sem matar os
 processos; `exit` dentro do tmux mata.
 

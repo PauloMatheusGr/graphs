@@ -7,6 +7,8 @@
   python pilot_oasis_gate.py gate-b   # sMCI×pMCI pareado: × disp ADNI, × vol, d2 × núcleo
   python pilot_oasis_gate.py ids-full                  # todas as visitas das coortes
   python pilot_oasis_gate.py compare --rep t1_r10      # mesmo pareamento do gate-b; t1_r10 | t1_ols
+  python pilot_oasis_gate.py qc         # pós-3.2: fração jac<=0, |rho| jac × vol/TIV (descritivo)
+  python pilot_oasis_gate.py secondary  # adendo 06/10: só-jacobiano × disp_oasis, × disp ADNI, × vol (BH)
   python pilot_oasis_gate.py --self-check
 
 Pré-especificado: ROI principal = hippocampus_d2 (esfera de 2 voxels, literatura); núcleo
@@ -29,7 +31,7 @@ from sklearn.metrics import roc_auc_score
 sys.path.insert(0, str(Path(__file__).resolve().parent / "modules"))
 from ablation_analysis import explode_patient_predictions  # noqa: E402
 from ablation_representation import RESULTS_ROOT_BY_PROTOCOL  # noqa: E402
-from stats_compare import bootstrap_auc_diff_test  # noqa: E402
+from stats_compare import apply_bh_fdr, bootstrap_auc_diff_test  # noqa: E402
 
 SEED = 42
 PILOT = Path("csvs/pilot")
@@ -40,6 +42,9 @@ CORE_ROI = "hippocampus"
 ROIS = (PRIMARY_ROI, CORE_ROI)
 LONG_REPS = ("t1_r10", "t1_ols")  # S0,R10 (2 visitas) e D (OLS, 3 visitas)
 PAIRS = (("disp_oasis", "disp"), ("disp_oasis_ad", "disp_ad"), ("disp_oasis_cnad", "disp_cnad"))
+# Secundária (adendo 06/10/2026): (só-jacobiano, família OASIS completa, disp ADNI)
+JAC_PAIRS = (("disp_oasis_jac", "disp_oasis", "disp"), ("disp_oasis_ad_jac", "disp_oasis_ad", "disp_ad"))
+FOLDING_MAX = 0.001  # fração de voxels jac<=0 na ROI acima disso → listar imagem
 OLD_FEAT = {"cn": "features_displacement_v4.csv", "ad": "features_displacement_v4_ad.csv"}
 NEW_FEAT = {"cn": "features_displacement_oasis_cn.csv", "ad": "features_displacement_oasis_ad.csv"}
 
@@ -89,6 +94,44 @@ def hippo_vol_icv() -> pd.DataFrame:
     h = v[v["roi"] == "hippocampus"].drop_duplicates(["ID_IMG", "side"], keep="last").copy()
     h["vol_icv"] = h["mask_mm3"] / h["ID_IMG"].map(icv)
     return h[["ID_IMG", "side", "vol_icv"]]
+
+
+def hippo_vol_tiv() -> pd.DataFrame:
+    """Volume hipocampal / TIV, TIV = GM+WM+CSF (o mask_mm3 global é o FOV, não ICV)."""
+    v = pd.read_csv(FEAT / "features_volumetric.csv",
+                    usecols=["ID_IMG", "roi", "side", "mask_mm3", "gm_mm3", "wm_mm3", "csf_mm3"])
+    g = v[v["roi"] == "__global__"].drop_duplicates("ID_IMG", keep="last").set_index("ID_IMG")
+    tiv = g["gm_mm3"] + g["wm_mm3"] + g["csf_mm3"]
+    h = v[v["roi"] == "hippocampus"].drop_duplicates(["ID_IMG", "side"], keep="last").copy()
+    h["tiv"] = h["ID_IMG"].map(tiv)
+    h["vol_tiv"] = h["mask_mm3"] / h["tiv"]
+    return h[["ID_IMG", "side", "vol_tiv", "tiv"]]
+
+
+def qc(out: Path = PILOT / "gateB_qc.csv") -> pd.DataFrame:
+    """Descritivo (não muda escolha de família/ROI): folding e acoplamento jac × volume."""
+    vol = hippo_vol_tiv()
+    rows, flagged = [], []
+    for anchor in ("cn", "ad"):
+        f = pd.read_csv(FEAT / NEW_FEAT[anchor]).merge(vol, on=["ID_IMG", "side"], how="left", validate="many_to_one")
+        for (roi, side), g in f.groupby(["roi", "side"]):
+            r = {"anchor": anchor, "roi": roi, "side": side, "n_img": g["ID_IMG"].nunique(),
+                 "n_sem_vol": int(g["vol_tiv"].isna().sum()),
+                 "jac_nonpos_med": g["jac_nonpos_frac"].median(), "jac_nonpos_max": g["jac_nonpos_frac"].max(),
+                 "n_img_folding": int((g["jac_nonpos_frac"] > FOLDING_MAX).sum())}
+            for col in ("jac_det_mean", "logjac_rel_mean"):
+                ok = g[[col, "vol_tiv", "tiv"]].dropna()
+                r[f"abs_rho_{col}_vol_tiv"] = abs(spearmanr(ok[col], ok["vol_tiv"])[0])
+                r[f"abs_rho_{col}_tiv"] = abs(spearmanr(ok[col], ok["tiv"])[0])
+            rows.append(r)
+            flagged += [{"anchor": anchor, "roi": roi, "side": side, "ID_IMG": i, "jac_nonpos_frac": x}
+                        for i, x in g.loc[g["jac_nonpos_frac"] > FOLDING_MAX, ["ID_IMG", "jac_nonpos_frac"]].values]
+    t = pd.DataFrame(rows)
+    t.to_csv(out, index=False)
+    pd.DataFrame(flagged, columns=["anchor", "roi", "side", "ID_IMG", "jac_nonpos_frac"]).to_csv(
+        out.with_name(out.stem + "_folding.csv"), index=False)
+    print(t.round(4).to_string(index=False), f"\n→ {out} ({len(flagged)} ROIs com jac<=0 > {FOLDING_MAX:.1%})")
+    return t
 
 
 def univariate(feat: pd.DataFrame, ids: pd.DataFrame, vol: pd.DataFrame, roi: str, col: str) -> dict:
@@ -199,6 +242,29 @@ def compare(rep: str, out: Path, n_boot: int = 5000) -> pd.DataFrame:
     return t
 
 
+def secondary(out: Path = PILOT / "secondary_jac_summary.csv", n_boot: int = 5000) -> pd.DataFrame:
+    """Família secundária só-jacobiano: não altera o veredito do Gate B; BH dentro da família."""
+    rows = []
+    for cohort in COHORTS:
+        for roi in ROIS:
+            for jac_mod, full_mod, adni_mod in JAC_PAIRS:
+                p_new = new_results_path(cohort, roi, jac_mod)
+                refs = [(full_mod, new_results_path(cohort, roi, full_mod)),
+                        (adni_mod, ref_results_path(cohort, adni_mod)), ("vol", ref_results_path(cohort, "vol"))]
+                for ref, p_ref in refs:
+                    if not p_new.is_file() or not p_ref.is_file():
+                        print(f"[skip] {cohort} {roi} {jac_mod} × {ref}: falta {p_new if not p_new.is_file() else p_ref}")
+                        continue
+                    rows.append({"cohort": cohort, "roi": roi, "new": jac_mod, "ref": ref,
+                                 **paired_auc(p_new, p_ref, n_boot), "auc_cn_ad_new": cn_ad_auc(p_new)})
+    t = pd.DataFrame(rows)
+    assert not t.empty, "nenhum par com resultados da família secundária"
+    t["p_fdr_bh"] = apply_bh_fdr(t["p_one"].to_numpy())
+    t.to_csv(out, index=False)
+    print(t.round(3).to_string(index=False), f"\n→ {out}")
+    return t
+
+
 def gate_b(n_boot: int = 5000) -> str:
     t = compare("t1_only", PILOT / "gateB_summary.csv", n_boot)
     prim = t[t["roi"] == PRIMARY_ROI]
@@ -223,12 +289,16 @@ def self_check() -> None:
     assert "/ablation_results_ols/disp_ad/" in str(ref_results_path("c", "disp_ad", "t1_ols"))
     assert "/ablation_results_r10/vol/" in str(ref_results_path("c", "vol", "t1_r10"))
     assert "/hippocampus_d2/t1_r10/disp_oasis/" in str(new_results_path("c", PRIMARY_ROI, "disp_oasis", "t1_r10"))
+    assert "/hippocampus/t1_only/disp_oasis_ad_jac/" in str(new_results_path("c", CORE_ROI, JAC_PAIRS[1][0]))
+    q = apply_bh_fdr(np.array([0.01, 0.04, 0.5]))
+    assert np.all(q >= [0.01, 0.04, 0.5]) and q[-1] == 0.5, q
     print("ok: pilot_oasis_gate")
 
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
-    p.add_argument("cmd", nargs="?", choices=("ids-a", "ids-b", "ids-full", "gate-a", "gate-b", "compare"))
+    p.add_argument("cmd", nargs="?",
+                   choices=("ids-a", "ids-b", "ids-full", "gate-a", "gate-b", "compare", "qc", "secondary"))
     p.add_argument("--rep", default="t1_only", choices=("t1_only", *LONG_REPS), help="compare: representação")
     p.add_argument("--self-check", action="store_true")
     a = p.parse_args()
@@ -237,4 +307,5 @@ if __name__ == "__main__":
     elif a.cmd == "compare":
         compare(a.rep, PILOT / f"compare_{a.rep}.csv")
     else:
-        {"ids-a": ids_a, "ids-b": ids_b, "ids-full": ids_full, "gate-a": gate_a, "gate-b": gate_b}[a.cmd]()
+        {"ids-a": ids_a, "ids-b": ids_b, "ids-full": ids_full, "gate-a": gate_a, "gate-b": gate_b,
+         "qc": qc, "secondary": secondary}[a.cmd]()

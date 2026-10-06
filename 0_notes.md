@@ -1,3 +1,208 @@
+# Atributos dos classificadores — guia de estudo
+
+Objetivo: entender o que cada atributo mede e por que ele muda com a atrofia do hipocampo.
+Sugestão de estudo: copiar à mão o **mapa geral** (passo 1), depois uma família por vez
+(passos 2–6), e no fim responder às **perguntas de fixação** (passo 8) sem olhar.
+
+---
+
+## Passo 0 — A ideia em uma frase
+
+> Na doença de Alzheimer o hipocampo **encolhe**, **perde neurônios** e o **líquor (CSF) ocupa
+> o espaço**. Cada família de atributos olha esse mesmo fenômeno por um ângulo diferente.
+
+Na T1: substância cinzenta = **cinza claro**, líquor = **escuro**. Atrofia ⇒ mais escuro
+na borda, forma mais irregular, deformação maior em relação ao "normal".
+
+---
+
+## Passo 1 — Mapa geral (copiar primeiro)
+
+| # | Família (eixo x) | Pergunta que responde | Olha para | Nº por lado |
+|---|---|---|---|---|
+| 1 | **Volume** | *Quanto* tecido existe? | máscara + segmentação de tecidos | 4 |
+| 2 | **Shape** | *Que forma* tem? | só a máscara (geometria) | 12 |
+| 3 | **1st order** | *Que intensidades* existem? | histograma da T1 (sem posição) | 16 |
+| 4 | **Texture** | *Como as intensidades se organizam* no espaço? | pares de vizinhos (GLCM) | 24 |
+| 5 | **DVF** | *Quanto e onde* difere do cérebro de referência? | campo de deformação (registro) | 12 |
+
+Tudo é medido **separado** no hipocampo esquerdo (L) e direito (R).
+
+Agrupamento para memorizar:
+
+- **Geometria da máscara** → Volume, Shape ("quanto" e "que forma").
+- **Sinal dentro da máscara** → 1st order, Texture ("que tons" e "como se arrumam").
+- **Geometria relativa a uma referência** → DVF ("como deformar o sujeito até o normal").
+
+Mnemônico: **V-S-P-T-D** = **V**olume, **S**hape, **P**rimeira ordem, **T**extura, **D**VF
+("**V**ocê **S**ó **P**ensa **T**udo **D**epois").
+
+Representações temporais (como o atributo entra no classificador):
+
+| Abordagem | Código | O que entra |
+|---|---|---|
+| 1 visita | `t1_only` | valor no baseline (T1) |
+| 2 visitas (S0,R10) | `t1_r10` | T1 + taxa de mudança entre visita 0 e 1 (por mês) |
+| 3 visitas (D) | `t1_ols` | T1 + inclinação da reta (mínimos quadrados) pelas 3 visitas |
+
+Pré-processamento comum (lembrar): T1 sem crânio, sem ruído, corrigida de não-uniformidade
+(N4), intensidades igualadas ao MNI (histogram matching) e alinhada ao MNI por registro rígido.
+Medidas de tamanho divididas pelo tamanho da cabeça (ICV): comprimento ÷ ICV^(1/3),
+área ÷ ICV^(2/3), volume ÷ ICV — "cabeça grande não é hipocampo grande".
+
+---
+
+## Passo 2 — Volume (4 atributos): "quanto tecido?"
+
+Em uma frase: **tamanho do hipocampo e do que ele é feito** (cinzenta, branca, líquor).
+
+| Atributo | O que é | Com atrofia |
+|---|---|---|
+| `MeshVolume` | volume do hipocampo (malha de superfície) ÷ ICV | ↓ |
+| `gm_norm` | fração de substância cinzenta dentro da ROI | ↓ |
+| `wm_norm` | fração de substância branca dentro da ROI | varia (borda, fímbria) |
+| `csf_norm` | fração de líquor dentro da ROI | ↑ |
+
+Lembrar: as frações (`*_norm`) já são proporções (0–1), por isso não dividem pelo ICV.
+É o marcador clássico: volume hipocampal é o "padrão-ouro" da atrofia.
+
+---
+
+## Passo 3 — Shape (12 atributos): "que forma?"
+
+Em uma frase: **geometria da máscara**, sem olhar intensidade.
+
+Truque: imagine o hipocampo como um **charuto curvado**. A PCA das coordenadas dos voxels
+dá 3 eixos: maior (comprimento) ≥ menor (largura) ≥ mínimo (espessura).
+
+| Grupo | Atributos | O que medem |
+|---|---|---|
+| Eixos (tamanho) | `MajorAxisLength`, `MinorAxisLength`, `LeastAxisLength` | comprimento, largura, espessura (÷ ICV^(1/3)) |
+| Proporções (sem unidade) | `Elongation` = √(menor/maior), `Flatness` = √(mínimo/maior) | quão alongado / achatado (0–1) |
+| Diâmetros máximos | `Maximum3DDiameter`; `Maximum2DDiameterSlice` (axial), `...Column` (coronal), `...Row` (sagital) | maior distância entre 2 pontos (no espaço / em cada plano) |
+| Superfície | `SurfaceArea` (÷ ICV^(2/3)), `SurfaceVolumeRatio` (área/volume) | tamanho da "casca"; razão ↑ quando o volume cai mais rápido que a área |
+| Compacidade | `Sphericity` (1 = esfera) | contorno irregular ou atrofia focal ⇒ ↓ |
+
+Fora do classificador: `MeshVolume` (já está em Volume) e `VoxelVolume` (redundante).
+
+---
+
+## Passo 4 — 1st order (16 atributos): "que intensidades?"
+
+Em uma frase: **estatísticas do histograma** das intensidades T1 dentro do hipocampo.
+Não importa **onde** está cada voxel — só **quanto** ele brilha.
+
+Imagem mental: despejar todos os voxels num saco e fazer um histograma.
+
+| Grupo | Atributos | Com atrofia (mais líquor escuro) |
+|---|---|---|
+| Centro | `Mean`, `Median`, `RootMeanSquared` | ↓ |
+| Extremos | `Minimum`, `Maximum`, `10Percentile`, `90Percentile`, `Range` | P10 e mínimo ↓ (cauda escura) |
+| Dispersão | `Variance`, `InterquartileRange`, `MeanAbsoluteDeviation`, `RobustMeanAbsoluteDeviation` (só P10–P90) | ↑ |
+| Forma do histograma | `Skewness` (assimetria), `Kurtosis` (caudas) | assimetria fica negativa (cauda escura) |
+| Organização do histograma | `Entropy` (desordem), `Uniformity` (Σp², concentração) | entropia ↑, uniformidade ↓ |
+
+Os **4 momentos** estão aqui (média, variância, assimetria, curtose), mas a família tem mais
+que isso — por isso o rótulo é "1st order", não "moments".
+Fora: `Energy`, `TotalEnergy` (crescem com o tamanho da ROI → redundantes com volume).
+
+---
+
+## Passo 5 — Texture / GLCM (24 atributos): "como as intensidades se organizam?"
+
+Em uma frase: **padrão espacial** — vizinhos parecidos (homogêneo) ou diferentes (heterogêneo)?
+
+Como funciona a GLCM (matriz de coocorrência):
+1. Reduz a T1 a 64 tons de cinza.
+2. Para cada voxel de tom *i*, olha o vizinho imediato (13 direções em 3D) e anota o tom *j*.
+3. A matriz conta quantas vezes cada par (*i*, *j*) aparece.
+4. Diagonal cheia (i ≈ j) ⇒ tecido homogêneo. Fora da diagonal ⇒ transições bruscas.
+
+Diferença-chave para o 1st order: **mesmo histograma pode ter texturas diferentes**
+(tabuleiro de xadrez × metade preta/metade branca: mesmo histograma, GLCM oposta).
+
+| Grupo | Atributos | Ideia |
+|---|---|---|
+| Contraste / diferença | `Contrast`, `DifferenceAverage`, `DifferenceVariance`, `DifferenceEntropy` | quão diferentes são os vizinhos |
+| Homogeneidade | `Id`, `Idm`, `Idn`, `Idmn`, `InverseVariance` | o oposto: quão parecidos são os vizinhos |
+| Uniformidade / desordem | `JointEnergy`, `JointEntropy`, `MaximumProbability` | poucos pares dominam (regular) × muitos pares (complexo) |
+| Nível e dispersão dos pares | `JointAverage`, `Autocorrelation`, `SumAverage`, `SumEntropy`, `SumSquares` | brilho médio dos pares e espalhamento |
+| Agrupamento | `ClusterTendency`, `ClusterShade`, `ClusterProminence` | vizinhos de tons parecidos formam "manchas"? assimetria/caudas da GLCM |
+| Dependência | `Correlation`, `Imc1`, `Imc2`, `MCC` | saber o tom de um voxel ajuda a prever o do vizinho? |
+
+Com atrofia (bolsões de líquor, bordas irregulares): `Contrast`, `JointEntropy`,
+`ClusterProminence` ↑; `Idm`, `JointEnergy` ↓.
+Outras matrizes (GLRLM, GLSZM, GLDM, NGTDM) são extraídas mas **não** entram.
+
+---
+
+## Passo 6 — DVF (12 atributos): "quanto e onde difere do normal?"
+
+Em uma frase: **quanto é preciso deformar o cérebro do sujeito para ele ficar igual ao
+template** (cérebro médio de referência, pareado por sexo e faixa etária).
+
+Como funciona:
+1. Registro não linear (SyN, ANTs) entre a T1 do sujeito e o template.
+2. Resultado: campo de deslocamento **u(x)** — uma setinha (mm + direção) em cada voxel.
+3. Desse campo saem **3 mapas**; de cada mapa, **4 estatísticas** no hipocampo ⇒ 3 × 4 = 12.
+
+Os 3 mapas (mnemônico **D-V-S** do artigo MBEC):
+
+| Mapa | Letra | O que é | Analogia |
+|---|---|---|---|
+| `mag` | **D** (displacement) | tamanho da setinha \|u\| em mm | "quanto andou" |
+| `jac_det` | **V** (volume) | determinante do Jacobiano: 1 = igual, ≠ 1 = encolheu/expandiu | "balão esvaziou ou encheu" |
+| `strain_fro` | **S** (strain) | norma do tensor de deformação ε = ½(∇u + ∇uᵀ) | "quanto esticou/torceu" (ignora girar/transladar) |
+
+As 4 estatísticas (os **4 momentos**):
+
+| Sufixo | Significado |
+|---|---|
+| `_mean` | deformação média |
+| `_variance` | heterogênea? (focal × difusa) |
+| `_skewness` | há cauda de voxels com deformação extrema? |
+| `_kurtosis` | deformação concentrada em poucos pontos? |
+
+Variantes: `disp` (template CN), `disp_ad` (template AD), `disp_cnad` (os dois juntos);
+`disp_oasis*` = mesmos 12 atributos com templates OASIS-3 e ROI `hippocampus_d2`
+(hipocampo + 2 mm) ou `hippocampus` (núcleo).
+Atenção ao sinal: ADNI fixed = template; OASIS fixed = sujeito ⇒ no OASIS `jac_det > 1`
+significa sujeito **menor** que o template (atrofia).
+Fora do classificador: desvio-padrão, percentis e `logjac` (ficam só no CSV).
+
+---
+
+## Passo 7 — Resumo comparativo (refazer de memória)
+
+| | Volume | Shape | 1st order | Texture | DVF |
+|---|---|---|---|---|---|
+| Usa intensidade? | não* | não | sim | sim | indiretamente (registro) |
+| Usa posição dos voxels? | não | sim | não | sim (vizinhos) | sim |
+| Precisa de referência? | não | não | não | não | **sim** (template) |
+| Normalizado por ICV? | sim | tamanhos sim | não | não | já normalizado pelo afim do registro |
+| Sinal típico da atrofia | volume ↓, CSF ↑ | esfericidade ↓ | média ↓, dispersão ↑ | contraste ↑, homogeneidade ↓ | deformação ↑ |
+
+\* `gm/wm/csf_norm` vêm da segmentação de tecidos, que usa a intensidade para classificar.
+
+---
+
+## Passo 8 — Perguntas de fixação (responder sem olhar)
+
+1. Quais são as 5 famílias e a pergunta que cada uma responde?
+2. Por que dividir comprimento por ICV^(1/3) e não por ICV?
+3. Qual a diferença entre 1st order e Texture? Dê o exemplo do tabuleiro de xadrez.
+4. Por que "1st order moments" é um rótulo errado?
+5. O que o `csf_norm` mede e para que lado vai com a atrofia?
+6. O que é `Sphericity` e por que cai com atrofia focal?
+7. O que a GLCM conta? O que significa uma diagonal "cheia"?
+8. Quais são os 3 mapas do DVF (D-V-S) e o que cada um representa?
+9. Quais são as 4 estatísticas aplicadas a cada mapa do DVF?
+10. Por que `Energy`/`TotalEnergy` e `VoxelVolume` saem do classificador?
+11. Qual a diferença entre `t1_only`, `t1_r10` e `t1_ols`?
+12. No OASIS, `jac_det > 1` significa atrofia ou expansão? Por quê?
+
+---
+
 # Métodos estatísticos — fórmulas, termos e exemplos
 
 Referência: `7_stats.ipynb`, `modules/stats_compare.py`. Classe positiva = pMCI.

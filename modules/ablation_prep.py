@@ -99,6 +99,8 @@ FIRSTORDER_DENY = frozenset({
 _DISP_KEEP_PREFIX = ("mag_", "jac_det_", "strain_fro_")
 _DISP_STAT_DROP_SUFFIX = ("_n", "_p05", "_p50", "_p95", "_std")
 _DISP_ANCHOR_PREFIX = ("cn_", "ad_")
+# Família secundária só-jacobiano (adendo 06/10/2026): modalidades disp_*_jac.
+DISP_JAC_FEATURES = frozenset({"jac_det_mean", "logjac_mean", "logjac_rel_mean"})
 
 SHAPE_RE = re.compile(r"^original_shape_")
 TEXTURE_RE = re.compile(r"original_(glcm|gldm|glrlm|glszm|ngtdm)_")
@@ -243,6 +245,8 @@ def modality_wide_columns(
         out = _select_shape_wide_columns(cols, roi)
     elif modality == "texture":
         out = _select_texture_wide_columns(cols, roi)
+    elif modality.startswith("disp") and modality.endswith("_jac"):
+        out = _select_wide_columns(cols, roi, DISP_JAC_FEATURES.__contains__)
     elif modality.startswith("disp"):
         out = _select_disp_wide_columns(cols, roi)
     elif modality == "firstorder":
@@ -483,6 +487,16 @@ if __name__ == "__main__":
     ], disp
     assert "hippocampus_L_T1_mag_std" not in disp
     assert "hippocampus_L_T1_logjac_mean" not in disp
+    jac = modality_wide_columns(
+        dummy + ["hippocampus_L_T1_logjac_rel_mean", "hippocampus_L_T1_jac_nonpos_frac"],
+        "disp_oasis_jac",
+    )
+    assert jac == [
+        "hippocampus_L_T1_jac_det_mean",
+        "hippocampus_L_T1_logjac_mean",
+        "hippocampus_L_T1_logjac_rel_mean",
+    ], jac
+    assert not keep_disp_feat("logjac_rel_mean") and not keep_disp_feat("jac_nonpos_frac")
     assert keep_disp_feat("cn_mag_mean")
     assert keep_disp_feat("ad_jac_det_variance")
     assert not keep_disp_feat("cn_mag_std")

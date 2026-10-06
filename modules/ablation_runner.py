@@ -145,6 +145,16 @@ MODALITIES: dict[str, dict[str, str]] = {
         "wide": "disp_oasis_cnad_wide.csv",
         "label": "deslocamento OASIS CN+AD",
     },
+    "disp_oasis_jac": {
+        "long": "disp_oasis_long.csv",
+        "wide": "disp_oasis_jac_wide.csv",
+        "label": "jacobiano OASIS CN (secundária)",
+    },
+    "disp_oasis_ad_jac": {
+        "long": "disp_oasis_ad_long.csv",
+        "wide": "disp_oasis_ad_jac_wide.csv",
+        "label": "jacobiano OASIS AD (secundária)",
+    },
     "firstorder": {"long": "rad_long.csv", "wide": "firstorder_wide.csv", "label": "firstorder"},
     "all": {
         "long": "merge_long.csv",

@@ -475,14 +475,18 @@ def field_components(field: ants.ANTsImage):
     return ux, uy, uz
 
 def _deformation_gradient_from_components(
-    ux: np.ndarray, uy: np.ndarray, uz: np.ndarray, spacing: tuple[float, float, float]
+    ux: np.ndarray,
+    uy: np.ndarray,
+    uz: np.ndarray,
+    spacing: tuple[float, float, float],
+    direction=None,
 ) -> np.ndarray:
-    """H[i,j] = d(u_i)/d(x_j) com u = (ux, uy, uz)."""
+    """H[i,j] = d(u_i)/d(x_j) físico; u em coordenadas físicas (ANTs/ITK)."""
     sx, sy, sz = spacing
     dux_dx, dux_dy, dux_dz = np.gradient(ux, sx, sy, sz, edge_order=1)
     duy_dx, duy_dy, duy_dz = np.gradient(uy, sx, sy, sz, edge_order=1)
     duz_dx, duz_dy, duz_dz = np.gradient(uz, sx, sy, sz, edge_order=1)
-    return np.stack(
+    h = np.stack(
         [
             np.stack([dux_dx, dux_dy, dux_dz], axis=-1),
             np.stack([duy_dx, duy_dy, duy_dz], axis=-1),
@@ -490,6 +494,10 @@ def _deformation_gradient_from_components(
         ],
         axis=-2,
     ).astype(np.float32, copy=False)
+    if direction is not None:
+        # np.gradient deriva nos eixos de índice; x_fís = D·(índice·spacing) → ∂/∂x_fís = ∂/∂índice · Dᵀ
+        h = h @ np.asarray(direction, dtype=np.float32).reshape(3, 3).T
+    return h
 
 
 def _infinitesimal_strain_tensor(deformation_gradient: np.ndarray) -> np.ndarray:
@@ -500,10 +508,14 @@ def _infinitesimal_strain_tensor(deformation_gradient: np.ndarray) -> np.ndarray
 
 
 def _infinitesimal_strain_fro_map(
-    ux: np.ndarray, uy: np.ndarray, uz: np.ndarray, spacing: tuple[float, float, float]
+    ux: np.ndarray,
+    uy: np.ndarray,
+    uz: np.ndarray,
+    spacing: tuple[float, float, float],
+    direction=None,
 ) -> np.ndarray:
     """Mapa escalar S(x) = ||ε(x)||_F (Eq. 7), com ε infinitesimal."""
-    h = _deformation_gradient_from_components(ux, uy, uz, spacing)
+    h = _deformation_gradient_from_components(ux, uy, uz, spacing, direction)
     eps = _infinitesimal_strain_tensor(h)
     return np.linalg.norm(eps, axis=(-2, -1)).astype(np.float32, copy=False)
 
@@ -692,7 +704,7 @@ def compute_unitary_scalar_arrays(domain_img: ants.ANTsImage, warp_paths: list[s
         arr[..., 0], arr[..., 1], arr[..., 2], spacing
     )
     strain_inf = _infinitesimal_strain_fro_map(
-        arr[..., 0], arr[..., 1], arr[..., 2], spacing
+        arr[..., 0], arr[..., 1], arr[..., 2], spacing, delta.direction
     )
     _CURRENT.clear()
     _CURRENT["jac_det"] = jac_det.numpy().astype(np.float32)
@@ -943,6 +955,18 @@ def _map_stat_columns(prefix: str, x: np.ndarray) -> dict[str, float]:
     return row
 
 
+def _jac_extra_columns(maps: dict[str, np.ndarray], roi: np.ndarray, brain: np.ndarray) -> dict[str, float]:
+    """logJ da ROI relativo ao cérebro (remove deformação não linear global) + fração de folding (QC).
+    Nomes fora de keep_disp_feat: não entram na família disp primária."""
+    lj, jac = maps["logjac"], maps["jac_det"]
+    if not roi.any() or not brain.any():
+        return {"logjac_rel_mean": float("nan"), "jac_nonpos_frac": float("nan")}
+    return {
+        "logjac_rel_mean": float(lj[roi].mean() - lj[brain].mean()),
+        "jac_nonpos_frac": float((jac[roi] <= 0).mean()),
+    }
+
+
 def compute_oasis_maps(domain_img: ants.ANTsImage, warp_path: str) -> dict[str, np.ndarray]:
     delta = load_nonlinear_displacement(domain_img, [warp_path])
     jac = ants.create_jacobian_determinant_image(domain_img, delta, do_log=False).numpy()
@@ -952,7 +976,7 @@ def compute_oasis_maps(domain_img: ants.ANTsImage, warp_path: str) -> dict[str, 
         "logjac": np.log(np.clip(jac, 1e-6, None)).astype(np.float32),
         "mag": np.sqrt((arr * arr).sum(-1)).astype(np.float32),
         "strain_fro": _infinitesimal_strain_fro_map(
-            arr[..., 0], arr[..., 1], arr[..., 2], tuple(map(float, delta.spacing))
+            arr[..., 0], arr[..., 1], arr[..., 2], tuple(map(float, delta.spacing)), delta.direction
         ),
     }
 
@@ -1028,6 +1052,7 @@ def main_oasis(diag: str, ids_csv: str | None = None) -> None:
             }
             for name in OASIS_MAPS:
                 row.update(_map_stat_columns(name, maps[name][mask]))
+            row.update(_jac_extra_columns(maps, mask, brain))
             rows.append(row)
         append_csv(pd.DataFrame(rows), out_csv)
         append_done_key(done_keys_path, img_id)
@@ -1053,7 +1078,33 @@ def self_check_oasis() -> None:
         assert (d2 == binary_dilation(labels == lab, structure=ball)).all(), "d2 ≠ dilatação esfera r=2 voxels"
     row = _map_stat_columns("jac_det", np.array([1.0, 2.0, 3.0]))
     assert row["jac_det_mean"] == 2.0 and "jac_det_kurtosis" in row and len(row) == 9
-    print("ok: 3.2_feat_dvf --src oasis (ROIs núcleo/d2 = esfera r=2 voxels, colunas)")
+
+    # Rotação rígida infinitesimal em torno de y, em coordenadas físicas com D = diag(-1,-1,1):
+    # x_fís = -i, z_fís = k; u_x = θ·z_fís, u_z = -θ·x_fís → strain = 0 (sem D daria θ√2).
+    d = np.diag([-1.0, -1.0, 1.0])
+    i, _, k = np.indices((6, 6, 6), dtype=np.float32)
+    theta = 0.01
+    zeros = np.zeros_like(i)
+    s = _infinitesimal_strain_fro_map(theta * k, zeros, theta * i, (1.0, 1.0, 1.0), d)
+    np.testing.assert_allclose(s, 0.0, atol=1e-6)
+    s_bug = _infinitesimal_strain_fro_map(theta * k, zeros, theta * i, (1.0, 1.0, 1.0))
+    np.testing.assert_allclose(s_bug, theta * np.sqrt(2), rtol=1e-4)
+    # Cisalhamento puro u_z = a·x_fís: ||ε||_F = a/√2 com ou sem D.
+    a = 0.05
+    s = _infinitesimal_strain_fro_map(zeros, zeros, -a * i, (1.0, 1.0, 1.0), d)
+    np.testing.assert_allclose(s, a / np.sqrt(2), rtol=1e-4)
+
+    brain = np.ones((6, 6, 6), bool)
+    roi = np.zeros_like(brain)
+    roi[1:3, 1:3, 1:3] = True
+    jac = np.full((6, 6, 6), 1.2, np.float32)
+    ex = _jac_extra_columns({"jac_det": jac, "logjac": np.log(jac)}, roi, brain)
+    assert abs(ex["logjac_rel_mean"]) < 1e-6 and ex["jac_nonpos_frac"] == 0.0, ex
+    jac[roi] = 0.8
+    jac[1, 1, 1] = -0.1
+    ex = _jac_extra_columns({"jac_det": jac, "logjac": np.log(np.clip(jac, 1e-6, None))}, roi, brain)
+    assert ex["logjac_rel_mean"] < 0 and ex["jac_nonpos_frac"] == 1 / 8, ex
+    print("ok: 3.2_feat_dvf --src oasis (ROIs núcleo/d2 = esfera r=2 voxels, colunas, strain com direção, logjac_rel)")
 
 
 def self_check(diag: str = "CN") -> None:
