@@ -76,13 +76,16 @@ Registro (`3.1`) intacto; mudanças só no `3.2` e em análises secundárias.
 | (c1) só t1 (R10, 2 visitas), CN e AD | 884 | ~8 dias |
 | (c2) t1 + t2, só âncora CN | 884 | ~8 dias |
 | (c3) só t1, só âncora CN | 442 | ~4 dias |
+| **(a') atual (09/10):** (a) só sMCI/pMCI, + 48m_12m (`ids-full`) | 1068 | ~10 dias |
 
 - (a) consistente com o t0 e com o pipeline ADNI; ruído de registro independente por visita.
 - (b) template intraindivíduo (SST) + SST→OASIS: menos ruído longitudinal, mas muda o método
   (t0 teria que ser refeito) → não cabe no prazo; fica como trabalho futuro.
 - (c) restrição declarada a priori (visitas e/ou âncora); escolha não pode depender do Gate B.
 
-Decisão: ______ (data: __/__/2026)
+Decisão: **(a')** — t1 + t2, âncoras CN e AD (mesmo método do t0), só sMCI/pMCI, coortes
+48m_6m, 48m_6m_soft_False e 48m_12m (treino da validação externa ADNI-3/4); CN/AD só na visita
+inicial (Gate B). 1068 registros, ~10 dias. Tomada antes do resultado do Gate B (data: 09/10/2026)
 
 ### Próximos passos (checklist, em ordem)
 
@@ -210,13 +213,22 @@ t1/t2 ao mesmo CSV de atributos; `t1_r10` / `t1_ols` são calculados na ablaçã
 
 | Abordagem | Representação | De onde sai |
 |---|---|---|
-| 1 visita | `t1_only` | Gate B (`gateB_summary.csv`) |
+| 1 visita | `t1_only` | Gate B (`gateB_summary.csv`); 48m_12m no `full` |
 | 2 visitas — S0,R10 (descarta i2; T1 + taxa i0→i1, tempo real) | `t1_r10` | `full` |
 | 3 visitas — D (T1 + inclinação OLS em (tₖ, Sₖ)) | `t1_ols` | `full` |
 
-1326 imagens (442 pacientes × t0/t1/t2); as 442 baselines já vêm do Gate B → 884 novas × 2
-âncoras ≈ 1768 registros × ~5 h / 24 núcleos ≈ **~15 dias**. t1 é registrado antes de t2.
-`refs` nunca junto com `register` (24 núcleos ocupados).
+**48m_12m incluída (09/10/2026):** coorte com significância estatística e única configuração com
+n suficiente na validação externa ADNI-3/4; se o Gate B passar, `disp_oasis` substitui `disp` ADNI
+no artigo, então o treino 48m_12m precisa de `disp_oasis`. `FULL_COHORTS` (só `ids-full` e
+`compare`) = gate-b + 48m_12m; `COHORTS` do Gate B inalterado.
+
+**Só sMCI/pMCI (09/10/2026):** foco é sMCI×pMCI; CN/AD ficam só na visita inicial (Gate B), sem
+campos de deslocamento em t1/t2. A ablação filtra os grupos da tarefa antes do pivot, e o `4_`
+exporta só as imagens com atributos, então a cobertura parcial de CN/AD não afeta `smci_pmci`.
+
+727 imagens sMCI/pMCI (206 t0, 208 t1, 313 t2); 193 baselines já vêm do Gate B → 534 novas × 2
+âncoras ≈ 1068 registros / 4,4 por hora ≈ **~10 dias**. t1 é registrado antes de t2. `refs` nunca junto com `register` (24 núcleos ocupados). `refs` agora
+também faz `disp_ad`/`disp_cnad` ADNI de 48m_12m (faltam em t1_only, r10 e ols).
 
 ```bash
 SHARDS=12 bash run_dvf_oasis_full.sh register   # registro + 3.2 + 4_ --oasis-only
@@ -228,6 +240,125 @@ JOBS=4 bash run_dvf_oasis_full.sh ablate        # 24 ablações OASIS + compare_
 `csvs/pilot/compare_t1_r10.csv` e `compare_t1_ols.csv` (mesmas comparações do Gate B).
 
 - Opcional: fusão `vol` + `disp_oasis` (DVF como complemento do volume).
+
+## 3. Validação externa ADNI-3/4 (planejada 09/10/2026)
+
+Objetivo: validar a ablação sMCI×pMCI numa base externa, sem novo ajuste: treinar na ADNI-1/GO/2
+e testar uma única vez na ADNI-3/4, só com participantes que não estão na `collection.csv`.
+
+**Decisões (09/10):**
+
+- Treino = coorte `48m_12m` ADNI-1/GO/2 (72 sMCI / 48 pMCI; já há `t1_only`, `r10`, `ols`,
+  late fusion e clínica). Teste = 48m_12m ADNI-3/4.
+- Coortes de 6 m (`48m_6m`, `36m_6m`) **não têm validação externa com 3 visitas**: a ADNI-3 tem
+  visitas anuais, então nenhum conjunto cai na banda 4–8 m.
+- Braço secundário `t1_only` com todos os elegíveis clínicos (só a visita inicial).
+- Pré-processamento em `/mnt/study-data/pgirardi/datasets_img/adni3-4/preproc/` (sem permissão de
+  escrita em `/mnt/databases/`).
+
+**Coorte com a regra do `1_dataset.ipynb`** (`classify_and_select`, soft pMCI = True), sobre 2347
+imagens de participantes novos de `datasets_info/output/adni34/adnimerged_filtered.csv`:
+
+| Coorte | sMCI | pMCI | CN | AD |
+|---|---|---|---|---|
+| 36m_6m / 48m_6m / 60m_6m | 0 | 0 | 0 | 0 |
+| 36m_12m | 22 | 6 | 13 | 10 |
+| **48m_12m** | **19** | **8** (5 soft) | 12 | 10 |
+| 60m_12m | 10 | 8 | 11 | 10 |
+| 48m `t1_only` (elegíveis clínicos) | 52 | 40 | — | — |
+
+- Nos conjuntos 48m_12m sMCI/pMCI, as linhas de base são 10 MPRAGE e 9 IR-FSPGR (sMCI), 5 MPRAGE
+  e 3 IR-FSPGR (pMCI).
+- Com 8 pMCI, o IC95 da AUC fica em torno de ±0,22 (Hanley-McNeil, AUC 0,75). Serve para ver se a
+  AUC cai ou se mantém, não para ranquear famílias.
+- Imagens necessárias: 147 (3 visitas, sMCI/pMCI/CN/AD) + baselines `t1_only` = **212 ID_IMG**.
+
+**Divergência a corrigir no `datasets_info/adni_3_4.ipynb` (Parte 2):** os números dele
+(ex.: 48m_12m_pm2 = 47 sMCI / 8 pMCI) não seguem a regra do treino:
+
+- janela começa na 1ª imagem MCI; no treino, a 1ª imagem tem que ser MCI e qualquer CN exclui;
+- sMCI sem confirmação MCI após a janela; o treino exige (`sem_confirmacao_pos_janela`);
+- pega as 3 primeiras imagens; o treino busca para frente a próxima imagem na banda
+  (`_pick_forward_band`).
+
+**Pré-processamento (situação em 09/10, 212 IDs necessários):**
+
+| Etapa | Pronto |
+|---|---|
+| `1-skull-stripping`, `2-denoising`, `3-biasfield` | 212/212 |
+| `4-mni-hist-matching` | 194/212 |
+| `5-parcellation` | 66/212 |
+| `6-segmentation` | 0/212 |
+
+- **Parcelação externa = ANTsPyNet DKT (decisão do usuário, 09/10; sem FreeSurfer/FastSurfer).**
+  ADNI-3/4 `5-parcellation/regions` = DKT do ANTsPyNet (versão 0, 89 rótulos). Os arquivos de
+  `regions` do treino têm rótulos que essa versão não gera (2/41, 26/58, 5/44, 31/63, 77; 95
+  classes). Artigo 1 e validação externa usam **só o hipocampo** (17/53, presente nos dois) → sem
+  impacto. Artigo 2: `accumbens_area` (26/58) e `inf_lateral_ventricle` (5/44) não existem no
+  externo (0/20 imagens; treino 20/20); provável remoção da lista final. Skull stripping, hist-match MNI e Deep
+  Atropos (`6-segmentation`) são ANTsPyNet nos dois. Grades conferidas: raw,
+  `4-mni-hist-matching`, `regions` e `brain_mask` externos idênticos (196×256×256, 1 mm, RAS).
+- `6-segmentation` (`_seg` CSF/GM/WM + `_probabilities`) tem que vir da mesma ferramenta da
+  ADNI-1/GO/2; sem ela não há `gm_norm`/`wm_norm`/`csf_norm` (`3_feat_vol.py`).
+
+### Checklist (em ordem)
+
+1. [ ] **Pré-registro** (preencher antes de qualquer resultado externo): coorte 48m_12m;
+       famílias `vol, shape, firstorder, texture, disp` × `t1_only, t1_r10, t1_ols`; clínica;
+       late fusion; SVM `l1_stable`, Optuna 10, 10 seeds, sem ComBat; métrica AUC por paciente
+       com IC95 por bootstrap de paciente; comparações pareadas nos mesmos pacientes externos,
+       BH; reportar todas. Data: __/__/2026.
+2. [ ] Gerar CSV com os 212 ID_IMG para o pré-processamento priorizar o que falta.
+3. [ ] Terminar `4-mni-hist-matching` (18), `5-parcellation` (146) e `6-segmentation` (212).
+4. [ ] **Coorte** (`adni_3_4.ipynb` Parte 2): trocar `select_set` pelo `classify_and_select` do
+       `1_dataset` (importar, não reimplementar). Gravar
+       `csvs/cohorts/ext_adni34_48m_12m/adnimerged_longitudinal_True.csv` com as mesmas colunas
+       (`PARAM_*`, `slot`, `GROUP`, `soft_pmci`, `DIAG_EFFECTIVE`…) e um CSV `t1_only` à parte.
+5. [x] `MANUFACTURER` / `MFG_MODEL` (09/10): busca IDA reexportada com `Imaging Protocol`;
+       `adni_3_4.ipynb` separa os campos e normaliza o fabricante para as grafias do treino
+       (`SIEMENS`, `GE MEDICAL SYSTEMS`, `Philips Medical Systems`). Coortes externas regeneradas:
+       mesmos ID_IMG e colunas clínicas; só os campos técnicos mudaram (antigas em `*_old`).
+6. [ ] **`2_resample.py`** na lista externa. Código pronto (09/10): caminhos por argumento
+       (comando ADNI-3/4 no docstring), template MNI corrigido para
+       `datasets_img/atlases/templates/` (mesma grade 193×229×193 das T1 do treino) e transformação
+       rígida salva em `images/resampled_1.0mm/transforms/<ID>_rigid.mat` e reutilizada → T1 e
+       máscara podem ir agora; `regions` e `seg` entram depois sem novo registro.
+       Teste: `.mat` salvo reproduz a T1 (dif. máx. 0,17 em 9481).
+       `brain_mask` é mapa de probabilidade (float) no treino e no externo; limiar 0,5 = máscara
+       (Dice com a T1 nativa 0,985). QC visual de algumas T1 externas no MNI antes da extração.
+7. [ ] **Não rodar `2.1` / `2.2` / `2.3`**: templates CN/AD (ADNI e OASIS) são parte congelada do
+       modelo. Só conferir se existe o estrato sexo × década de cada participante externo.
+8. [ ] **`3_feat_vol.py` / `3_feat_rad.py`** na lista externa, store separado
+       `csvs/cohorts/all_population_adni34/` (store do treino intacto). Ambos têm `COHORT` fixo
+       → parâmetro.
+9. [ ] **`3.1_feat_gen_dvf.py --csv <externo>`** (CN e AD, mesmos templates ADNI) e **`3.2`**
+       (`IMAGES_CSV` fixo no modo ADNI → parâmetro). Família `disp` externa = método escolhido
+       pelo Gate B (pré-especificado 01/10): passa → `disp_oasis` (`--src oasis`, depois da
+       rodada completa com 48m_12m); falha → `disp` ADNI. Não registrar o externo antes do Gate B.
+10. [ ] **`4_run_post_extract.py`**: coorte externa em `POST_JOBS` + `FEATURES_DIR` do store
+        externo → `csvs/cohorts/ext_adni34_48m_12m/ablation/hippocampus/*_long.csv`.
+11. [ ] **Modo externo nos `5_*`** (única mudança real de código): ajustar no 48m_12m inteiro
+        (mesmo `l1_stable`, Optuna com CV interna 5 folds, limiar de Youden nas OOF internas) e
+        prever a ADNI-3/4 uma vez por seed, gravando `test_scores` no formato atual. Caminho
+        curto: concatenar long treino + externo e chamar o corpo do fold de
+        `nested_cv_ablation` com `train_pts` = treino e `test_pts` = externo.
+        - `5_ablation.py`: sim. `5_ablation_late_fusion.py`: sim (reusa scores externos).
+        - `5_clinic_img.py`: sim (clínica é a referência a bater).
+        - `5_ablation_early_fusion.py`: só se estiver no artigo.
+        - `5_ablation_leaky.py`: não (externo já é sem vazamento; comparar AUC leaky × externa
+          no suplemento).
+        - ComBat `false` (primário). Com `true`, batch só no externo fica sem harmonização.
+12. [ ] **Sanidade primeiro**: `cn_ad` externo (12 CN × 10 AD), `vol` SVM. Se cair muito, parar e
+        olhar a extração antes de sMCI×pMCI.
+13. [ ] sMCI×pMCI externo (3 visitas) + braço `t1_only` (52/40).
+14. [ ] **`6_results.ipynb` / `7_stats.ipynb`**: seção nova com AUC externa por família ×
+        representação (IC95 bootstrap de paciente), AUC CV interna − externa (otimismo),
+        comparações pareadas (`stats_compare`), BH; descrever por sequência (MPRAGE ×
+        IR-FSPGR).
+
+**Riscos a reportar:** ADNI-3/4 é toda 3T, MPRAGE acelerado + IR-FSPGR (GE); o treino 48m_12m tem
+63% de imagens 1.5T. Textura e first-order devem ser as famílias mais sensíveis à mudança de
+domínio; volume e forma, as menos.
 
 ## Pendências menores
 

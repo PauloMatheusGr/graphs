@@ -5,8 +5,8 @@
   python pilot_oasis_gate.py ids-b    # baselines de 48m_6m ∪ 48m_6m_soft_False
   python pilot_oasis_gate.py gate-a   # tempo, |rho| jac_det × volume/ICV, AUC univariada CN×AD
   python pilot_oasis_gate.py gate-b   # sMCI×pMCI pareado: × disp ADNI, × vol, d2 × núcleo
-  python pilot_oasis_gate.py ids-full                  # todas as visitas das coortes
-  python pilot_oasis_gate.py compare --rep t1_r10      # mesmo pareamento do gate-b; t1_r10 | t1_ols
+  python pilot_oasis_gate.py ids-full                  # visitas sMCI/pMCI das coortes do gate-b + 48m_12m
+  python pilot_oasis_gate.py compare --rep t1_r10      # mesmo pareamento do gate-b (+ 48m_12m); t1_only | t1_r10 | t1_ols
   python pilot_oasis_gate.py qc         # pós-3.2: fração jac<=0, |rho| jac × vol/TIV (descritivo)
   python pilot_oasis_gate.py secondary  # adendo 06/10: só-jacobiano × disp_oasis, × disp ADNI, × vol (BH)
   python pilot_oasis_gate.py --self-check
@@ -36,7 +36,8 @@ from stats_compare import apply_bh_fdr, bootstrap_auc_diff_test  # noqa: E402
 SEED = 42
 PILOT = Path("csvs/pilot")
 FEAT = Path("csvs/cohorts/all_population")
-COHORTS = ("48m_6m", "48m_6m_soft_False")
+COHORTS = ("48m_6m", "48m_6m_soft_False")  # Gate B pré-especificado: não alterar
+FULL_COHORTS = (*COHORTS, "48m_12m")  # rodada completa: + coorte da validação externa ADNI-3/4
 PRIMARY_ROI = "hippocampus_d2"
 CORE_ROI = "hippocampus"
 ROIS = (PRIMARY_ROI, CORE_ROI)
@@ -78,8 +79,12 @@ def ids_b() -> Path:
 
 
 def ids_full() -> Path:
-    """Todas as visitas (t0/t1/t2) das coortes: base para R10 (2 visitas) e OLS (3 visitas)."""
-    long = pd.concat([pd.read_csv(f"csvs/cohorts/{c}/adnimerged_longitudinal.csv") for c in COHORTS])
+    """Todas as visitas (t0/t1/t2) de sMCI/pMCI: base para R10 (2 visitas) e OLS (3 visitas).
+
+    CN/AD fora: o foco é sMCI×pMCI; CN×AD fica só na visita inicial (Gate B).
+    """
+    long = pd.concat([pd.read_csv(f"csvs/cohorts/{c}/adnimerged_longitudinal.csv") for c in FULL_COHORTS])
+    long = long[long["GROUP"].isin(["sMCI", "pMCI"])]
     b = long.drop_duplicates("ID_IMG").sort_values(["slot", "ID_PT"])  # t1 antes de t2: R10 fica pronto antes
     PILOT.mkdir(parents=True, exist_ok=True)
     p = PILOT / "oasis_full_ids.csv"
@@ -216,10 +221,10 @@ def paired_auc(p_new: Path, p_ref: Path, n_boot: int) -> dict:
             "delta": d, "ci95_lo": lo, "ci95_hi": hi, "p_one": p1}
 
 
-def compare(rep: str, out: Path, n_boot: int = 5000) -> pd.DataFrame:
+def compare(rep: str, out: Path, n_boot: int = 5000, cohorts: tuple[str, ...] = COHORTS) -> pd.DataFrame:
     """sMCI×pMCI pareado na representação rep: OASIS × disp ADNI, × vol, d2 × núcleo OASIS."""
     rows = []
-    for cohort in COHORTS:
+    for cohort in cohorts:
         for roi in ROIS:
             for new_mod, old_mod in PAIRS:
                 p_new = new_results_path(cohort, roi, new_mod, rep)
@@ -305,7 +310,7 @@ if __name__ == "__main__":
     if a.self_check or a.cmd is None:
         self_check()
     elif a.cmd == "compare":
-        compare(a.rep, PILOT / f"compare_{a.rep}.csv")
+        compare(a.rep, PILOT / f"compare_{a.rep}.csv", cohorts=FULL_COHORTS)
     else:
         {"ids-a": ids_a, "ids-b": ids_b, "ids-full": ids_full, "gate-a": gate_a, "gate-b": gate_b,
          "qc": qc, "secondary": secondary}[a.cmd]()

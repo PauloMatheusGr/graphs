@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Rodada completa DVF OASIS (depois do Gate B): 2 visitas = S0,R10 (t1_r10), 3 visitas = D (t1_ols).
-# 1 visita (t1_only) já sai do gate-b do run_dvf_oasis_pilot.sh.
+# 1 visita (t1_only): 48m_6m e soft_False já saem do gate-b (pulados aqui); 48m_12m (treino da
+# validação externa ADNI-3/4) é feita aqui.
 #   bash run_dvf_oasis_full.sh register   # todas as visitas t0/t1/t2: registro, atributos, 4_ --oasis-only
-#   bash run_dvf_oasis_full.sh refs       # disp_ad / disp_cnad ADNI em t1_r10 e t1_ols (faltam no disco)
-#   bash run_dvf_oasis_full.sh ablate     # disp_oasis* × ROIs × {t1_r10, t1_ols} + compare pareado
+#   bash run_dvf_oasis_full.sh refs       # disp_ad / disp_cnad ADNI que faltam no disco
+#   bash run_dvf_oasis_full.sh ablate     # disp_oasis* × ROIs × {t1_only, t1_r10, t1_ols} + compare pareado
 #   bash run_dvf_oasis_full.sh all        # register → refs → ablate
 # Retomável: registro pula warps completos, 3.2 usa done_keys, ablações existentes são puladas.
 # SHARDS processos de registro por âncora (CN e AD em paralelo); JOBS ablações em paralelo.
@@ -16,9 +17,9 @@ mkdir -p logs
 STAGE="${1:?uso: $0 register|refs|ablate|all}"
 SHARDS="${SHARDS:-12}"
 JOBS="${JOBS:-4}"
-COHORTS=(${COHORTS:-48m_6m 48m_6m_soft_False})
+COHORTS=(${COHORTS:-48m_6m 48m_6m_soft_False 48m_12m})  # = FULL_COHORTS do pilot_oasis_gate.py
 ROIS=(${ROIS:-hippocampus_d2 hippocampus})
-REPS=(${REPS:-t1_r10 t1_ols})
+REPS=(${REPS:-t1_only t1_r10 t1_ols})
 MODS=(disp_oasis disp_oasis_ad disp_oasis_cnad)
 IDS=csvs/pilot/oasis_full_ids.csv
 STAMP=$(date +%Y%m%d_%H%M%S)
@@ -108,7 +109,7 @@ ablate() {
   done
   wait
   require "${outs[@]}"
-  for R in "${REPS[@]}"; do
+  for R in "${REPS[@]}"; do  # compare_t1_only.csv repete o gate-b nas coortes 6m e acrescenta 48m_12m
     "$PY" pilot_oasis_gate.py compare --rep "$R"
   done
 }
