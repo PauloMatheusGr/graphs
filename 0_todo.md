@@ -97,7 +97,8 @@ inicial (Gate B). 1068 registros, ~10 dias. Tomada antes do resultado do Gate B 
        `diff csvs/pilot/backup_pre_strainfix_20261006/gateA_summary.csv csvs/pilot/gateA_summary.csv && echo idêntico`
 3. [ ] **Decidir rodada longitudinal com o orientador** (tabela acima) e preencher "Decisão"
        ANTES do resultado do Gate B.
-4. [ ] **Esperar Gate B** (tmux `0`, ~11/10). Progresso:
+4. [ ] **Esperar Gate B** (tmux `0`, relançado 08/10 após reboot; registros terminam ~12/10 manhã,
+       veredito ~12/10 noite). Progresso:
        `ls images/displacement_field_oasis_{cn,ad}/*1Warp.nii.gz | wc -l` (meta 884; parado 2–5 h é
        normal, ondas). Terminou quando existir `csvs/pilot/gateB_summary.csv` e o tmux mostrar
        `GATE B (...): PASSA | INCONCLUSIVO | FALHA`.
@@ -141,11 +142,16 @@ processos; `exit` dentro do tmux mata.
       no repositório (nunca em `/tmp`): registrar I14392 de novo (~5 h) e comparar com o warp
       do Gate A via `np.allclose(atol=1e-4)`.
 
-## 1. Gate B (em andamento desde 04/10 13:26 hora do servidor; ~7–8 dias)
+## 1. Gate B (em andamento; server2, tmux `0`)
 
-Log: `logs/dvf_oasis_gate-b_20261004_132641.log`; registro em
-`logs/dvf_oasis_reg_*_20261004_132641.log`. **Não editar `run_dvf_oasis_pilot.sh` enquanto roda**
-(bash lê o script aos poucos).
+Iniciado 04/10 13:26; servidor reiniciou ~08/10 14h (UTC) e o run foi relançado 08/10 18:48
+(hora do servidor = UTC; local = −3 h). Log atual: `logs/dvf_oasis_gate-b_20261008_184831.log`;
+registro em `logs/dvf_oasis_reg_*_20261008_184831.log` (os de `20261004_132641` são do run
+interrompido). **Não editar `run_dvf_oasis_pilot.sh` enquanto roda** (bash lê o script aos poucos).
+
+Situação 10/10 13h (local): 24 processos vivos, 0 erros; 697/884 itens (131 `[OK]` + 566
+`[SKIP]`), 24 em curso, ~7 rodadas de ~5 h por shard → registros ~12/10 manhã, depois `3.2`,
+`4_` e 12 ablações → veredito ~12/10 noite.
 
 442 baselines (`csvs/pilot/oasis_gateB_ids.csv`: 149 AD, 100 CN, 120 pMCI, 73 sMCI); as 80 do
 Gate A são puladas → 362 novas × 2 âncoras = 724 registros / 24 processos ≈ 30 × 5 h ≈ 6–7 dias,
@@ -156,8 +162,9 @@ cn_ad / smci_pmci em `hippocampus_d2` e `hippocampus` × `disp_oasis`/`_ad`/`_cn
 Acompanhar:
 
 ```bash
-grep -h "\[OK\]" logs/dvf_oasis_reg_*_20261004_132641.log | wc -l   # meta: 724
-grep -h "\[ERROR\]\|Traceback" logs/dvf_oasis_reg_*_20261004_132641.log
+pgrep -fc 3.1_feat_gen_dvf.py                                         # 24 enquanto registra
+grep -h "\[OK\]\|\[SKIP\]" logs/dvf_oasis_reg_*_20261008_184831.log | wc -l   # meta: 884
+grep -h "\[ERROR\]\|Traceback" logs/dvf_oasis_reg_*_20261008_184831.log
 ```
 
 ### Se cair a energia
@@ -281,14 +288,34 @@ imagens de participantes novos de `datasets_info/output/adni34/adnimerged_filter
 - pega as 3 primeiras imagens; o treino busca para frente a próxima imagem na banda
   (`_pick_forward_band`).
 
-**Pré-processamento (situação em 09/10, 212 IDs necessários):**
+**Pré-processamento (situação em 10/10 16h40 local; 212 IDs necessários):**
 
-| Etapa | Pronto |
-|---|---|
-| `1-skull-stripping`, `2-denoising`, `3-biasfield` | 212/212 |
-| `4-mni-hist-matching` | 194/212 |
-| `5-parcellation` | 66/212 |
-| `6-segmentation` | 0/212 |
+| Etapa | Base toda (3994) | Das 212 |
+|---|---|---|
+| `1-skull-stripping`, `2-denoising`, `3-biasfield`, `4-mni-hist-matching` | pronto | 212/212 |
+| `4-nac-hist-matching` (não usado pelo resample) | 3159 | parcial |
+| `5-parcellation` | 2542 | 109/212 (103 em curso) |
+| `6-segmentation` | 212 | 212/212 (seg212, 10/10) |
+
+- **Migrado do server5 para o server3 em 10/10 16h40** (mdaniel tem prioridade no server5).
+  Tudo parado no server5 (só resta o processo do mdaniel). No server3, 3 sessões tmux via
+  `datasets_img/scripts/run_server3.sh <trilha>` (retomável: pula imagens prontas):
+  - `prep_gpu0`: parcelação de 52 das 212 (`.parc212/raw_gpu0`) → resto da etapa 5 → vigia
+    `refazer_parc_gpu.sh 0` (refaz na GPU as 46 parcelações feitas na CPU). Log
+    `datasets_img/logs/adni3-4_gpu_server3_20261010_164109.log`.
+  - `prep_gpu1`: parcelação de 51 das 212 (`.parc212/raw_gpu1`) → etapa 6 da base toda. Log
+    `adni3-4_seg_server3_20261010_164109.log`.
+  - `prep_cpu`: hist-match NAC. Log `adni3-4_cpu_server3_20261010_164109.log`.
+- Ritmo no server3 (1080 Ti): parcelação ~230 s/imagem, NAC ~55 s (dividindo CPU com `com_mask`).
+  Previsão: **parcelação das 212 fecha ~10/10 20h local**; NAC ~11/10 manhã; etapa 5 da base
+  toda e etapa 6 ~3,5 dias (~14/10). Para o artigo só as 212 importam.
+- GPU no server3: o TF do venv quer cuDNN 9 e o sistema tem 7.6 → `pip install --target
+  ~/cuda_libs nvidia-cudnn-cu12==9.8.0.87` (home local do server3; não mexe no venv
+  compartilhado) e `LD_LIBRARY_PATH` exportado pelo `run_server3.sh`.
+- Conferir: `tmux a -t prep_gpu0` (sair: Ctrl-b d) ou
+  `grep -c "concluído" ../datasets_img/logs/adni3-4_*_server3_20261010_164109.log` e
+  `grep ERROR` nos mesmos logs.
+- Etapa 5: 2 falhas antigas (I11088545, I11096353: imagem com massa zero), nenhuma das 212.
 
 - **Parcelação externa = ANTsPyNet DKT (decisão do usuário, 09/10; sem FreeSurfer/FastSurfer).**
   ADNI-3/4 `5-parcellation/regions` = DKT do ANTsPyNet (versão 0, 89 rótulos). Os arquivos de
@@ -308,8 +335,11 @@ imagens de participantes novos de `datasets_info/output/adni34/adnimerged_filter
        late fusion; SVM `l1_stable`, Optuna 10, 10 seeds, sem ComBat; métrica AUC por paciente
        com IC95 por bootstrap de paciente; comparações pareadas nos mesmos pacientes externos,
        BH; reportar todas. Data: __/__/2026.
-2. [ ] Gerar CSV com os 212 ID_IMG para o pré-processamento priorizar o que falta.
-3. [ ] Terminar `4-mni-hist-matching` (18), `5-parcellation` (146) e `6-segmentation` (212).
+2. [x] Lista dos 212 ID_IMG: `csvs/cohorts/all_population_adni34/all_population_adni34.csv`
+       (e `datasets_img/adni3-4/preproc/.seg212/ids.txt`).
+3. [ ] Terminar `5-parcellation` das 212 (103 em curso no server3, fim ~10/10 20h);
+       `6-segmentation` 212/212 pronto;
+       `4-mni-hist-matching` já 212/212.
 4. [ ] **Coorte** (`adni_3_4.ipynb` Parte 2): trocar `select_set` pelo `classify_and_select` do
        `1_dataset` (importar, não reimplementar). Gravar
        `csvs/cohorts/ext_adni34_48m_12m/adnimerged_longitudinal_True.csv` com as mesmas colunas
@@ -323,6 +353,8 @@ imagens de participantes novos de `datasets_info/output/adni34/adnimerged_filter
        `datasets_img/atlases/templates/` (mesma grade 193×229×193 das T1 do treino) e transformação
        rígida salva em `images/resampled_1.0mm/transforms/<ID>_rigid.mat` e reutilizada → T1 e
        máscara podem ir agora; `regions` e `seg` entram depois sem novo registro.
+       **Pode começar já no server3** (T1 e máscara 212/212); rodar de novo quando `regions` e
+       `seg` fecharem (comando no docstring do `2_resample.py`).
        Teste: `.mat` salvo reproduz a T1 (dif. máx. 0,17 em 9481).
        `brain_mask` é mapa de probabilidade (float) no treino e no externo; limiar 0,5 = máscara
        (Dice com a T1 nativa 0,985). QC visual de algumas T1 externas no MNI antes da extração.
